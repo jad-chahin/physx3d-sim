@@ -1,18 +1,9 @@
 #include <iostream>
 
-struct Vec3 {
-    double x{}, y{}, z{};
-
-    Vec3 operator+(const Vec3& o) const { return {x + o.x, y + o.y, z + o.z}; }
-    Vec3 operator*(double s) const { return {x * s, y * s, z * s}; }
-};
-
-struct Body {
-    Vec3 position; // [m]
-    Vec3 velocity; // [m/s]
-    double invMass{}; // [1/kg]  (0 means "infinite mass" / static body)
-    double radius{1.0}; // [m]
-};
+#include "sim/Body.h"
+#include "sim/Vec3.h"
+using sim::Vec3;
+using sim::Body;
 
 int main() {
     Body b;

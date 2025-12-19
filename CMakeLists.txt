@@ -7,6 +7,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_executable(physics3d
         src/main.cpp
+        src/sim/Vec3.h
+        src/sim/Body.h
 )
 
 if (MSVC)
