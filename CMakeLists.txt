@@ -9,6 +9,8 @@ add_executable(physics3d
         src/main.cpp
         src/sim/Vec3.h
         src/sim/Body.h
+        src/sim/World.cpp
+        src/sim/World.h
 )
 
 if (MSVC)
