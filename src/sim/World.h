@@ -32,11 +32,11 @@ namespace sim {
               enableCollisions(true) {}
         };
 
+        // Constructors
         World() = default;
-
         explicit World(const Params &params);
-        World(std::vector<Body> bodies, const Params &params = Params());
-
+        explicit World(std::vector<Body> bodies);
+        World(std::vector<Body> bodies, const Params &params);
 
         // One tick
         void step(double dt);

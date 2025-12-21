@@ -1,41 +1,31 @@
-#include <iostream>
-
-#include "sim/Body.h"
-#include "sim/Vec3.h"
-using sim::Vec3;
-using sim::Body;
+#include "sim/World.h"
+#include <vector>
 
 int main() {
-    Body b;
-    b.position = {0.0, 10.0, 0.0};
-    b.velocity = {0.0, 0.0, 0.0};
-    b.invMass = 1.0;
-    b.radius = 1.0;
+    // Bodies
+    sim::Body a{};
+    a.invMass = 1.0;
 
-    const Vec3 gravity{0.0, -9.81, 0.0}; // [m/s^2] acceleration due to gravity
-    constexpr int tickRate = 60; // [ticks/s]
-    constexpr double dt = 1.0 / tickRate; // [s/tick]
-    constexpr int simTime = 10; // [s]
-    constexpr int ticks = tickRate * simTime; // [ticks]
+    sim::Body b{};
+    b.position = sim::Vec3(10.0, 0.0, 0.0);
+    b.velocity = sim::Vec3(0.0, 1.0, 0.0);
+    b.invMass = 2.0;
+    b.radius = 2.0;
 
-    const double restitution = 0.5;
-    const double groundY = 0.0;
-    double minY = groundY + b.radius;
+    std::vector<sim::Body> bodies;
+    bodies.push_back(a);
+    bodies.push_back(b);
 
-    for (int tick = 0; tick < ticks; ++tick) {
-        const double t = tick * dt; // [s]
+    // World initialization
+    sim::World world = sim::World(std::move(bodies));
 
-        std::cout << "t=" << t << "s  y=" << b.position.y << " m\n";
 
-        b.velocity = b.velocity + gravity * dt;
-        b.position = b.position + b.velocity * dt;
+    // Tick loop
+    double tr = 60.0; // Tick rate (Ticks per second)
+    double s = 10.0; // Seconds
+    double dt = 1.0 / tr;
 
-        if (b.position.y < minY) { // Hit ground -> bounce
-            b.position.y = minY;
-            if (b.velocity.y < 0.0) {
-                b.velocity.y = -b.velocity.y * restitution;
-            }
-        }
+    for (int t = 0; t < tr * s; ++t) {
+        world.step(dt);
     }
-    return 0;
 }

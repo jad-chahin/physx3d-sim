@@ -10,8 +10,12 @@
 #include <utility>  // std::move
 
 namespace sim {
+    // Constructors
     World::World(const Params &params)
     : params_(params) {}
+
+    World::World(std::vector<Body> bodies)
+    : bodies_(std::move(bodies)) {}
 
     World::World(std::vector<Body> bodies, const Params &params)
     : params_(params), bodies_(std::move(bodies)) {}
