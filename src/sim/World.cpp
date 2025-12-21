@@ -221,6 +221,7 @@ namespace sim {
 
 // TODO: For future:
 /*
+ * Optimize where possible
  * Swap integrator to leapfrog / velocity Verlet
  * Use fixed timestep + substeps (especially for collisions)
  * Add continuous collision detection (time-of-impact) to prevent tunneling

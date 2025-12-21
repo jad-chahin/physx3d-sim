@@ -1,3 +1,5 @@
+#include <iostream>
+
 #include "sim/World.h"
 #include <vector>
 
@@ -8,8 +10,8 @@ int main() {
 
     sim::Body b{};
     b.position = sim::Vec3(10.0, 0.0, 0.0);
-    b.velocity = sim::Vec3(0.0, 1.0, 0.0);
-    b.invMass = 2.0;
+    b.velocity = sim::Vec3(-1.0, 0.0, 0.0);
+    b.invMass = 0.5;
     b.radius = 2.0;
 
     std::vector<sim::Body> bodies;
@@ -17,15 +19,20 @@ int main() {
     bodies.push_back(b);
 
     // World initialization
-    sim::World world = sim::World(std::move(bodies));
+    auto world = sim::World(std::move(bodies));
 
 
     // Tick loop
-    double tr = 60.0; // Tick rate (Ticks per second)
-    double s = 10.0; // Seconds
-    double dt = 1.0 / tr;
+    constexpr double tr = 60.0; // Tick rate (Ticks per second)
+    constexpr double s = 10.0; // Seconds
+    constexpr double dt = 1.0 / tr;
 
     for (int t = 0; t < tr * s; ++t) {
         world.step(dt);
     }
+    const sim::Body& A = world.bodies()[0];
+    const sim::Body& B = world.bodies()[1];
+
+    std::cout << "a: " << "(" << A.position.x << ", " << A.position.y << ", " << A.position.z << ")" << std::endl;
+    std::cout << "b: " << "(" << B.position.x << ", " << B.position.y << ", " << B.position.z << ")" << std::endl;
 }
