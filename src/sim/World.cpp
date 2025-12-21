@@ -20,7 +20,7 @@ namespace sim {
     World::World(std::vector<Body> bodies, const Params &params)
     : params_(params), bodies_(std::move(bodies)) {}
 
-    void World::step(double dt)
+    void World::step(const double dt)
     {
         syncForces_();
         resetForces_();
@@ -86,43 +86,43 @@ namespace sim {
         }
     }
 
-    double World::epsilon(std::size_t i, std::size_t j) const {
+    double World::epsilon(const std::size_t i, const std::size_t j) const {
         // Scale epsilon softening with radius sizes
         return (bodies_[i].radius + bodies_[j].radius) * 1e-6;
     }
 
-    void World::applyGravityPair_(std::size_t i, std::size_t j)
+    void World::applyGravityPair_(const std::size_t i, const std::size_t j)
     {
-        Body& A = bodies_[i];
-        Body& B = bodies_[j];
+        const Body& A = bodies_[i];
+        const Body& B = bodies_[j];
 
-        double invM1 = A.invMass;
-        double invM2 = B.invMass;
+        const double invM1 = A.invMass;
+        const double invM2 = B.invMass;
 
         if (invM1 == 0 or invM2 == 0) {
             return; // No gravity for static objects by convention
         }
 
-        Vec3 d = B.position - A.position; // Difference vector
+        const Vec3 d = B.position - A.position; // Difference vector
 
-        double r1 = d.dot(d); // r^2
+        const double r1 = d.dot(d); // r^2
 
-        double eps = epsilon(i, j);
-        double r1s = r1 + eps * eps; // r^2 + eps^2 (softened)
+        const double eps = epsilon(i, j);
+        const double r1s = r1 + eps * eps; // r^2 + eps^2 (softened)
 
-        double m1 = 1.0 / invM1;
-        double m2 = 1.0 / invM2;
+        const double m1 = 1.0 / invM1;
+        const double m2 = 1.0 / invM2;
 
-        double inv_r  = 1.0 / std::sqrt(r1s);
-        double inv_r3 = inv_r * inv_r * inv_r;
+        const double inv_r  = 1.0 / std::sqrt(r1s);
+        const double inv_r3 = inv_r * inv_r * inv_r;
 
-        Vec3 F12 = d * (params_.G * m1 * m2 * inv_r3);
+        const Vec3 F12 = d * (params_.G * m1 * m2 * inv_r3);
 
         forces_[i] = forces_[i] + F12;
         forces_[j] = forces_[j] - F12;
     }
 
-    void World::integrate_(double dt)
+    void World::integrate_(const double dt)
     {
         for (std::size_t i = 0; i < bodies_.size(); ++i) {
             Body& b = bodies_[i];
@@ -148,17 +148,17 @@ namespace sim {
         }
     }
 
-    bool World::isColliding_(std::size_t i, std::size_t j) {
-        Body& A = bodies_[i];
-        Body& B = bodies_[j];
-        Vec3 d = B.position - A.position; // Difference vector
-        double minDistance = A.radius + B.radius;
-        double r = d.dot(d); // r^2
+    bool World::isColliding_(const std::size_t i, const std::size_t j) const {
+        const Body& A = bodies_[i];
+        const Body& B = bodies_[j];
+        const Vec3 d = B.position - A.position; // Difference vector
+        const double minDistance = A.radius + B.radius;
+        const double r = d.dot(d); // r^2
 
         return (r <= minDistance * minDistance); // r^2 <= minDistance^2 ?
     }
 
-    void World::solveCollisionPair_(std::size_t i, std::size_t j)
+    void World::solveCollisionPair_(const std::size_t i, const std::size_t j)
     {
         if (!isColliding_(i, j)) {
             return;
@@ -166,8 +166,8 @@ namespace sim {
 
         Body& A = bodies_[i];
         Body& B = bodies_[j];
-        double wA = A.invMass;
-        double wB = B.invMass;
+        const double wA = A.invMass;
+        const double wB = B.invMass;
 
         if (wA == 0 and wB == 0) {
             return; // Both static -> do nothing
@@ -177,12 +177,12 @@ namespace sim {
         Vec3& pB = B.position;
         Vec3& vA = A.velocity;
         Vec3& vB = B.velocity;
-        double e = params_.restitution;
+        const double e = params_.restitution;
 
-        Vec3 d = pB - pA; // Difference vector
-        double dist = d.magnitude(); // Distance
+        const Vec3 d = pB - pA; // Difference vector
+        const double dist = d.magnitude(); // Distance
 
-        double pen = (A.radius + B.radius) - dist; // Penetration depth (how much they overlap)
+        const double pen = (A.radius + B.radius) - dist; // Penetration depth (how much they overlap)
 
         Vec3 n; // Collision normal
 
@@ -192,25 +192,25 @@ namespace sim {
             n = d / dist;
         }
 
-        double invMassSum = wA + wB;
+        const double invMassSum = wA + wB;
 
         // Position-correction amount: ignore small overlap (slop), then apply a percent of the remaining penetration
-        double correction = std::max(0.0, pen - params_.penetrationSlop) * params_.positionCorrectionPercent;
+        const double correction = std::max(0.0, pen - params_.penetrationSlop) * params_.positionCorrectionPercent;
 
         // Move positions apart along collision normal in proportion to mass
         // Higher invMass => lower mass => larger change in position
         pA = pA - n * (correction * wA/invMassSum);
         pB = pB + n * (correction * wB/invMassSum);
 
-        double v_n = (vB - vA).dot(n); // Speed of B relative to A along collision normal
+        const double v_n = (vB - vA).dot(n); // Speed of B relative to A along collision normal
 
         if (v_n >= 0) {
             return; // Already separating along the normal -> don't apply impulse
         }
 
-        double impulse = -(1 + e) * v_n / invMassSum; // Normal impulse magnitude
+        const double impulse = -(1 + e) * v_n / invMassSum; // Normal impulse magnitude
 
-        Vec3 J = n * impulse; // Impulse vector along collision normal
+        const Vec3 J = n * impulse; // Impulse vector along collision normal
 
         // Impulse/mass = change in velocity
         vA = vA - J * wA;

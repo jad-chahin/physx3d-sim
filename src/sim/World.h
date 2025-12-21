@@ -74,7 +74,7 @@ namespace sim {
 
         // Collision helpers
         void collide_(); // detect + resolve collisions
-        bool isColliding_(std::size_t i, std::size_t j);
+        [[nodiscard]] bool isColliding_(std::size_t i, std::size_t j) const;
         void solveCollisionPair_(std::size_t i, std::size_t j);
     };
 
