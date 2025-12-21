@@ -56,24 +56,26 @@ namespace sim {
         Params params_;
         std::vector<Body> bodies_{};
 
-        // Per-step accumulators (net force per body for the current tick)
+        // Net force per body for the current tick
         std::vector<Vec3> forces_{};
 
     private:
         // Buffer management
-        void ensureBuffers_();
+        void syncForces_();
 
         // Step sub-stages
         void resetForces_();
-        void computeForces_(); // currently: gravity only
-        void integrate_(double dt); // update velocity + position from forces_
-        void collide_(); // detect + resolve collisions
+        void computeForces_(); // Currently gravity only
+        void integrate_(double dt); // Update velocity and position from forces_
 
         // Force helpers
-        void applyGravityPair_(size_t i, size_t j);
+        [[nodiscard]] double epsilon(std::size_t i, std::size_t j) const;
+        void applyGravityPair_(std::size_t i, std::size_t j);
 
-        // Collision helpers (sphere-sphere)
-        void solveCollisionPair_(size_t i, size_t j);
+        // Collision helpers
+        void collide_(); // detect + resolve collisions
+        bool isColliding_(std::size_t i, std::size_t j);
+        void solveCollisionPair_(std::size_t i, std::size_t j);
     };
 
 } // sim
