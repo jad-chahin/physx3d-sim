@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(physics3d LANGUAGES CXX)
+project(physics3d LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -24,6 +24,11 @@ add_executable(physics3d
         src/sim/Body.h
         src/sim/World.cpp
         src/sim/World.h
+        src/third_party/glad/src/glad.c
+)
+
+target_include_directories(physics3d PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/glad/include
 )
 
 target_link_libraries(physics3d PRIVATE glfw opengl32)

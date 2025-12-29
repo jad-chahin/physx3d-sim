@@ -1,3 +1,4 @@
+#include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <iostream>
 #include <vector>
@@ -47,6 +48,25 @@ int main() {
     }
 
     glfwMakeContextCurrent(window);
+
+    if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress))) {
+        std::cerr << "Failed to initialize GLAD\n";
+        return 1;
+    }
+
+    // Print version
+    std::cout << "OpenGL: " << glGetString(GL_VERSION) << "\n";
+
+    // Set initial viewport
+    int fbw = 0, fbh = 0;
+    glfwGetFramebufferSize(window, &fbw, &fbh);
+    glViewport(0, 0, fbw, fbh);
+
+    // Resize callback (updates viewport on resize)
+    glfwSetFramebufferSizeCallback(window, [](GLFWwindow*, int w, int h) {
+        glViewport(0, 0, w, h);
+    });
+
     glEnable(GL_DEPTH_TEST);
 
     // VSync 0=OFF 1=ON
