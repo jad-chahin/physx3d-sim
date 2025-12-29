@@ -5,7 +5,6 @@
 #ifndef PHYSICS3D_WORLD_H
 #define PHYSICS3D_WORLD_H
 
-#include <complex>
 #include <vector>
 #include "Body.h"
 
