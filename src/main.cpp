@@ -7,6 +7,15 @@
 #include "sim/World.h"
 
 
+static void APIENTRY glDebugCallback(
+    const GLenum source, const GLenum type, const GLuint id, const GLenum severity,
+    const GLsizei length, const GLchar* message, const void* userParam)
+{
+    (void)source; (void)type; (void)id; (void)severity; (void)length; (void)userParam;
+    std::cerr << "[GL DEBUG] " << message << "\n";
+}
+
+
 int main() {
     // Init world
     sim::Body a{};
@@ -49,28 +58,39 @@ int main() {
 
     glfwMakeContextCurrent(window);
 
+    // VSync 0=OFF 1=ON
+    glfwSwapInterval(1);
+
     if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress))) {
         std::cerr << "Failed to initialize GLAD\n";
+        glfwDestroyWindow(window);
+        glfwTerminate();
         return 1;
     }
 
-    // Print version
-    std::cout << "OpenGL: " << glGetString(GL_VERSION) << "\n";
+    std::cout << "Vendor:   " << glGetString(GL_VENDOR) << "\n";
+    std::cout << "Renderer: " << glGetString(GL_RENDERER) << "\n";
+    std::cout << "Version:  " << glGetString(GL_VERSION) << "\n";
 
-    // Set initial viewport
+
+    int flags = 0;
+    glGetIntegerv(GL_CONTEXT_FLAGS, &flags);
+    if (flags & GL_CONTEXT_FLAG_DEBUG_BIT) {
+        glEnable(GL_DEBUG_OUTPUT);
+        glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
+        glDebugMessageCallback(glDebugCallback, nullptr);
+    }
+
+    // Set initial viewport + update it on resize
     int fbw = 0, fbh = 0;
     glfwGetFramebufferSize(window, &fbw, &fbh);
     glViewport(0, 0, fbw, fbh);
 
-    // Resize callback (updates viewport on resize)
-    glfwSetFramebufferSizeCallback(window, [](GLFWwindow*, int w, int h) {
+    glfwSetFramebufferSizeCallback(window, [](GLFWwindow*, const int w, const int h) {
         glViewport(0, 0, w, h);
     });
 
     glEnable(GL_DEPTH_TEST);
-
-    // VSync 0=OFF 1=ON
-    glfwSwapInterval(1);
 
     constexpr double tickRate = 60.0;
     constexpr double dt = 1.0 / tickRate;
