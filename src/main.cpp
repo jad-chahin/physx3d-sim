@@ -137,12 +137,22 @@ int main() {
     glGenVertexArrays(1, &vao);
     glGenBuffers(1, &vbo);
 
+    // Track how many bodies the VBO is currently sized for
+    std::size_t vboCapacityBodies = std::max<std::size_t>(1, world.bodies().size());
+
+    // CPU-side staging buffer (reused each frame)
+    std::vector<float> gpuVerts;
+
     // Configure VAO
     glBindVertexArray(vao);
 
     // Upload vertex data into the VBO
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, 2 * 3 * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
+    glBufferData(
+        GL_ARRAY_BUFFER,
+        static_cast<GLsizeiptr>(vboCapacityBodies * 3 * sizeof(float)),
+        nullptr,
+        GL_DYNAMIC_DRAW);
 
     // Tell OpenGL how to read the buffer for shader input location 0 (aPos)
     glVertexAttribPointer(
@@ -155,6 +165,7 @@ int main() {
 
     glEnableVertexAttribArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
 
     int flags = 0;
     glGetIntegerv(GL_CONTEXT_FLAGS, &flags);
@@ -201,34 +212,58 @@ int main() {
         }
 
         const auto& bs = world.bodies();
+        const std::size_t n = bs.size();
 
-        // Center the view between the two bodies (so they stay visible)
-        // const double cx = 0.5 * (bs[0].position.x + bs[1].position.x);
+        if (n == 0) {
+            glClearColor(1.0f, 0.0f, 1.0f, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            glfwSwapBuffers(window);
+            continue;
+        }
 
-        // Pin camera to A
-        // const double cx = bs[0].position.x;
+        // If body count changed, resize the VBO
+        if (n != vboCapacityBodies) {
+            glBindBuffer(GL_ARRAY_BUFFER, vbo);
+            glBufferData(
+                GL_ARRAY_BUFFER,
+                static_cast<GLsizeiptr>(n * 3 * sizeof(float)),
+                nullptr,
+                GL_DYNAMIC_DRAW);
+            glBindBuffer(GL_ARRAY_BUFFER, 0);
+            vboCapacityBodies = n;
+        }
 
-        // Fixed world origin
-        constexpr double cx = 0.0;
+        // Camera at world origin
+        constexpr double cx = 0.0; // NOLINT
 
         // Camera zoom
-        constexpr double viewHalfWidthMeters = 15.0;
+        constexpr double viewHalfWidthMeters = 15.0; // NOLINT
 
-        // Convert world meters -> NDC
-        const float gpuVerts[] = {
-            static_cast<float>((bs[0].position.x - cx) / viewHalfWidthMeters), 0.0f, 0.0f,
-            static_cast<float>((bs[1].position.x - cx) / viewHalfWidthMeters), 0.0f, 0.0f
-        };
+        // Build N vertices: (x,0,0) for each body
+        gpuVerts.resize(n * 3);
+        for (std::size_t i = 0; i < n; ++i) {
+            gpuVerts[3*i + 0] = static_cast<float>((bs[i].position.x - cx) / viewHalfWidthMeters);
+            gpuVerts[3*i + 1] = 0.0f;
+            gpuVerts[3*i + 2] = 0.0f;
+        }
 
+        // Upload into the existing VBO
         glBindBuffer(GL_ARRAY_BUFFER, vbo);
-        glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(gpuVerts), gpuVerts);
+        glBufferSubData(
+            GL_ARRAY_BUFFER,
+            0,
+            static_cast<GLsizeiptr>(gpuVerts.size() * sizeof(float)),
+            gpuVerts.data());
         glBindBuffer(GL_ARRAY_BUFFER, 0);
+
         glClearColor(1.0f, 0.0f, 1.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
         glUseProgram(program);
         glBindVertexArray(vao);
-        glDrawArrays(GL_POINTS, 0, 2);
+        glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(n));
         glBindVertexArray(0);
+
         glfwSwapBuffers(window);
     }
 
