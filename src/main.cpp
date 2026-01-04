@@ -3,23 +3,15 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
+#include <cstddef>
 #include <iostream>
 #include <utility> // std::move
 #include <vector>
+
 #include "sim/World.h"
 
-
-// Framebuffer size
 static int g_fbw = 0;
 static int g_fbh = 0;
-
-static void framebufferSizeCallback(GLFWwindow*, int w, int h)
-{
-    g_fbw = w;
-    g_fbh = h;
-    glViewport(0, 0, w, h);
-}
-
 
 static void APIENTRY glDebugCallback(
     const GLenum source, const GLenum type, const GLuint id, const GLenum severity,
@@ -29,9 +21,7 @@ static void APIENTRY glDebugCallback(
     std::cerr << "[GL DEBUG] " << message << "\n";
 }
 
-
-static GLuint compileShader(const GLenum type, const char* src)
-{
+static GLuint compileShader(const GLenum type, const char* src) {
     const GLuint s = glCreateShader(type);
     glShaderSource(s, 1, &src, nullptr);
     glCompileShader(s);
@@ -46,8 +36,7 @@ static GLuint compileShader(const GLenum type, const char* src)
     return s;
 }
 
-static GLuint linkProgram(const GLuint vs, const GLuint fs)
-{
+static GLuint linkProgram(const GLuint vs, const GLuint fs) {
     const GLuint p = glCreateProgram();
     glAttachShader(p, vs);
     glAttachShader(p, fs);
@@ -63,59 +52,121 @@ static GLuint linkProgram(const GLuint vs, const GLuint fs)
     return p;
 }
 
-
-// Vertex shader
+// Vertex shader (mesh + instancing)
 static auto kVert = R"GLSL(
 #version 330 core
-layout (location = 0) in vec4 aPosR; // xyz = position, w = radius
 
-uniform mat4 uVP;
+layout (location = 0) in vec3 aPos;
+layout (location = 1) in vec3 aNormal;
+
+// Instance model matrix columns
+layout (location = 2) in vec4 iM0;
+layout (location = 3) in vec4 iM1;
+layout (location = 4) in vec4 iM2;
+layout (location = 5) in vec4 iM3;
+
 uniform mat4 uView;
+uniform mat4 uProj;
 
-// For point sizing in pixels:
-uniform float uProjScaleY;   // proj[1][1]
-uniform float uViewportH;    // framebuffer height in pixels
+out vec3 vWorldPos;
+out vec3 vWorldNormal;
 
 void main() {
-    vec4 viewPos = uView * vec4(aPosR.xyz, 1.0);
-    float z = max(0.001, -viewPos.z); // distance in front of camera
+    mat4 model = mat4(iM0, iM1, iM2, iM3);
 
-    gl_Position = uVP * vec4(aPosR.xyz, 1.0);
+    vec4 worldPos4 = model * vec4(aPos, 1.0);
+    vWorldPos = worldPos4.xyz;
 
-    // diameter in pixels
-    gl_PointSize = (aPosR.w * uProjScaleY * uViewportH) / z;
+    mat3 normalMat = transpose(inverse(mat3(model)));
+    vWorldNormal = normalize(normalMat * aNormal);
+
+    gl_Position = uProj * uView * worldPos4;
 }
 )GLSL";
 
-
-// Fragment shader
+// Fragment shader (basic Lambert lighting)
 static auto kFrag = R"GLSL(
 #version 330 core
+
+in vec3 vWorldPos;
+in vec3 vWorldNormal;
+
+uniform vec3 uLightDir;   // world space (direction *towards* the light)
+uniform vec3 uBaseColor;
+uniform float uAmbient;
+
 out vec4 FragColor;
 
 void main() {
-    // gl_PointCoord is [0,1] across the point sprite
-    vec2 p = gl_PointCoord * 2.0 - 1.0; // [-1,1]
-    float r2 = dot(p, p);
-    if (r2 > 1.0) discard; // circle mask
+    vec3 n = normalize(vWorldNormal);
+    vec3 l = normalize(uLightDir);
 
-    // fake sphere normal
-    float z = sqrt(1.0 - r2);
-    vec3 n = normalize(vec3(p, z));
-
-    vec3 lightDir = normalize(vec3(0.4, 0.6, 1.0));
-    float diff = max(0.0, dot(n, lightDir));
-
-    vec3 base = vec3(1.0, 1.0, 0.0); // yellow
-    vec3 col = base * (0.25 + 0.75 * diff);
+    float diff = max(0.0, dot(n, l));
+    vec3 col = uBaseColor * (uAmbient + (1.0 - uAmbient) * diff);
 
     FragColor = vec4(col, 1.0);
 }
 )GLSL";
 
-
-int main()
+static void buildSphereMesh(
+    int stacks, int slices, // NOLINT
+    std::vector<float>& outVerts, // [px,py,pz,nx,ny,nz] per vertex
+    std::vector<std::uint32_t>& outIdx) // triangle indices
 {
+    stacks = std::max(2, stacks);
+    slices = std::max(3, slices);
+
+    outVerts.clear();
+    outIdx.clear();
+
+    // Vertex grid: (stacks+1) rings, each with (slices+1) verts (duplicate seam).
+    for (int i = 0; i <= stacks; ++i) {
+        const float v = static_cast<float>(i) / static_cast<float>(stacks); // 0..1
+        const float phi = glm::pi<float>() * v; // 0..pi
+
+        const float y = std::cos(phi);
+        const float r = std::sin(phi);
+
+        for (int j = 0; j <= slices; ++j) {
+            const float u = static_cast<float>(j) / static_cast<float>(slices); // 0..1
+            const float theta = glm::two_pi<float>() * u; // 0..2pi
+
+            const float x = r * std::cos(theta);
+            const float z = r * std::sin(theta);
+
+            // Position on unit sphere
+            outVerts.push_back(x);
+            outVerts.push_back(y);
+            outVerts.push_back(z);
+
+            // Normal (same as position for unit sphere)
+            outVerts.push_back(x);
+            outVerts.push_back(y);
+            outVerts.push_back(z);
+        }
+    }
+
+    const int stride = slices + 1;
+    for (int i = 0; i < stacks; ++i) {
+        for (int j = 0; j < slices; ++j) {
+            const auto i0 = static_cast<std::uint32_t>(i * stride + j);
+            const auto i1 = static_cast<std::uint32_t>((i + 1) * stride + j);
+            const auto i2 = static_cast<std::uint32_t>((i + 1) * stride + (j + 1));
+            const auto i3 = static_cast<std::uint32_t>(i * stride + (j + 1));
+
+            // Two triangles per quad
+            outIdx.push_back(i0);
+            outIdx.push_back(i1);
+            outIdx.push_back(i2);
+
+            outIdx.push_back(i0);
+            outIdx.push_back(i2);
+            outIdx.push_back(i3);
+        }
+    }
+}
+
+int main() {
     // Init world
     sim::Body a{};
     a.invMass = 1.0;
@@ -134,7 +185,6 @@ int main()
 
     sim::World world(std::move(bodies)); // Default params
 
-
     // Rendering
     if (!glfwInit()) {
         std::cerr << "Failed to init GLFW\n";
@@ -150,7 +200,6 @@ int main()
     glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
 
     glfwWindowHint(GLFW_DEPTH_BITS, 24);
-
     GLFWwindow* window = glfwCreateWindow(1280, 720, "physics3d", nullptr, nullptr);
     if (!window) {
         std::cerr << "Failed to create GLFW window\n";
@@ -174,8 +223,6 @@ int main()
     std::cout << "Renderer: " << glGetString(GL_RENDERER) << "\n";
     std::cout << "Version:  " << glGetString(GL_VERSION) << "\n";
 
-
-    // Debug output
     int flags = 0;
     glGetIntegerv(GL_CONTEXT_FLAGS, &flags);
     if (flags & GL_CONTEXT_FLAG_DEBUG_BIT) {
@@ -184,66 +231,115 @@ int main()
         glDebugMessageCallback(glDebugCallback, nullptr);
     }
 
-
-    // Set initial viewport + update it on resize
+    // Framebuffer size tracking + viewport
     glfwGetFramebufferSize(window, &g_fbw, &g_fbh);
     glViewport(0, 0, g_fbw, g_fbh);
-    glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
+
+    glfwSetFramebufferSizeCallback(window, [](GLFWwindow*, const int w, const int h) {
+        g_fbw = w;
+        g_fbh = h;
+        glViewport(0, 0, w, h);
+    });
 
     glEnable(GL_DEPTH_TEST);
-    glEnable(GL_PROGRAM_POINT_SIZE);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+    glFrontFace(GL_CCW);
 
+    // Build sphere mesh (unit sphere)
+    std::vector<float> sphereVerts;
+    std::vector<std::uint32_t> sphereIdx;
+    buildSphereMesh(/*stacks=*/16, /*slices=*/32, sphereVerts, sphereIdx);
+    const auto sphereIndexCount = static_cast<GLsizei>(sphereIdx.size());
 
-    // Shaders + program
+    // Compile/link shaders
     const GLuint vs = compileShader(GL_VERTEX_SHADER, kVert);
     const GLuint fs = compileShader(GL_FRAGMENT_SHADER, kFrag);
     const GLuint program = linkProgram(vs, fs);
 
-    GLint uVP         = glGetUniformLocation(program, "uVP");         // NOLINT
-    GLint uView       = glGetUniformLocation(program, "uView");       // NOLINT
-    GLint uProjScaleY = glGetUniformLocation(program, "uProjScaleY"); // NOLINT
-    GLint uViewportH  = glGetUniformLocation(program, "uViewportH");  // NOLINT
-
-    if (uVP < 0 || uView < 0 || uProjScaleY < 0 || uViewportH < 0) {
-        std::cerr << "Missing uniform(s). Check shader names match exactly.\n";
-    }
-
-    // Delete shaders after linking
     glDeleteShader(vs);
     glDeleteShader(fs);
 
-    std::cout << "Shader program linked: " << program << "\n";
+    // Uniform locations
+    const GLint uView     = glGetUniformLocation(program, "uView");     // NOLINT
+    const GLint uProj     = glGetUniformLocation(program, "uProj");     // NOLINT
+    const GLint uLightDir = glGetUniformLocation(program, "uLightDir"); // NOLINT
+    const GLint uBaseColor= glGetUniformLocation(program, "uBaseColor");// NOLINT
+    const GLint uAmbient  = glGetUniformLocation(program, "uAmbient");  // NOLINT
 
+    if (uView < 0 || uProj < 0 || uLightDir < 0 || uBaseColor < 0 || uAmbient < 0) {
+        std::cerr << "Missing uniform(s). Check shader names match exactly.\n";
+    }
 
-    // VAO/VBO
-    GLuint vao = 0, vbo = 0;
-    glGenVertexArrays(1, &vao);
-    glGenBuffers(1, &vbo);
+    // Sphere VAO/VBO/EBO + instance VBO
+    GLuint sphereVao = 0, sphereVbo = 0, sphereEbo = 0, instanceVbo = 0;
+    glGenVertexArrays(1, &sphereVao);
+    glGenBuffers(1, &sphereVbo);
+    glGenBuffers(1, &sphereEbo);
+    glGenBuffers(1, &instanceVbo);
 
-    // Track how many bodies the VBO is currently sized for
-    std::size_t vboCapacityBodies = std::max<std::size_t>(1, world.bodies().size());
+    glBindVertexArray(sphereVao);
 
-    // CPU-side staging buffer (reused each frame)
-    std::vector<float> gpuVerts;
-
-    // Configure VAO
-    glBindVertexArray(vao);
-
-    // Upload vertex data into the VBO
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    // Vertex buffer: pos+normal (6 floats)
+    glBindBuffer(GL_ARRAY_BUFFER, sphereVbo);
     glBufferData(
         GL_ARRAY_BUFFER,
-        static_cast<GLsizeiptr>(vboCapacityBodies * 4 * sizeof(float)),
-        nullptr,
-        GL_DYNAMIC_DRAW);
+        static_cast<GLsizeiptr>(sphereVerts.size() * sizeof(float)),
+        sphereVerts.data(),
+        GL_STATIC_DRAW
+    );
 
-    // Tell OpenGL how to read the buffer for shader input location 0 (aPosR)
-    glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 4 * sizeof(float), nullptr);
+    // Index buffer
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, sphereEbo);
+    glBufferData(
+        GL_ELEMENT_ARRAY_BUFFER,
+        static_cast<GLsizeiptr>(sphereIdx.size() * sizeof(std::uint32_t)),
+        sphereIdx.data(),
+        GL_STATIC_DRAW
+    );
+
+    // attrib 0: position
+    glVertexAttribPointer(
+        0, 3, GL_FLOAT, GL_FALSE,
+        6 * sizeof(float),
+        reinterpret_cast<void*>(0)
+    );
     glEnableVertexAttribArray(0);
+
+    // attrib 1: normal
+    glVertexAttribPointer(
+        1, 3, GL_FLOAT, GL_FALSE,
+        6 * sizeof(float),
+        reinterpret_cast<void*>(3 * sizeof(float))
+    );
+    glEnableVertexAttribArray(1);
+
+    // Instance buffer: mat4 model (16 floats) per instance
+    glBindBuffer(GL_ARRAY_BUFFER, instanceVbo);
+    glBufferData(GL_ARRAY_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
+
+    constexpr std::size_t vec4Size = 4 * sizeof(float);
+    constexpr std::size_t mat4Size = 4 * vec4Size;
+
+    // locations 2..5 are the 4 columns of the model matrix
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, static_cast<GLsizei>(mat4Size), reinterpret_cast<void*>(0 * vec4Size));
+    glVertexAttribDivisor(2, 1);
+
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, static_cast<GLsizei>(mat4Size), reinterpret_cast<void*>(1 * vec4Size));
+    glVertexAttribDivisor(3, 1);
+
+    glEnableVertexAttribArray(4);
+    glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, static_cast<GLsizei>(mat4Size), reinterpret_cast<void*>(2 * vec4Size));
+    glVertexAttribDivisor(4, 1);
+
+    glEnableVertexAttribArray(5);
+    glVertexAttribPointer(5, 4, GL_FLOAT, GL_FALSE, static_cast<GLsizei>(mat4Size), reinterpret_cast<void*>(3 * vec4Size));
+    glVertexAttribDivisor(5, 1);
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
-
 
     // Tick loop
     constexpr double tickRate = 60.0;
@@ -251,6 +347,8 @@ int main()
 
     double lastTime = glfwGetTime();
     double accumulator = 0.0;
+
+    std::vector<glm::mat4> models;
 
     while (!glfwWindowShouldClose(window)) {
         constexpr int maxStepsPerFrame = 10;
@@ -278,90 +376,76 @@ int main()
 
         const std::size_t n = bs.size();
 
+        glClearColor(0.05f, 0.05f, 0.08f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
         if (n == 0) {
-            glClearColor(1.0f, 0.0f, 1.0f, 1.0f);
-            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
             glfwSwapBuffers(window);
             continue;
         }
 
-        // If body count changed, resize the VBO
-        if (n != vboCapacityBodies) {
-            glBindBuffer(GL_ARRAY_BUFFER, vbo);
-            glBufferData(
-                GL_ARRAY_BUFFER,
-                static_cast<GLsizeiptr>(n * 4 * sizeof(float)),
-                nullptr,
-                GL_DYNAMIC_DRAW);
-            glBindBuffer(GL_ARRAY_BUFFER, 0);
-            vboCapacityBodies = n;
-        }
+        // Camera + projection
+        const float aspect = (g_fbh > 0) ? (static_cast<float>(g_fbw) / static_cast<float>(g_fbh)) : 1.0f;
 
-        // Camera at world origin
-        constexpr float cx = 0.0f; // NOLINT
-        constexpr float cy = 0.0f; // NOLINT
-        constexpr float cz = 0.0f; // NOLINT
+        constexpr float cx = 0.0f;
+        constexpr float cy = 0.0f;
+        constexpr float cz = 0.0f;
 
-        // Camera zoom
-        constexpr float viewHalfWidth = 15.0f; // NOLINT
-        (void)viewHalfWidth;
-
-        // Build N vertices
-        gpuVerts.resize(n * 4);
-        for (std::size_t i = 0; i < n; ++i) {
-            const sim::Vec3 p = bs[i].prevPosition + (bs[i].position - bs[i].prevPosition) * alpha;
-
-            gpuVerts[4*i + 0] = static_cast<float>(p.x);
-            gpuVerts[4*i + 1] = static_cast<float>(p.y);
-            gpuVerts[4*i + 2] = static_cast<float>(p.z);
-            gpuVerts[4*i + 3] = static_cast<float>(bs[i].radius);
-        }
-
-        // Upload into the existing VBO
-        glBindBuffer(GL_ARRAY_BUFFER, vbo);
-        glBufferSubData(
-            GL_ARRAY_BUFFER,
-            0,
-            static_cast<GLsizeiptr>(gpuVerts.size() * sizeof(float)),
-            gpuVerts.data());
-        glBindBuffer(GL_ARRAY_BUFFER, 0);
-
-        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-
-        // Maintain aspect ratio
-        const float aspect = (g_fbh > 0)
-            ? (static_cast<float>(g_fbw) / static_cast<float>(g_fbh))
-            : 1.0f;
-
-        // Perspective camera
         const glm::mat4 proj = glm::perspective(glm::radians(60.0f), aspect, 0.1f, 1000.0f);
         const glm::mat4 view = glm::lookAt(
             glm::vec3(cx, cy, cz + 30.0f),
             glm::vec3(cx, cy, cz),
             glm::vec3(0.0f, 1.0f, 0.0f)
         );
-        const glm::mat4 vp = proj * view;
 
+        // Build instance model matrices from interpolated positions
+        models.resize(n);
+        for (std::size_t i = 0; i < n; ++i) {
+            const sim::Vec3 pSim = bs[i].prevPosition + (bs[i].position - bs[i].prevPosition) * alpha;
+
+            const glm::vec3 pos(static_cast<float>(pSim.x), static_cast<float>(pSim.y), static_cast<float>(pSim.z));
+            const auto r = static_cast<float>(bs[i].radius);
+
+            glm::mat4 model(1.0f);
+            model = glm::translate(model, pos);
+            model = glm::scale(model, glm::vec3(r, r, r));
+
+            models[i] = model;
+        }
+
+        // Upload instance buffer
+        glBindBuffer(GL_ARRAY_BUFFER, instanceVbo);
+        glBufferData(
+            GL_ARRAY_BUFFER,
+            static_cast<GLsizeiptr>(models.size() * sizeof(glm::mat4)),
+            models.data(),
+            GL_DYNAMIC_DRAW
+        );
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+        // Draw
         glUseProgram(program);
 
-        glUniformMatrix4fv(uVP,   1, GL_FALSE, &vp[0][0]);
         glUniformMatrix4fv(uView, 1, GL_FALSE, &view[0][0]);
+        glUniformMatrix4fv(uProj, 1, GL_FALSE, &proj[0][0]);
 
-        glUniform1f(uProjScaleY, proj[1][1]);                  // perspective scale factor
-        glUniform1f(uViewportH,  static_cast<float>(g_fbh));   // framebuffer height in pixels
+        // Light coming from above-right-front (towards the scene)
+        glUniform3f(uLightDir, 0.4f, 0.7f, 0.6f);
+        glUniform3f(uBaseColor, 1.0f, 1.0f, 0.0f);
+        glUniform1f(uAmbient, 0.25f);
 
-        glBindVertexArray(vao);
-        glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(n));
+        glBindVertexArray(sphereVao);
+        glDrawElementsInstanced(GL_TRIANGLES, sphereIndexCount, GL_UNSIGNED_INT, nullptr, static_cast<GLsizei>(n));
         glBindVertexArray(0);
 
         glfwSwapBuffers(window);
     }
 
-
-    glDeleteBuffers(1, &vbo);
-    glDeleteVertexArrays(1, &vao);
+    // Cleanup
+    glDeleteBuffers(1, &instanceVbo);
+    glDeleteBuffers(1, &sphereEbo);
+    glDeleteBuffers(1, &sphereVbo);
+    glDeleteVertexArrays(1, &sphereVao);
     glDeleteProgram(program);
 
     glfwDestroyWindow(window);
