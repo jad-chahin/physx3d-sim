@@ -13,6 +13,34 @@
 static int g_fbw = 0;
 static int g_fbh = 0;
 
+
+struct Camera {
+    glm::vec3 pos{0.0f, 0.0f, 30.0f};
+    float yaw   = -glm::half_pi<float>(); // looking toward -Z by default
+    float pitch = 0.0f;
+
+    float moveSpeed = 20.0f; // units/sec
+    float lookSpeed = 0.0025f;
+};
+
+static void clampPitch(Camera& c) {
+    constexpr float lim = glm::radians(89.0f);
+    c.pitch = std::clamp(c.pitch, -lim, lim);
+}
+
+static glm::vec3 forwardDir(const Camera& c) {
+    const float cy = std::cos(c.yaw);
+    const float sy = std::sin(c.yaw);
+    const float cp = std::cos(c.pitch);
+    const float sp = std::sin(c.pitch);
+    return glm::normalize(glm::vec3(cy * cp, sp, sy * cp));
+}
+
+static glm::vec3 rightDir(const Camera& c) {
+    return glm::normalize(glm::cross(forwardDir(c), glm::vec3(0.0f, 1.0f, 0.0f)));
+}
+
+
 static void APIENTRY glDebugCallback(
     const GLenum source, const GLenum type, const GLuint id, const GLenum severity,
     const GLsizei length, const GLchar* message, const void* userParam)
@@ -174,7 +202,7 @@ int main() {
 
     sim::Body b{};
     b.position = sim::Vec3(10.0, -10.0, 10.0);
-    b.velocity = sim::Vec3(-2.0, 2.0, -2.0);
+    b.velocity = sim::Vec3(0.0, 0.0, 0.0);
     b.invMass  = 0.5;
     b.radius   = 2.0;
     b.prevPosition = b.position;
@@ -208,6 +236,15 @@ int main() {
     }
 
     glfwMakeContextCurrent(window);
+
+    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+
+    double lastMouseX = 0.0;
+    double lastMouseY = 0.0;
+    bool firstMouse = true;
+
+    Camera cam{};
+
 
     // VSync 0=OFF 1=ON
     glfwSwapInterval(1);
@@ -359,6 +396,34 @@ int main() {
         lastTime = now;
 
         frameTime = std::min(frameTime, maxStepsPerFrame * dt);
+
+        // Mouse look
+        double mx = 0.0, my = 0.0;
+        glfwGetCursorPos(window, &mx, &my);
+        if (firstMouse) {
+            lastMouseX = mx;
+            lastMouseY = my;
+            firstMouse = false;
+        }
+        const double dx = mx - lastMouseX;
+        const double dy = my - lastMouseY;
+        lastMouseX = mx;
+        lastMouseY = my;
+
+        cam.yaw   += static_cast<float>(dx) * cam.lookSpeed;
+        cam.pitch -= static_cast<float>(dy) * cam.lookSpeed;
+        clampPitch(cam);
+
+        // Keyboard move (uses real frameTime)
+        const float move = cam.moveSpeed * static_cast<float>(frameTime);
+        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) cam.pos += forwardDir(cam) * move;
+        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) cam.pos -= forwardDir(cam) * move;
+        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) cam.pos += rightDir(cam)   * move;
+        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) cam.pos -= rightDir(cam)   * move;
+        if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS) cam.pos += glm::vec3(0,1,0) * move;
+        if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) cam.pos -= glm::vec3(0,1,0) * move;
+
+
         accumulator += frameTime;
 
         auto& bs = world.bodies();
@@ -387,16 +452,10 @@ int main() {
         // Camera + projection
         const float aspect = (g_fbh > 0) ? (static_cast<float>(g_fbw) / static_cast<float>(g_fbh)) : 1.0f;
 
-        constexpr float cx = 0.0f;
-        constexpr float cy = 0.0f;
-        constexpr float cz = 0.0f;
-
         const glm::mat4 proj = glm::perspective(glm::radians(60.0f), aspect, 0.1f, 1000.0f);
-        const glm::mat4 view = glm::lookAt(
-            glm::vec3(cx, cy, cz + 30.0f),
-            glm::vec3(cx, cy, cz),
-            glm::vec3(0.0f, 1.0f, 0.0f)
-        );
+        const glm::vec3 camFwd = forwardDir(cam);
+        const glm::mat4 view = glm::lookAt(cam.pos, cam.pos + camFwd, glm::vec3(0.0f, 1.0f, 0.0f));
+
 
         // Build instance model matrices from interpolated positions
         models.resize(n);
