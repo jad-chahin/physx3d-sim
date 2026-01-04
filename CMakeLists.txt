@@ -27,13 +27,12 @@ FetchContent_MakeAvailable(glm)
 
 add_executable(physics3d
         src/main.cpp
-        src/sim/Vec3.h
-        src/sim/Body.h
         src/sim/World.cpp
-        src/sim/World.h
         src/third_party/glad/src/glad.c
         src/ui/DebugOverlay.cpp
-        src/ui/DebugOverlay.h
+        src/render/ShaderUtil.cpp
+        src/render/SphereMesh.cpp
+        src/input/Camera.cpp
 )
 
 target_include_directories(physics3d PRIVATE
@@ -41,7 +40,11 @@ target_include_directories(physics3d PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/glad/include
 )
 
-target_link_libraries(physics3d PRIVATE glfw opengl32 glm::glm)
+if (TARGET glm::glm)
+    target_link_libraries(physics3d PRIVATE glfw opengl32 glm::glm)
+else()
+    target_link_libraries(physics3d PRIVATE glfw opengl32 glm)
+endif()
 
 if (MSVC)
     target_compile_options(physics3d PRIVATE /W4 /permissive-)

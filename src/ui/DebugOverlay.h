@@ -7,6 +7,7 @@
 
 #include <glad/glad.h>
 
+
 class DebugOverlay {
 public:
     void init();
@@ -23,6 +24,5 @@ private:
     GLint uViewport_ = -1;
     GLint uColor_ = -1;
 };
-
 
 #endif //PHYSICS3D_DEBUGOVERLAY_H

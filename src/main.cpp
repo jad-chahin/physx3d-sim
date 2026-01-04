@@ -5,196 +5,22 @@
 #include <algorithm>
 #include <cstddef>
 #include <iostream>
-#include <utility> // std::move
-#include <cmath>
-#include "ui/DebugOverlay.h"
 #include <vector>
+#include <utility> // std::move
 
+#include "render/ShaderUtil.h"
+#include "render/SphereMesh.h"
+#include "input/Camera.h"
+#include "ui/DebugOverlay.h"
 #include "sim/World.h"
 
-static int g_fbw = 0;
-static int g_fbh = 0;
 
-
-struct Camera {
-    glm::vec3 pos{0.0f, 0.0f, 30.0f};
-    float yaw   = -glm::half_pi<float>(); // looking toward -Z by default
-    float pitch = 0.0f;
-
-    float moveSpeed = 20.0f; // units/sec
-    float lookSpeed = 0.0025f;
+struct FramebufferSize {
+    int w = 0;
+    int h = 0;
 };
+static FramebufferSize g_fb;
 
-static void clampPitch(Camera& c) {
-    constexpr float lim = glm::radians(89.0f);
-    c.pitch = std::clamp(c.pitch, -lim, lim);
-}
-
-static glm::vec3 forwardDir(const Camera& c) {
-    const float cy = std::cos(c.yaw);
-    const float sy = std::sin(c.yaw);
-    const float cp = std::cos(c.pitch);
-    const float sp = std::sin(c.pitch);
-    return glm::normalize(glm::vec3(cy * cp, sp, sy * cp));
-}
-
-static glm::vec3 rightDir(const Camera& c) {
-    return glm::normalize(glm::cross(forwardDir(c), glm::vec3(0.0f, 1.0f, 0.0f)));
-}
-
-
-static void APIENTRY glDebugCallback(
-    const GLenum source, const GLenum type, const GLuint id, const GLenum severity,
-    const GLsizei length, const GLchar* message, const void* userParam)
-{
-    (void)source; (void)type; (void)id; (void)severity; (void)length; (void)userParam;
-    std::cerr << "[GL DEBUG] " << message << "\n";
-}
-
-static GLuint compileShader(const GLenum type, const char* src) {
-    const GLuint s = glCreateShader(type);
-    glShaderSource(s, 1, &src, nullptr);
-    glCompileShader(s);
-
-    GLint ok = 0;
-    glGetShaderiv(s, GL_COMPILE_STATUS, &ok);
-    if (!ok) {
-        char log[2048];
-        glGetShaderInfoLog(s, sizeof(log), nullptr, log);
-        std::cerr << "Shader compile failed:\n" << log << "\n";
-    }
-    return s;
-}
-
-static GLuint linkProgram(const GLuint vs, const GLuint fs) {
-    const GLuint p = glCreateProgram();
-    glAttachShader(p, vs);
-    glAttachShader(p, fs);
-    glLinkProgram(p);
-
-    GLint ok = 0;
-    glGetProgramiv(p, GL_LINK_STATUS, &ok);
-    if (!ok) {
-        char log[2048];
-        glGetProgramInfoLog(p, sizeof(log), nullptr, log);
-        std::cerr << "Program link failed:\n" << log << "\n";
-    }
-    return p;
-}
-
-// Vertex shader (mesh + instancing)
-static auto kVert = R"GLSL(
-#version 330 core
-
-layout (location = 0) in vec3 aPos;
-layout (location = 1) in vec3 aNormal;
-
-// Instance model matrix columns
-layout (location = 2) in vec4 iM0;
-layout (location = 3) in vec4 iM1;
-layout (location = 4) in vec4 iM2;
-layout (location = 5) in vec4 iM3;
-
-uniform mat4 uView;
-uniform mat4 uProj;
-
-out vec3 vWorldPos;
-out vec3 vWorldNormal;
-
-void main() {
-    mat4 model = mat4(iM0, iM1, iM2, iM3);
-
-    vec4 worldPos4 = model * vec4(aPos, 1.0);
-    vWorldPos = worldPos4.xyz;
-
-    mat3 normalMat = transpose(inverse(mat3(model)));
-    vWorldNormal = normalize(normalMat * aNormal);
-
-    gl_Position = uProj * uView * worldPos4;
-}
-)GLSL";
-
-// Fragment shader (basic Lambert lighting)
-static auto kFrag = R"GLSL(
-#version 330 core
-
-in vec3 vWorldPos;
-in vec3 vWorldNormal;
-
-uniform vec3 uLightDir;   // world space (direction *towards* the light)
-uniform vec3 uBaseColor;
-uniform float uAmbient;
-
-out vec4 FragColor;
-
-void main() {
-    vec3 n = normalize(vWorldNormal);
-    vec3 l = normalize(uLightDir);
-
-    float diff = max(0.0, dot(n, l));
-    vec3 col = uBaseColor * (uAmbient + (1.0 - uAmbient) * diff);
-
-    FragColor = vec4(col, 1.0);
-}
-)GLSL";
-
-static void buildSphereMesh(
-    int stacks, int slices, // NOLINT
-    std::vector<float>& outVerts, // [px,py,pz,nx,ny,nz] per vertex
-    std::vector<std::uint32_t>& outIdx) // triangle indices
-{
-    stacks = std::max(2, stacks);
-    slices = std::max(3, slices);
-
-    outVerts.clear();
-    outIdx.clear();
-
-    // Vertex grid: (stacks+1) rings, each with (slices+1) verts (duplicate seam).
-    for (int i = 0; i <= stacks; ++i) {
-        const float v = static_cast<float>(i) / static_cast<float>(stacks); // 0..1
-        const float phi = glm::pi<float>() * v; // 0..pi
-
-        const float y = std::cos(phi);
-        const float r = std::sin(phi);
-
-        for (int j = 0; j <= slices; ++j) {
-            const float u = static_cast<float>(j) / static_cast<float>(slices); // 0..1
-            const float theta = glm::two_pi<float>() * u; // 0..2pi
-
-            const float x = r * std::cos(theta);
-            const float z = r * std::sin(theta);
-
-            // Position on unit sphere
-            outVerts.push_back(x);
-            outVerts.push_back(y);
-            outVerts.push_back(z);
-
-            // Normal (same as position for unit sphere)
-            outVerts.push_back(x);
-            outVerts.push_back(y);
-            outVerts.push_back(z);
-        }
-    }
-
-    const int stride = slices + 1;
-    for (int i = 0; i < stacks; ++i) {
-        for (int j = 0; j < slices; ++j) {
-            const auto i0 = static_cast<std::uint32_t>(i * stride + j);
-            const auto i1 = static_cast<std::uint32_t>((i + 1) * stride + j);
-            const auto i2 = static_cast<std::uint32_t>((i + 1) * stride + (j + 1));
-            const auto i3 = static_cast<std::uint32_t>(i * stride + (j + 1));
-
-            // Two triangles per quad
-            outIdx.push_back(i0);
-            outIdx.push_back(i1);
-            outIdx.push_back(i2);
-
-            outIdx.push_back(i0);
-            outIdx.push_back(i2);
-            outIdx.push_back(i3);
-        }
-    }
-}
 
 int main() {
     // Init world
@@ -248,10 +74,8 @@ int main() {
     Camera cam{};
 
     bool mouseCaptured = true;
-
     bool escWasDown = false;
     bool spaceWasDown = false;
-
     bool paused = false;
 
     // VSync 0=OFF 1=ON
@@ -277,12 +101,12 @@ int main() {
     }
 
     // Framebuffer size tracking + viewport
-    glfwGetFramebufferSize(window, &g_fbw, &g_fbh);
-    glViewport(0, 0, g_fbw, g_fbh);
+    glfwGetFramebufferSize(window, &g_fb.w, &g_fb.h);
+    glViewport(0, 0, g_fb.w, g_fb.h);
 
     glfwSetFramebufferSizeCallback(window, [](GLFWwindow*, const int w, const int h) {
-        g_fbw = w;
-        g_fbh = h;
+        g_fb.w = w;
+        g_fb.h = h;
         glViewport(0, 0, w, h);
     });
 
@@ -298,12 +122,27 @@ int main() {
     const auto sphereIndexCount = static_cast<GLsizei>(sphereIdx.size());
 
     // Compile/link shaders
-    const GLuint vs = compileShader(GL_VERTEX_SHADER, kVert);
-    const GLuint fs = compileShader(GL_FRAGMENT_SHADER, kFrag);
+    const GLuint vs = compileShader(GL_VERTEX_SHADER, kVertSrc);
+    const GLuint fs = compileShader(GL_FRAGMENT_SHADER, kFragSrc);
+
+    if (vs == 0 || fs == 0) {
+        std::cerr << "Shader compile failed; exiting.\n";
+        glfwDestroyWindow(window);
+        glfwTerminate();
+        return 1;
+    }
+
     const GLuint program = linkProgram(vs, fs);
 
     glDeleteShader(vs);
     glDeleteShader(fs);
+
+    if (program == 0) {
+        std::cerr << "Program link failed; exiting.\n";
+        glfwDestroyWindow(window);
+        glfwTerminate();
+        return 1;
+    }
 
     // Uniform locations
     const GLint uView     = glGetUniformLocation(program, "uView");     // NOLINT
@@ -401,6 +240,7 @@ int main() {
     while (!glfwWindowShouldClose(window)) {
         constexpr int maxStepsPerFrame = 10;
         glfwPollEvents();
+        auto& bs = world.bodies();
 
         // ESC toggles mouse capture
         const bool escDown = (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS);
@@ -415,6 +255,15 @@ int main() {
         const bool spaceDown = (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS);
         if (spaceDown && !spaceWasDown) {
             paused = !paused;
+
+            // prevent a big frameTime after pausing/unpausing
+            lastTime = glfwGetTime();
+            accumulator = 0.0;
+
+            // freeze interpolation cleanly
+            for (auto& body : bs) {
+                body.prevPosition = body.position;
+            }
         }
         spaceWasDown = spaceDown;
 
@@ -453,9 +302,6 @@ int main() {
             if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) cam.pos -= glm::vec3(0,1,0) * move;
         }
 
-
-        auto& bs = world.bodies();
-
         if (!paused) {
             accumulator += frameTime;
 
@@ -469,7 +315,7 @@ int main() {
         }
 
         // Interpolation factor for rendering
-        const double alpha = paused ? 1.0 : std::clamp(accumulator / dt, 0.0, 1.0);
+        const double alpha = std::clamp(accumulator / dt, 0.0, 1.0);
 
         const std::size_t n = bs.size();
 
@@ -486,7 +332,7 @@ int main() {
         }
 
         // Camera + projection
-        const float aspect = (g_fbh > 0) ? (static_cast<float>(g_fbw) / static_cast<float>(g_fbh)) : 1.0f;
+        const float aspect = (g_fb.h > 0) ? (static_cast<float>(g_fb.w) / static_cast<float>(g_fb.h)) : 1.0f;
 
         const glm::mat4 proj = glm::perspective(glm::radians(60.0f), aspect, 0.1f, 1000.0f);
         const glm::vec3 camFwd = forwardDir(cam);
@@ -535,7 +381,7 @@ int main() {
 
         glDisable(GL_DEPTH_TEST);
         glDisable(GL_CULL_FACE);
-        overlay.draw(g_fbw, g_fbh, paused);
+        overlay.draw(g_fb.w, g_fb.h, paused);
         glEnable(GL_CULL_FACE);
         glEnable(GL_DEPTH_TEST);
 

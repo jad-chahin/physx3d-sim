@@ -4,7 +4,9 @@
 
 #ifndef PHYSICS3D_VEC3_H
 #define PHYSICS3D_VEC3_H
+
 #include <cmath>
+
 
 namespace sim {
 

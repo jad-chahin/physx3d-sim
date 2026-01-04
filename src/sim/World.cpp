@@ -3,11 +3,11 @@
 //
 
 #include "World.h"
-
 #include <algorithm>
 #include <cmath>    // sqrt
 #include <cstddef>  // std::size_t
 #include <utility>  // std::move
+
 
 namespace sim {
     // Constructors

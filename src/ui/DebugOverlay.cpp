@@ -3,14 +3,11 @@
 //
 
 #include "ui/DebugOverlay.h"
-
 #include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
 
-// Reuse your existing compile/link helpers by copying them here,
-// so DebugOverlay is self-contained.
 
 static GLuint compileShader(const GLenum type, const char* src) {
     const GLuint s = glCreateShader(type);

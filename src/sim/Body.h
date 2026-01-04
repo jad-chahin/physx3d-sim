@@ -4,7 +4,9 @@
 
 #ifndef PHYSICS3D_BODY_H
 #define PHYSICS3D_BODY_H
+
 #include "Vec3.h"
+
 
 namespace sim {
 
