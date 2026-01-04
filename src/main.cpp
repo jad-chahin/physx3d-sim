@@ -6,6 +6,8 @@
 #include <cstddef>
 #include <iostream>
 #include <utility> // std::move
+#include <cmath>
+#include "ui/DebugOverlay.h"
 #include <vector>
 
 #include "sim/World.h"
@@ -202,7 +204,7 @@ int main() {
 
     sim::Body b{};
     b.position = sim::Vec3(10.0, -10.0, 10.0);
-    b.velocity = sim::Vec3(0.0, 0.0, 0.0);
+    b.velocity = sim::Vec3(-2.0, 2.0, -2.0);
     b.invMass  = 0.5;
     b.radius   = 2.0;
     b.prevPosition = b.position;
@@ -245,6 +247,12 @@ int main() {
 
     Camera cam{};
 
+    bool mouseCaptured = true;
+
+    bool escWasDown = false;
+    bool spaceWasDown = false;
+
+    bool paused = false;
 
     // VSync 0=OFF 1=ON
     glfwSwapInterval(1);
@@ -378,6 +386,9 @@ int main() {
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
 
+    DebugOverlay overlay;
+    overlay.init();
+
     // Tick loop
     constexpr double tickRate = 60.0;
     constexpr double dt = 1.0 / tickRate;
@@ -391,6 +402,23 @@ int main() {
         constexpr int maxStepsPerFrame = 10;
         glfwPollEvents();
 
+        // ESC toggles mouse capture
+        const bool escDown = (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS);
+        if (escDown && !escWasDown) {
+            mouseCaptured = !mouseCaptured;
+            glfwSetInputMode(window, GLFW_CURSOR, mouseCaptured ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+            firstMouse = true; // prevent jump when recapturing
+        }
+        escWasDown = escDown;
+
+        // SPACE toggles pause
+        const bool spaceDown = (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS);
+        if (spaceDown && !spaceWasDown) {
+            paused = !paused;
+        }
+        spaceWasDown = spaceDown;
+
+
         const double now = glfwGetTime();
         double frameTime = now - lastTime;
         lastTime = now;
@@ -398,50 +426,58 @@ int main() {
         frameTime = std::min(frameTime, maxStepsPerFrame * dt);
 
         // Mouse look
-        double mx = 0.0, my = 0.0;
-        glfwGetCursorPos(window, &mx, &my);
-        if (firstMouse) {
+        if (mouseCaptured) {
+            double mx = 0.0, my = 0.0;
+            glfwGetCursorPos(window, &mx, &my);
+            if (firstMouse) {
+                lastMouseX = mx;
+                lastMouseY = my;
+                firstMouse = false;
+            }
+            const double dx = mx - lastMouseX;
+            const double dy = my - lastMouseY;
             lastMouseX = mx;
             lastMouseY = my;
-            firstMouse = false;
+
+            cam.yaw   += static_cast<float>(dx) * cam.lookSpeed;
+            cam.pitch -= static_cast<float>(dy) * cam.lookSpeed;
+            clampPitch(cam);
+
+            // Keyboard move (uses real frameTime)
+            const float move = cam.moveSpeed * static_cast<float>(frameTime);
+            if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) cam.pos += forwardDir(cam) * move;
+            if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) cam.pos -= forwardDir(cam) * move;
+            if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) cam.pos += rightDir(cam)   * move;
+            if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) cam.pos -= rightDir(cam)   * move;
+            if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS) cam.pos += glm::vec3(0,1,0) * move;
+            if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) cam.pos -= glm::vec3(0,1,0) * move;
         }
-        const double dx = mx - lastMouseX;
-        const double dy = my - lastMouseY;
-        lastMouseX = mx;
-        lastMouseY = my;
 
-        cam.yaw   += static_cast<float>(dx) * cam.lookSpeed;
-        cam.pitch -= static_cast<float>(dy) * cam.lookSpeed;
-        clampPitch(cam);
-
-        // Keyboard move (uses real frameTime)
-        const float move = cam.moveSpeed * static_cast<float>(frameTime);
-        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) cam.pos += forwardDir(cam) * move;
-        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) cam.pos -= forwardDir(cam) * move;
-        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) cam.pos += rightDir(cam)   * move;
-        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) cam.pos -= rightDir(cam)   * move;
-        if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS) cam.pos += glm::vec3(0,1,0) * move;
-        if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) cam.pos -= glm::vec3(0,1,0) * move;
-
-
-        accumulator += frameTime;
 
         auto& bs = world.bodies();
 
-        while (accumulator >= dt) {
-            for (auto& body : bs) {
-                body.prevPosition = body.position;
+        if (!paused) {
+            accumulator += frameTime;
+
+            while (accumulator >= dt) {
+                for (auto& body : bs) {
+                    body.prevPosition = body.position;
+                }
+                world.step(dt);
+                accumulator -= dt;
             }
-            world.step(dt);
-            accumulator -= dt;
         }
 
-        // interpolation factor for rendering
-        const double alpha = std::clamp(accumulator / dt, 0.0, 1.0);
+        // Interpolation factor for rendering
+        const double alpha = paused ? 1.0 : std::clamp(accumulator / dt, 0.0, 1.0);
 
         const std::size_t n = bs.size();
 
-        glClearColor(0.05f, 0.05f, 0.08f, 1.0f);
+        if (paused) {
+            glClearColor(0.20f, 0.02f, 0.02f, 1.0f); // paused tint
+        } else {
+            glClearColor(0.05f, 0.05f, 0.08f, 1.0f);
+        }
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         if (n == 0) {
@@ -497,6 +533,12 @@ int main() {
         glDrawElementsInstanced(GL_TRIANGLES, sphereIndexCount, GL_UNSIGNED_INT, nullptr, static_cast<GLsizei>(n));
         glBindVertexArray(0);
 
+        glDisable(GL_DEPTH_TEST);
+        glDisable(GL_CULL_FACE);
+        overlay.draw(g_fbw, g_fbh, paused);
+        glEnable(GL_CULL_FACE);
+        glEnable(GL_DEPTH_TEST);
+
         glfwSwapBuffers(window);
     }
 
@@ -506,6 +548,7 @@ int main() {
     glDeleteBuffers(1, &sphereVbo);
     glDeleteVertexArrays(1, &sphereVao);
     glDeleteProgram(program);
+    overlay.shutdown();
 
     glfwDestroyWindow(window);
     glfwTerminate();

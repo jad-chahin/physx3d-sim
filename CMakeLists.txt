@@ -32,6 +32,8 @@ add_executable(physics3d
         src/sim/World.cpp
         src/sim/World.h
         src/third_party/glad/src/glad.c
+        src/ui/DebugOverlay.cpp
+        src/ui/DebugOverlay.h
 )
 
 target_include_directories(physics3d PRIVATE
