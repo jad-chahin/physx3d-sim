@@ -9,6 +9,18 @@
 #include "sim/World.h"
 
 
+// Framebuffer size
+static int g_fbw = 0;
+static int g_fbh = 0;
+
+static void framebufferSizeCallback(GLFWwindow*, int w, int h)
+{
+    g_fbw = w;
+    g_fbh = h;
+    glViewport(0, 0, w, h);
+}
+
+
 static void APIENTRY glDebugCallback(
     const GLenum source, const GLenum type, const GLuint id, const GLenum severity,
     const GLsizei length, const GLchar* message, const void* userParam)
@@ -18,7 +30,8 @@ static void APIENTRY glDebugCallback(
 }
 
 
-static GLuint compileShader(const GLenum type, const char* src) {
+static GLuint compileShader(const GLenum type, const char* src)
+{
     const GLuint s = glCreateShader(type);
     glShaderSource(s, 1, &src, nullptr);
     glCompileShader(s);
@@ -33,7 +46,8 @@ static GLuint compileShader(const GLenum type, const char* src) {
     return s;
 }
 
-static GLuint linkProgram(const GLuint vs, const GLuint fs) {
+static GLuint linkProgram(const GLuint vs, const GLuint fs)
+{
     const GLuint p = glCreateProgram();
     glAttachShader(p, vs);
     glAttachShader(p, fs);
@@ -48,6 +62,7 @@ static GLuint linkProgram(const GLuint vs, const GLuint fs) {
     }
     return p;
 }
+
 
 // Vertex shader
 static auto kVert = R"GLSL(
@@ -71,6 +86,7 @@ void main() {
     gl_PointSize = (aPosR.w * uProjScaleY * uViewportH) / z;
 }
 )GLSL";
+
 
 // Fragment shader
 static auto kFrag = R"GLSL(
@@ -98,16 +114,19 @@ void main() {
 )GLSL";
 
 
-int main() {
+int main()
+{
     // Init world
     sim::Body a{};
     a.invMass = 1.0;
+    a.prevPosition = a.position;
 
     sim::Body b{};
     b.position = sim::Vec3(10.0, -10.0, 10.0);
-    b.velocity = sim::Vec3(0.0, 0.0, 0.0);
+    b.velocity = sim::Vec3(-2.0, 2.0, -2.0);
     b.invMass  = 0.5;
     b.radius   = 2.0;
+    b.prevPosition = b.position;
 
     std::vector<sim::Body> bodies;
     bodies.push_back(a);
@@ -117,7 +136,6 @@ int main() {
 
 
     // Rendering
-
     if (!glfwInit()) {
         std::cerr << "Failed to init GLFW\n";
         return 1;
@@ -132,6 +150,7 @@ int main() {
     glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
 
     glfwWindowHint(GLFW_DEPTH_BITS, 24);
+
     GLFWwindow* window = glfwCreateWindow(1280, 720, "physics3d", nullptr, nullptr);
     if (!window) {
         std::cerr << "Failed to create GLFW window\n";
@@ -155,6 +174,8 @@ int main() {
     std::cout << "Renderer: " << glGetString(GL_RENDERER) << "\n";
     std::cout << "Version:  " << glGetString(GL_VERSION) << "\n";
 
+
+    // Debug output
     int flags = 0;
     glGetIntegerv(GL_CONTEXT_FLAGS, &flags);
     if (flags & GL_CONTEXT_FLAG_DEBUG_BIT) {
@@ -163,33 +184,22 @@ int main() {
         glDebugMessageCallback(glDebugCallback, nullptr);
     }
 
+
     // Set initial viewport + update it on resize
-    int fbw = 0, fbh = 0;
-    glfwGetFramebufferSize(window, &fbw, &fbh);
-    glViewport(0, 0, fbw, fbh);
-
-    glfwSetFramebufferSizeCallback(window, [](GLFWwindow*, const int w, const int h) {
-        glViewport(0, 0, w, h);
-    });
-
-    static int g_fbw = 0, g_fbh = 0;
-
     glfwGetFramebufferSize(window, &g_fbw, &g_fbh);
     glViewport(0, 0, g_fbw, g_fbh);
-
-    glfwSetFramebufferSizeCallback(window, [](GLFWwindow*, int w, int h) {
-        g_fbw = w; g_fbh = h;
-        glViewport(0, 0, w, h);
-    });
+    glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
 
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_PROGRAM_POINT_SIZE);
 
+
+    // Shaders + program
     const GLuint vs = compileShader(GL_VERTEX_SHADER, kVert);
     const GLuint fs = compileShader(GL_FRAGMENT_SHADER, kFrag);
     const GLuint program = linkProgram(vs, fs);
 
-    GLint uVP = glGetUniformLocation(program, "uVP"); // NOLINT
+    GLint uVP         = glGetUniformLocation(program, "uVP");         // NOLINT
     GLint uView       = glGetUniformLocation(program, "uView");       // NOLINT
     GLint uProjScaleY = glGetUniformLocation(program, "uProjScaleY"); // NOLINT
     GLint uViewportH  = glGetUniformLocation(program, "uViewportH");  // NOLINT
@@ -198,13 +208,14 @@ int main() {
         std::cerr << "Missing uniform(s). Check shader names match exactly.\n";
     }
 
-
     // Delete shaders after linking
     glDeleteShader(vs);
     glDeleteShader(fs);
 
     std::cout << "Shader program linked: " << program << "\n";
 
+
+    // VAO/VBO
     GLuint vao = 0, vbo = 0;
     glGenVertexArrays(1, &vao);
     glGenBuffers(1, &vbo);
@@ -226,10 +237,10 @@ int main() {
         nullptr,
         GL_DYNAMIC_DRAW);
 
-    // Tell OpenGL how to read the buffer for shader input location 0 (aPos)
+    // Tell OpenGL how to read the buffer for shader input location 0 (aPosR)
     glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 4 * sizeof(float), nullptr);
-
     glEnableVertexAttribArray(0);
+
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
 
@@ -237,11 +248,12 @@ int main() {
     // Tick loop
     constexpr double tickRate = 60.0;
     constexpr double dt = 1.0 / tickRate;
+
     double lastTime = glfwGetTime();
     double accumulator = 0.0;
 
     while (!glfwWindowShouldClose(window)) {
-        constexpr int maxStepsPerFrame = 5;
+        constexpr int maxStepsPerFrame = 10;
         glfwPollEvents();
 
         const double now = glfwGetTime();
@@ -249,15 +261,21 @@ int main() {
         lastTime = now;
 
         frameTime = std::min(frameTime, maxStepsPerFrame * dt);
-
         accumulator += frameTime;
 
+        auto& bs = world.bodies();
+
         while (accumulator >= dt) {
+            for (auto& body : bs) {
+                body.prevPosition = body.position;
+            }
             world.step(dt);
             accumulator -= dt;
         }
 
-        const auto& bs = world.bodies();
+        // interpolation factor for rendering
+        const double alpha = std::clamp(accumulator / dt, 0.0, 1.0);
+
         const std::size_t n = bs.size();
 
         if (n == 0) {
@@ -280,19 +298,22 @@ int main() {
         }
 
         // Camera at world origin
-        constexpr float cx = 0.0; // NOLINT
-        constexpr float cy = 0.0; // NOLINT
-        constexpr float cz = 0.0; // NOLINT
+        constexpr float cx = 0.0f; // NOLINT
+        constexpr float cy = 0.0f; // NOLINT
+        constexpr float cz = 0.0f; // NOLINT
 
         // Camera zoom
         constexpr float viewHalfWidth = 15.0f; // NOLINT
+        (void)viewHalfWidth;
 
         // Build N vertices
         gpuVerts.resize(n * 4);
         for (std::size_t i = 0; i < n; ++i) {
-            gpuVerts[4*i + 0] = static_cast<float>(bs[i].position.x);
-            gpuVerts[4*i + 1] = static_cast<float>(bs[i].position.y);
-            gpuVerts[4*i + 2] = static_cast<float>(bs[i].position.z);
+            const sim::Vec3 p = bs[i].prevPosition + (bs[i].position - bs[i].prevPosition) * alpha;
+
+            gpuVerts[4*i + 0] = static_cast<float>(p.x);
+            gpuVerts[4*i + 1] = static_cast<float>(p.y);
+            gpuVerts[4*i + 2] = static_cast<float>(p.z);
             gpuVerts[4*i + 3] = static_cast<float>(bs[i].radius);
         }
 
@@ -305,12 +326,14 @@ int main() {
             gpuVerts.data());
         glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 
         // Maintain aspect ratio
-        const float aspect = (g_fbh > 0) ? (static_cast<float>(g_fbw) / static_cast<float>(g_fbh)) : 1.0f;
+        const float aspect = (g_fbh > 0)
+            ? (static_cast<float>(g_fbw) / static_cast<float>(g_fbh))
+            : 1.0f;
 
         // Perspective camera
         const glm::mat4 proj = glm::perspective(glm::radians(60.0f), aspect, 0.1f, 1000.0f);
@@ -326,18 +349,21 @@ int main() {
         glUniformMatrix4fv(uVP,   1, GL_FALSE, &vp[0][0]);
         glUniformMatrix4fv(uView, 1, GL_FALSE, &view[0][0]);
 
-        glUniform1f(uProjScaleY, proj[1][1]); // perspective scale factor
-        glUniform1f(uViewportH,  static_cast<float>(g_fbh)); // framebuffer height in pixels
+        glUniform1f(uProjScaleY, proj[1][1]);                  // perspective scale factor
+        glUniform1f(uViewportH,  static_cast<float>(g_fbh));   // framebuffer height in pixels
 
         glBindVertexArray(vao);
         glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(n));
         glBindVertexArray(0);
+
         glfwSwapBuffers(window);
     }
+
 
     glDeleteBuffers(1, &vbo);
     glDeleteVertexArrays(1, &vao);
     glDeleteProgram(program);
+
     glfwDestroyWindow(window);
     glfwTerminate();
     return 0;

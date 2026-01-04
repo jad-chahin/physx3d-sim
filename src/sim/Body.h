@@ -14,6 +14,7 @@ namespace sim {
         Vec3 velocity; // [m/s]
         double invMass{}; // [1/kg]  (0 means "infinite mass" / static body)
         double radius{1.0}; // [m]
+        Vec3 prevPosition;
     };
 } // sim
 
