@@ -35,9 +35,18 @@ int main() {
     b.radius   = 2.0;
     b.prevPosition = b.position;
 
+
+    sim::Body c{};
+    c.position = sim::Vec3(20.0, -20.0, 10.0);
+    c.velocity = sim::Vec3(0.0, 0.0, 0.0);
+    c.invMass  = 0.5;
+    c.radius   = 2.0;
+    c.prevPosition = c.position;
+
     std::vector<sim::Body> bodies;
     bodies.push_back(a);
     bodies.push_back(b);
+    bodies.push_back(c);
 
     sim::World world(std::move(bodies)); // Default params
 
@@ -56,7 +65,7 @@ int main() {
     glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
 
     glfwWindowHint(GLFW_DEPTH_BITS, 24);
-    GLFWwindow* window = glfwCreateWindow(1280, 720, "physics3d", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(1920, 1080, "physics3d", nullptr, nullptr);
     if (!window) {
         std::cerr << "Failed to create GLFW window\n";
         glfwTerminate();
