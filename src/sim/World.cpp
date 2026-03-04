@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>    // sqrt
 #include <cstddef>  // std::size_t
+#include <limits>
 #include <utility>  // std::move
 
 
@@ -26,7 +27,7 @@ namespace sim {
         resetForces_();
         computeForces_();
         integrate_(dt);
-        collide_();
+        moveBodiesWithCCD_(dt);
     }
 
     void World::addBody(const Body& b)
@@ -131,8 +132,135 @@ namespace sim {
             }
             Vec3 a = forces_[i] * b.invMass; // a = F/m
             b.velocity = b.velocity + a * dt;
+        }
+    }
+
+    void World::advancePositions_(const double dt)
+    {
+        for (auto& b : bodies_) {
             b.position = b.position + b.velocity * dt;
         }
+    }
+
+    bool World::sweptCollisionTime_(const std::size_t i, const std::size_t j, const double maxTime, double& outTime) const
+    {
+        const Body& A = bodies_[i];
+        const Body& B = bodies_[j];
+
+        const Vec3 p = B.position - A.position;  // relative position
+        const Vec3 v = B.velocity - A.velocity;  // relative velocity
+        const double r = A.radius + B.radius;
+
+        const double c = p.dot(p) - r * r;
+        if (c <= 0.0) {
+            outTime = 0.0; // already overlapping
+            return true;
+        }
+
+        const double a = v.dot(v);
+        if (a <= 1e-14) {
+            return false; // no relative motion
+        }
+
+        const double b = 2.0 * p.dot(v);
+        const double discriminant = b * b - 4.0 * a * c;
+        if (discriminant < 0.0) {
+            return false;
+        }
+
+        const double sqrtDisc = std::sqrt(discriminant);
+        const double invDenom = 0.5 / a;
+        const double t0 = (-b - sqrtDisc) * invDenom;
+        const double t1 = (-b + sqrtDisc) * invDenom;
+
+        if (t1 < 0.0) {
+            return false; // collision happened in the past
+        }
+
+        const double tHit = (t0 >= 0.0) ? t0 : 0.0;
+        if (tHit > maxTime) {
+            return false;
+        }
+
+        outTime = tHit;
+        return true;
+    }
+
+    bool World::findEarliestCollision_(const double maxTime, std::size_t& outI, std::size_t& outJ, double& outTime) const
+    {
+        bool found = false;
+        outTime = std::numeric_limits<double>::infinity();
+
+        for (std::size_t i = 0; i < bodies_.size(); ++i) {
+            for (std::size_t j = i + 1; j < bodies_.size(); ++j) {
+                const Body& A = bodies_[i];
+                const Body& B = bodies_[j];
+                if (A.invMass == 0.0 && B.invMass == 0.0) {
+                    continue; // static-static never needs solving
+                }
+
+                double t = 0.0;
+                if (!sweptCollisionTime_(i, j, maxTime, t)) {
+                    continue;
+                }
+
+                if (t < outTime) {
+                    outTime = t;
+                    outI = i;
+                    outJ = j;
+                    found = true;
+                }
+            }
+        }
+
+        return found;
+    }
+
+    void World::moveBodiesWithCCD_(const double dt)
+    {
+        if (!params_.enableCollisions) {
+            advancePositions_(dt);
+            return;
+        }
+
+        double remaining = dt;
+        constexpr double kTimeEps = 1e-9;
+        const int maxEvents = std::max(1, params_.collisionIterations) * std::max(1, static_cast<int>(bodies_.size()));
+        int events = 0;
+
+        while (remaining > kTimeEps && events < maxEvents) {
+            std::size_t i = 0;
+            std::size_t j = 0;
+            double tHit = 0.0;
+
+            if (!findEarliestCollision_(remaining, i, j, tHit)) {
+                advancePositions_(remaining);
+                remaining = 0.0;
+                break;
+            }
+
+            if (tHit > kTimeEps) {
+                advancePositions_(tHit);
+                remaining -= tHit;
+            } else {
+                // Guarantee forward progress for immediate/overlap contacts.
+                const double stepEps = std::min(remaining, 1e-6);
+                if (stepEps > 0.0) {
+                    advancePositions_(stepEps);
+                    remaining -= stepEps;
+                }
+            }
+
+            solveCollisionPair_(i, j, true);
+            ++events;
+        }
+
+        if (remaining > kTimeEps) {
+            advancePositions_(remaining);
+        }
+
+        // Resolve any tiny residual overlap from numeric error.
+        collide_();
     }
 
     void World::collide_()
@@ -158,9 +286,9 @@ namespace sim {
         return (r <= minDistance * minDistance); // r^2 <= minDistance^2 ?
     }
 
-    void World::solveCollisionPair_(const std::size_t i, const std::size_t j)
+    void World::solveCollisionPair_(const std::size_t i, const std::size_t j, const bool assumeColliding)
     {
-        if (!isColliding_(i, j)) {
+        if (!assumeColliding && !isColliding_(i, j)) {
             return;
         }
 
@@ -224,7 +352,6 @@ namespace sim {
  * Optimize where possible
  * Swap integrator to leapfrog / velocity Verlet
  * Use fixed timestep + substeps (especially for collisions)
- * Add continuous collision detection (time-of-impact) to prevent tunneling
  * Upgrade collision solving: more iterations + better position correction / stable contacts
  * Add angular velocity + torque (spin from collisions)
  */

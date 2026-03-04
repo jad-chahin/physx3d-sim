@@ -66,16 +66,20 @@ namespace sim {
         // Step sub-stages
         void resetForces_();
         void computeForces_(); // Currently gravity only
-        void integrate_(double dt); // Update velocity and position from forces_
+        void integrate_(double dt); // Semi-implicit Euler velocity update
+        void advancePositions_(double dt);
+        void moveBodiesWithCCD_(double dt);
 
         // Force helpers
         [[nodiscard]] double epsilon(std::size_t i, std::size_t j) const;
         void applyGravityPair_(std::size_t i, std::size_t j);
 
         // Collision helpers
+        [[nodiscard]] bool sweptCollisionTime_(std::size_t i, std::size_t j, double maxTime, double& outTime) const;
+        [[nodiscard]] bool findEarliestCollision_(double maxTime, std::size_t& outI, std::size_t& outJ, double& outTime) const;
         void collide_(); // detect + resolve collisions
         [[nodiscard]] bool isColliding_(std::size_t i, std::size_t j) const;
-        void solveCollisionPair_(std::size_t i, std::size_t j);
+        void solveCollisionPair_(std::size_t i, std::size_t j, bool assumeColliding = false);
     };
 
 } // sim
