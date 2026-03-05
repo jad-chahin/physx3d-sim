@@ -28,6 +28,8 @@ FetchContent_MakeAvailable(glm)
 add_executable(physics3d
         src/main.cpp
         src/sim/World.cpp
+        src/sim/Broadphase.cpp
+        src/sim/Collision.cpp
         src/third_party/glad/src/glad.c
         src/ui/DebugOverlay.cpp
         src/render/ShaderUtil.cpp

@@ -3,26 +3,38 @@
 //
 
 #include "World.h"
+#include "Broadphase.h"
+#include "Collision.h"
 #include <algorithm>
-#include <cmath>    // sqrt
-#include <cstddef>  // std::size_t
+#include <cmath>
 #include <limits>
-#include <utility>  // std::move
-
+#include <utility>
+#include <unordered_set>
 
 namespace sim {
-    // Constructors
-    World::World(const Params &params)
-    : params_(params) {}
+    namespace {
+        struct PairHash {
+            std::size_t operator()(const std::pair<std::size_t, std::size_t>& p) const {
+                std::size_t h = 0xcbf29ce484222325ULL;
+                h ^= std::hash<std::size_t>{}(p.first) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
+                h ^= std::hash<std::size_t>{}(p.second) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
+                return h;
+            }
+        };
+    } // namespace
+
+    World::World(const Params& params)
+        : params_(params) {}
 
     World::World(std::vector<Body> bodies)
-    : bodies_(std::move(bodies)) {}
+        : bodies_(std::move(bodies)) {}
 
-    World::World(std::vector<Body> bodies, const Params &params)
-    : params_(params), bodies_(std::move(bodies)) {}
+    World::World(std::vector<Body> bodies, const Params& params)
+        : params_(params), bodies_(std::move(bodies)) {}
 
     void World::step(const double dt)
     {
+        metrics_ = {};
         syncForces_();
         resetForces_();
         computeForces_();
@@ -61,6 +73,11 @@ namespace sim {
         return params_;
     }
 
+    const World::Metrics& World::metrics() const
+    {
+        return metrics_;
+    }
+
     void World::syncForces_()
     {
         if (bodies_.size() != forces_.size()) {
@@ -70,26 +87,22 @@ namespace sim {
 
     void World::resetForces_()
     {
-        for (auto & force : forces_) {
+        for (auto& force : forces_) {
             force = Vec3(0.0, 0.0, 0.0);
         }
     }
 
     void World::computeForces_()
     {
-        if (params_.enableGravity) {
-            // Compute effect of gravity on all unique pairs
-            for (std::size_t i = 0; i < bodies_.size(); i++) {
-                for (std::size_t j = i + 1; j < bodies_.size(); j++) {
-                    applyGravityPair_(i, j);
-                }
+        if (!params_.enableGravity) {
+            return;
+        }
+
+        for (std::size_t i = 0; i < bodies_.size(); ++i) {
+            for (std::size_t j = i + 1; j < bodies_.size(); ++j) {
+                applyGravityPair_(i, j);
             }
         }
-    }
-
-    double World::epsilon(const std::size_t i, const std::size_t j) const {
-        // Scale epsilon softening with radius sizes
-        return (bodies_[i].radius + bodies_[j].radius) * 1e-6;
     }
 
     void World::applyGravityPair_(const std::size_t i, const std::size_t j)
@@ -97,40 +110,34 @@ namespace sim {
         const Body& A = bodies_[i];
         const Body& B = bodies_[j];
 
-        const double invM1 = A.invMass;
-        const double invM2 = B.invMass;
-
-        if (invM1 == 0 or invM2 == 0) {
-            return; // No gravity for static objects by convention
+        if (A.invMass == 0.0 || B.invMass == 0.0) {
+            return;
         }
 
-        const Vec3 d = B.position - A.position; // Difference vector
+        const Vec3 d = B.position - A.position;
+        const double r2 = d.dot(d);
+        const double eps = (A.radius + B.radius) * 1e-6;
+        const double r2Soft = r2 + eps * eps;
 
-        const double r1 = d.dot(d); // r^2
+        const double m1 = 1.0 / A.invMass;
+        const double m2 = 1.0 / B.invMass;
 
-        const double eps = epsilon(i, j);
-        const double r1s = r1 + eps * eps; // r^2 + eps^2 (softened)
+        const double invR = 1.0 / std::sqrt(r2Soft);
+        const double invR3 = invR * invR * invR;
 
-        const double m1 = 1.0 / invM1;
-        const double m2 = 1.0 / invM2;
-
-        const double inv_r  = 1.0 / std::sqrt(r1s);
-        const double inv_r3 = inv_r * inv_r * inv_r;
-
-        const Vec3 F12 = d * (params_.G * m1 * m2 * inv_r3);
-
-        forces_[i] = forces_[i] + F12;
-        forces_[j] = forces_[j] - F12;
+        const Vec3 f12 = d * (params_.G * m1 * m2 * invR3);
+        forces_[i] = forces_[i] + f12;
+        forces_[j] = forces_[j] - f12;
     }
 
     void World::integrate_(const double dt)
     {
         for (std::size_t i = 0; i < bodies_.size(); ++i) {
             Body& b = bodies_[i];
-            if (b.invMass == 0) {
-                continue; // Forces won't affect static objects
+            if (b.invMass == 0.0) {
+                continue;
             }
-            Vec3 a = forces_[i] * b.invMass; // a = F/m
+            const Vec3 a = forces_[i] * b.invMass;
             b.velocity = b.velocity + a * dt;
         }
     }
@@ -142,80 +149,6 @@ namespace sim {
         }
     }
 
-    bool World::sweptCollisionTime_(const std::size_t i, const std::size_t j, const double maxTime, double& outTime) const
-    {
-        const Body& A = bodies_[i];
-        const Body& B = bodies_[j];
-
-        const Vec3 p = B.position - A.position;  // relative position
-        const Vec3 v = B.velocity - A.velocity;  // relative velocity
-        const double r = A.radius + B.radius;
-
-        const double c = p.dot(p) - r * r;
-        if (c <= 0.0) {
-            outTime = 0.0; // already overlapping
-            return true;
-        }
-
-        const double a = v.dot(v);
-        if (a <= 1e-14) {
-            return false; // no relative motion
-        }
-
-        const double b = 2.0 * p.dot(v);
-        const double discriminant = b * b - 4.0 * a * c;
-        if (discriminant < 0.0) {
-            return false;
-        }
-
-        const double sqrtDisc = std::sqrt(discriminant);
-        const double invDenom = 0.5 / a;
-        const double t0 = (-b - sqrtDisc) * invDenom;
-        const double t1 = (-b + sqrtDisc) * invDenom;
-
-        if (t1 < 0.0) {
-            return false; // collision happened in the past
-        }
-
-        const double tHit = (t0 >= 0.0) ? t0 : 0.0;
-        if (tHit > maxTime) {
-            return false;
-        }
-
-        outTime = tHit;
-        return true;
-    }
-
-    bool World::findEarliestCollision_(const double maxTime, std::size_t& outI, std::size_t& outJ, double& outTime) const
-    {
-        bool found = false;
-        outTime = std::numeric_limits<double>::infinity();
-
-        for (std::size_t i = 0; i < bodies_.size(); ++i) {
-            for (std::size_t j = i + 1; j < bodies_.size(); ++j) {
-                const Body& A = bodies_[i];
-                const Body& B = bodies_[j];
-                if (A.invMass == 0.0 && B.invMass == 0.0) {
-                    continue; // static-static never needs solving
-                }
-
-                double t = 0.0;
-                if (!sweptCollisionTime_(i, j, maxTime, t)) {
-                    continue;
-                }
-
-                if (t < outTime) {
-                    outTime = t;
-                    outI = i;
-                    outJ = j;
-                    found = true;
-                }
-            }
-        }
-
-        return found;
-    }
-
     void World::moveBodiesWithCCD_(const double dt)
     {
         if (!params_.enableCollisions) {
@@ -223,135 +156,126 @@ namespace sim {
             return;
         }
 
+        const collision::SolveParams solveParams{
+            params_.restitution,
+            params_.penetrationSlop,
+            params_.positionCorrectionPercent
+        };
+
         double remaining = dt;
-        constexpr double kTimeEps = 1e-9;
-        const int maxEvents = std::max(1, params_.collisionIterations) * std::max(1, static_cast<int>(bodies_.size()));
-        int events = 0;
+        const double machineEps = std::numeric_limits<double>::epsilon();
+        const double timeTol = machineEps * std::max(1.0, std::abs(dt));
+        std::unordered_set<std::pair<std::size_t, std::size_t>, PairHash> zeroTimeResolved;
 
-        while (remaining > kTimeEps && events < maxEvents) {
-            std::size_t i = 0;
-            std::size_t j = 0;
-            double tHit = 0.0;
+        while (remaining > timeTol) {
+            const auto pairs = broadphase::sweptPairs(bodies_, remaining);
+            metrics_.broadphaseCandidatesSwept += pairs.size();
 
-            if (!findEarliestCollision_(remaining, i, j, tHit)) {
+            bool found = false;
+            std::size_t iHit = 0;
+            std::size_t jHit = 0;
+            double tHit = std::numeric_limits<double>::infinity();
+
+            for (const auto& [i, j] : pairs) {
+                const Body& A = bodies_[i];
+                const Body& B = bodies_[j];
+                if (A.invMass == 0.0 && B.invMass == 0.0) {
+                    continue;
+                }
+
+                const std::pair<std::size_t, std::size_t> key{std::min(i, j), std::max(i, j)};
+                if (zeroTimeResolved.find(key) != zeroTimeResolved.end()) {
+                    continue;
+                }
+
+                double t = 0.0;
+                if (!collision::sweptCollisionTime(A, B, remaining, t)) {
+                    continue;
+                }
+
+                if (t < tHit) {
+                    tHit = t;
+                    iHit = i;
+                    jHit = j;
+                    found = true;
+                }
+            }
+
+            if (!found) {
                 advancePositions_(remaining);
                 remaining = 0.0;
                 break;
             }
 
-            if (tHit > kTimeEps) {
+            const std::pair<std::size_t, std::size_t> hitKey{std::min(iHit, jHit), std::max(iHit, jHit)};
+
+            if (tHit > timeTol) {
                 advancePositions_(tHit);
                 remaining -= tHit;
-            } else {
-                // Guarantee forward progress for immediate/overlap contacts.
-                const double stepEps = std::min(remaining, 1e-6);
-                if (stepEps > 0.0) {
-                    advancePositions_(stepEps);
-                    remaining -= stepEps;
-                }
+                zeroTimeResolved.clear();
             }
 
-            solveCollisionPair_(i, j, true);
-            ++events;
+            const auto stats = collision::solveCollisionPair(bodies_[iHit], bodies_[jHit], solveParams, true);
+            metrics_.pairsVisited += stats.visited ? 1 : 0;
+            metrics_.pairsImpulseApplied += stats.impulseApplied ? 1 : 0;
+            ++metrics_.ccdEvents;
+
+            if (tHit <= timeTol) {
+                zeroTimeResolved.insert(hitKey);
+                ++metrics_.ccdZeroTimePairsResolved;
+            }
         }
 
-        if (remaining > kTimeEps) {
-            advancePositions_(remaining);
+        const auto cleanupPairs = broadphase::discretePairs(bodies_);
+        metrics_.broadphaseCandidatesDiscrete += cleanupPairs.size();
+        if (hasAnyOverlapInPairs_(cleanupPairs)) {
+            collidePairs_(cleanupPairs, params_.collisionIterations);
         }
-
-        // Resolve any tiny residual overlap from numeric error.
-        collide_();
     }
 
     void World::collide_()
     {
-        if (!params_.enableCollisions) return;
-        // Solve unique collision pairs collisionIterations times
-        for (int i = 0; i < params_.collisionIterations; ++i) {
-            for (std::size_t j = 0; j < bodies_.size(); ++j) {
-                for (std::size_t k = j + 1; k < bodies_.size(); ++k) {
-                    solveCollisionPair_(j, k);
-                }
+        if (!params_.enableCollisions) {
+            return;
+        }
+
+        const auto pairs = broadphase::discretePairs(bodies_);
+        metrics_.broadphaseCandidatesDiscrete += pairs.size();
+        if (!hasAnyOverlapInPairs_(pairs)) {
+            return;
+        }
+
+        collidePairs_(pairs, params_.collisionIterations);
+    }
+
+    void World::collidePairs_(const std::vector<std::pair<std::size_t, std::size_t>>& pairs, const int iterations)
+    {
+        if (pairs.empty() || iterations <= 0) {
+            return;
+        }
+
+        const collision::SolveParams solveParams{
+            params_.restitution,
+            params_.penetrationSlop,
+            params_.positionCorrectionPercent
+        };
+
+        for (int it = 0; it < iterations; ++it) {
+            for (const auto& [i, j] : pairs) {
+                const auto stats = collision::solveCollisionPair(bodies_[i], bodies_[j], solveParams, false);
+                metrics_.pairsVisited += stats.visited ? 1 : 0;
+                metrics_.pairsImpulseApplied += stats.impulseApplied ? 1 : 0;
             }
         }
     }
 
-    bool World::isColliding_(const std::size_t i, const std::size_t j) const {
-        const Body& A = bodies_[i];
-        const Body& B = bodies_[j];
-        const Vec3 d = B.position - A.position; // Difference vector
-        const double minDistance = A.radius + B.radius;
-        const double r = d.dot(d); // r^2
-
-        return (r <= minDistance * minDistance); // r^2 <= minDistance^2 ?
-    }
-
-    void World::solveCollisionPair_(const std::size_t i, const std::size_t j, const bool assumeColliding)
+    bool World::hasAnyOverlapInPairs_(const std::vector<std::pair<std::size_t, std::size_t>>& pairs) const
     {
-        if (!assumeColliding && !isColliding_(i, j)) {
-            return;
+        for (const auto& [i, j] : pairs) {
+            if (collision::isColliding(bodies_[i], bodies_[j])) {
+                return true;
+            }
         }
-
-        Body& A = bodies_[i];
-        Body& B = bodies_[j];
-        const double wA = A.invMass;
-        const double wB = B.invMass;
-
-        if (wA == 0 and wB == 0) {
-            return; // Both static -> do nothing
-        }
-
-        Vec3& pA = A.position;
-        Vec3& pB = B.position;
-        Vec3& vA = A.velocity;
-        Vec3& vB = B.velocity;
-        const double e = params_.restitution;
-
-        const Vec3 d = pB - pA; // Difference vector
-        const double dist = d.magnitude(); // Distance
-
-        const double pen = (A.radius + B.radius) - dist; // Penetration depth (how much they overlap)
-
-        Vec3 n; // Collision normal
-
-        if (dist < epsilon(i, j)){
-            n = Vec3(1.0, 0.0, 0.0); // Default to +x-axis if dist is ~0
-        } else {
-            n = d / dist;
-        }
-
-        const double invMassSum = wA + wB;
-
-        // Position-correction amount: ignore small overlap (slop), then apply a percent of the remaining penetration
-        const double correction = std::max(0.0, pen - params_.penetrationSlop) * params_.positionCorrectionPercent;
-
-        // Move positions apart along collision normal in proportion to mass
-        // Higher invMass => lower mass => larger change in position
-        pA = pA - n * (correction * wA/invMassSum);
-        pB = pB + n * (correction * wB/invMassSum);
-
-        const double v_n = (vB - vA).dot(n); // Speed of B relative to A along collision normal
-
-        if (v_n >= 0) {
-            return; // Already separating along the normal -> don't apply impulse
-        }
-
-        const double impulse = -(1 + e) * v_n / invMassSum; // Normal impulse magnitude
-
-        const Vec3 J = n * impulse; // Impulse vector along collision normal
-
-        // Impulse/mass = change in velocity
-        vA = vA - J * wA;
-        vB = vB + J * wB;
+        return false;
     }
-} // sim
-
-
-// TODO: For future:
-/*
- * Optimize where possible
- * Swap integrator to leapfrog / velocity Verlet
- * Use fixed timestep + substeps (especially for collisions)
- * Upgrade collision solving: more iterations + better position correction / stable contacts
- * Add angular velocity + torque (spin from collisions)
- */
+} // namespace sim

@@ -3,6 +3,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
+#include <cstdio>
 #include <cstddef>
 #include <iostream>
 #include <vector>
@@ -25,28 +26,20 @@ static FramebufferSize g_fb;
 int main() {
     // Init world
     sim::Body a{};
-    a.invMass = 1.0;
+    a.invMass = 0.00000000000001;
     a.prevPosition = a.position;
+    a.radius = 5.0;
 
     sim::Body b{};
-    b.position = sim::Vec3(10.0, -10.0, 10.0);
-    b.velocity = sim::Vec3(-2.0, 2.0, -2.0);
-    b.invMass  = 0.5;
-    b.radius   = 2.0;
+    b.position = sim::Vec3(20, -20, 20);
+    b.velocity = sim::Vec3(0.0, 0.0, 0.0);
+    b.invMass  = 1.0;
+    b.radius   = 1.0;
     b.prevPosition = b.position;
-
-
-    sim::Body c{};
-    c.position = sim::Vec3(20.0, -20.0, 10.0);
-    c.velocity = sim::Vec3(0.0, 0.0, 0.0);
-    c.invMass  = 0.5;
-    c.radius   = 2.0;
-    c.prevPosition = c.position;
 
     std::vector<sim::Body> bodies;
     bodies.push_back(a);
     bodies.push_back(b);
-    bodies.push_back(c);
 
     sim::World world(std::move(bodies)); // Default params
 
@@ -88,7 +81,7 @@ int main() {
     bool paused = false;
 
     // VSync 0=OFF 1=ON
-    glfwSwapInterval(1);
+    glfwSwapInterval(0);
 
     if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress))) {
         std::cerr << "Failed to initialize GLAD\n";
@@ -243,6 +236,10 @@ int main() {
 
     double lastTime = glfwGetTime();
     double accumulator = 0.0;
+    double fpsElapsed = 0.0;
+    int fpsFrames = 0;
+    constexpr double fpsUpdateInterval = 0.5;
+    constexpr const char* kWindowTitle = "physics3d";
 
     std::vector<glm::mat4> models;
 
@@ -280,6 +277,17 @@ int main() {
         const double now = glfwGetTime();
         double frameTime = now - lastTime;
         lastTime = now;
+
+        fpsElapsed += frameTime;
+        ++fpsFrames;
+        if (fpsElapsed >= fpsUpdateInterval) {
+            const double fps = static_cast<double>(fpsFrames) / fpsElapsed;
+            char title[128];
+            std::snprintf(title, sizeof(title), "%s - FPS: %.1f", kWindowTitle, fps);
+            glfwSetWindowTitle(window, title);
+            fpsElapsed = 0.0;
+            fpsFrames = 0;
+        }
 
         frameTime = std::min(frameTime, maxStepsPerFrame * dt);
 

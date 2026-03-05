@@ -5,6 +5,8 @@
 #ifndef PHYSICS3D_WORLD_H
 #define PHYSICS3D_WORLD_H
 
+#include <cstddef>
+#include <utility>
 #include <vector>
 #include "Body.h"
 
@@ -13,6 +15,15 @@ namespace sim {
 
     class World {
     public:
+        struct Metrics {
+            std::size_t broadphaseCandidatesDiscrete = 0;
+            std::size_t broadphaseCandidatesSwept = 0;
+            std::size_t pairsVisited = 0;
+            std::size_t pairsImpulseApplied = 0;
+            std::size_t ccdEvents = 0;
+            std::size_t ccdZeroTimePairsResolved = 0;
+        };
+
         struct Params {
             double G;
             double restitution;
@@ -51,9 +62,11 @@ namespace sim {
 
         Params& params();
         [[nodiscard]] const Params& params() const;
+        [[nodiscard]] const Metrics& metrics() const;
 
     private:
         Params params_;
+        Metrics metrics_{};
         std::vector<Body> bodies_{};
 
         // Net force per body for the current tick
@@ -71,15 +84,12 @@ namespace sim {
         void moveBodiesWithCCD_(double dt);
 
         // Force helpers
-        [[nodiscard]] double epsilon(std::size_t i, std::size_t j) const;
         void applyGravityPair_(std::size_t i, std::size_t j);
 
         // Collision helpers
-        [[nodiscard]] bool sweptCollisionTime_(std::size_t i, std::size_t j, double maxTime, double& outTime) const;
-        [[nodiscard]] bool findEarliestCollision_(double maxTime, std::size_t& outI, std::size_t& outJ, double& outTime) const;
         void collide_(); // detect + resolve collisions
-        [[nodiscard]] bool isColliding_(std::size_t i, std::size_t j) const;
-        void solveCollisionPair_(std::size_t i, std::size_t j, bool assumeColliding = false);
+        void collidePairs_(const std::vector<std::pair<std::size_t, std::size_t>>& pairs, int iterations);
+        [[nodiscard]] bool hasAnyOverlapInPairs_(const std::vector<std::pair<std::size_t, std::size_t>>& pairs) const;
     };
 
 } // sim
