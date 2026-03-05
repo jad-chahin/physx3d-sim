@@ -111,7 +111,6 @@ namespace sim {
         std::uint64_t nextBodyId_ = 1;
 
         std::vector<Vec3> forces_{};
-
     private:
         void syncForces_();
         void resetForces_();
@@ -121,7 +120,6 @@ namespace sim {
         void advancePositions_(double dt);
         void moveBodiesWithCCD_(double dt);
         void sanitizeBodies_();
-
         void applyGravityPair_(std::size_t i, std::size_t j);
 
         void collidePairs_(const std::vector<std::pair<std::size_t, std::size_t>>& pairs, int iterations);

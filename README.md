@@ -2,16 +2,6 @@
 
 `physx3d-sim` is a real-time 3D rigid-body physics sandbox written in modern C++ with OpenGL rendering.
 
-The project is currently focused on building a stable simulation core and a usable interactive sandbox loop.
-
-## Current Status
-
-This is an active work-in-progress project.
-
-- The simulator runs in real time with interactive camera controls.
-- Collision handling, CCD, joints, and material parameters are under active iteration.
-- APIs and behavior may change between commits while the engine architecture is being finalized.
-
 ## Requirements
 
 - CMake `>= 3.20`
@@ -54,6 +44,4 @@ If you get a DLL error on Windows when launching from terminal, make sure runtim
 
 ## Development Notes
 
-- The simulation currently prioritizes robustness and iteration speed while major systems are still being shaped.
 - Scene setup is currently code-driven in `main.cpp`.
-- A more formal scene/material authoring workflow is planned for future revisions.

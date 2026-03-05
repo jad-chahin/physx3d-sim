@@ -198,8 +198,7 @@ namespace sim {
             return;
         }
 
-        const double eps = std::numeric_limits<double>::epsilon();
-        const double dtSafe = std::max(dt, eps);
+        constexpr double eps = std::numeric_limits<double>::epsilon();
 
         for (int it = 0; it < params_.jointIterations; ++it) {
             for (const DistanceJoint& joint : joints_) {
@@ -313,7 +312,7 @@ namespace sim {
         }
 
         double remaining = dt;
-        const double machineEps = std::numeric_limits<double>::epsilon();
+        constexpr double machineEps = std::numeric_limits<double>::epsilon();
         const double timeTol = machineEps * std::max(1.0, std::abs(dt));
         if (remaining <= timeTol) {
             return;
@@ -453,7 +452,7 @@ namespace sim {
             return false;
         }
         const ContactKey key = contactKeyForPair_(i, j);
-        return nonCollidingConnectedPairs_.find(key) == nonCollidingConnectedPairs_.end();
+        return !nonCollidingConnectedPairs_.contains(key);
     }
 
     World::ContactKey World::contactKeyForPair_(const std::size_t i, const std::size_t j) const
@@ -550,4 +549,5 @@ namespace sim {
             }
         }
     }
+
 } // namespace sim

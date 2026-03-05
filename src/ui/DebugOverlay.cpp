@@ -265,7 +265,7 @@ void DebugOverlay::draw(const int fbw, const int fbh, const bool paused, const T
             targetHud.restitution, targetHud.staticFriction, targetHud.dynamicFriction);
 
         const float popupW = measureLinePx("D:00.00", scalePx) + 8.0f;
-        const float popupH = static_cast<float>((kFontH + 2) * 3) * scalePx + 8.0f;
+        constexpr float popupH = static_cast<float>((kFontH + 2) * 3) * scalePx + 8.0f;
         const float px = targetHud.xPx - popupW * 0.5f;
         const float py = targetHud.yPx - popupH - 12.0f;
 
