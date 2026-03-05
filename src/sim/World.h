@@ -5,7 +5,9 @@
 #ifndef PHYSICS3D_WORLD_H
 #define PHYSICS3D_WORLD_H
 
+#include <cstdint>
 #include <cstddef>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 #include "Body.h"
@@ -22,6 +24,8 @@ namespace sim {
             std::size_t pairsImpulseApplied = 0;
             std::size_t ccdEvents = 0;
             std::size_t ccdZeroTimePairsResolved = 0;
+            std::size_t warmStartedPairs = 0;
+            std::size_t manifoldActivePairs = 0;
         };
 
         struct Params {
@@ -65,9 +69,23 @@ namespace sim {
         [[nodiscard]] const Metrics& metrics() const;
 
     private:
+        using ContactKey = std::pair<std::uint64_t, std::uint64_t>;
+
+        struct PairHash {
+            std::size_t operator()(const ContactKey& p) const;
+        };
+
+        struct ContactManifold {
+            double normalImpulse = 0.0;
+            bool touched = false;
+            std::size_t staleFrames = 0;
+        };
+
         Params params_;
         Metrics metrics_{};
         std::vector<Body> bodies_{};
+        std::unordered_map<ContactKey, ContactManifold, PairHash> contactCache_{};
+        std::uint64_t nextBodyId_ = 1;
 
         // Net force per body for the current tick
         std::vector<Vec3> forces_{};
@@ -87,9 +105,13 @@ namespace sim {
         void applyGravityPair_(std::size_t i, std::size_t j);
 
         // Collision helpers
-        void collide_(); // detect + resolve collisions
         void collidePairs_(const std::vector<std::pair<std::size_t, std::size_t>>& pairs, int iterations);
         [[nodiscard]] bool hasAnyOverlapInPairs_(const std::vector<std::pair<std::size_t, std::size_t>>& pairs) const;
+        [[nodiscard]] ContactKey contactKeyForPair_(std::size_t i, std::size_t j) const;
+        void assignBodyId_(Body& b);
+        void beginContactFrame_();
+        void warmStartPairs_(const std::vector<std::pair<std::size_t, std::size_t>>& pairs);
+        void endContactFrame_();
     };
 
 } // sim

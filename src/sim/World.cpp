@@ -12,45 +12,57 @@
 #include <unordered_set>
 
 namespace sim {
-    namespace {
-        struct PairHash {
-            std::size_t operator()(const std::pair<std::size_t, std::size_t>& p) const {
-                std::size_t h = 0xcbf29ce484222325ULL;
-                h ^= std::hash<std::size_t>{}(p.first) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
-                h ^= std::hash<std::size_t>{}(p.second) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
-                return h;
-            }
-        };
-    } // namespace
+    std::size_t World::PairHash::operator()(const ContactKey& p) const
+    {
+        std::size_t h = 0xcbf29ce484222325ULL;
+        h ^= std::hash<std::uint64_t>{}(p.first) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
+        h ^= std::hash<std::uint64_t>{}(p.second) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
+        return h;
+    }
 
     World::World(const Params& params)
         : params_(params) {}
 
     World::World(std::vector<Body> bodies)
-        : bodies_(std::move(bodies)) {}
+        : bodies_(std::move(bodies))
+    {
+        for (auto& b : bodies_) {
+            assignBodyId_(b);
+        }
+    }
 
     World::World(std::vector<Body> bodies, const Params& params)
-        : params_(params), bodies_(std::move(bodies)) {}
+        : params_(params), bodies_(std::move(bodies))
+    {
+        for (auto& b : bodies_) {
+            assignBodyId_(b);
+        }
+    }
 
     void World::step(const double dt)
     {
         metrics_ = {};
+        beginContactFrame_();
         syncForces_();
         resetForces_();
         computeForces_();
         integrate_(dt);
         moveBodiesWithCCD_(dt);
+        endContactFrame_();
+        metrics_.manifoldActivePairs = contactCache_.size();
     }
 
     void World::addBody(const Body& b)
     {
         bodies_.push_back(b);
+        assignBodyId_(bodies_.back());
     }
 
     void World::clear()
     {
         bodies_.clear();
         forces_.clear();
+        contactCache_.clear();
     }
 
     std::vector<Body>& World::bodies()
@@ -165,7 +177,7 @@ namespace sim {
         double remaining = dt;
         const double machineEps = std::numeric_limits<double>::epsilon();
         const double timeTol = machineEps * std::max(1.0, std::abs(dt));
-        std::unordered_set<std::pair<std::size_t, std::size_t>, PairHash> zeroTimeResolved;
+        std::unordered_set<ContactKey, World::PairHash> zeroTimeResolved;
 
         while (remaining > timeTol) {
             const auto pairs = broadphase::sweptPairs(bodies_, remaining);
@@ -183,7 +195,7 @@ namespace sim {
                     continue;
                 }
 
-                const std::pair<std::size_t, std::size_t> key{std::min(i, j), std::max(i, j)};
+                const ContactKey key = contactKeyForPair_(i, j);
                 if (zeroTimeResolved.find(key) != zeroTimeResolved.end()) {
                     continue;
                 }
@@ -207,7 +219,7 @@ namespace sim {
                 break;
             }
 
-            const std::pair<std::size_t, std::size_t> hitKey{std::min(iHit, jHit), std::max(iHit, jHit)};
+            const ContactKey hitKey = contactKeyForPair_(iHit, jHit);
 
             if (tHit > timeTol) {
                 advancePositions_(tHit);
@@ -215,10 +227,23 @@ namespace sim {
                 zeroTimeResolved.clear();
             }
 
+            warmStartPairs_({{iHit, jHit}});
             const auto stats = collision::solveCollisionPair(bodies_[iHit], bodies_[jHit], solveParams, true);
             metrics_.pairsVisited += stats.visited ? 1 : 0;
             metrics_.pairsImpulseApplied += stats.impulseApplied ? 1 : 0;
             ++metrics_.ccdEvents;
+
+            const ContactKey key = contactKeyForPair_(iHit, jHit);
+            if (collision::isColliding(bodies_[iHit], bodies_[jHit])) {
+                ContactManifold& manifold = contactCache_[key];
+                manifold.touched = true;
+                manifold.staleFrames = 0;
+                if (stats.normalImpulse > 0.0) {
+                    manifold.normalImpulse = stats.normalImpulse;
+                } else {
+                    manifold.normalImpulse *= 0.9;
+                }
+            }
 
             if (tHit <= timeTol) {
                 zeroTimeResolved.insert(hitKey);
@@ -233,21 +258,6 @@ namespace sim {
         }
     }
 
-    void World::collide_()
-    {
-        if (!params_.enableCollisions) {
-            return;
-        }
-
-        const auto pairs = broadphase::discretePairs(bodies_);
-        metrics_.broadphaseCandidatesDiscrete += pairs.size();
-        if (!hasAnyOverlapInPairs_(pairs)) {
-            return;
-        }
-
-        collidePairs_(pairs, params_.collisionIterations);
-    }
-
     void World::collidePairs_(const std::vector<std::pair<std::size_t, std::size_t>>& pairs, const int iterations)
     {
         if (pairs.empty() || iterations <= 0) {
@@ -260,11 +270,48 @@ namespace sim {
             params_.positionCorrectionPercent
         };
 
+        warmStartPairs_(pairs);
+
+        std::unordered_map<ContactKey, double, World::PairHash> accumulatedImpulse;
+        accumulatedImpulse.reserve(pairs.size() * 2);
+
         for (int it = 0; it < iterations; ++it) {
             for (const auto& [i, j] : pairs) {
                 const auto stats = collision::solveCollisionPair(bodies_[i], bodies_[j], solveParams, false);
                 metrics_.pairsVisited += stats.visited ? 1 : 0;
                 metrics_.pairsImpulseApplied += stats.impulseApplied ? 1 : 0;
+
+                if (!stats.hasNormal) {
+                    continue;
+                }
+
+                const ContactKey key = contactKeyForPair_(i, j);
+                if (collision::isColliding(bodies_[i], bodies_[j])) {
+                    ContactManifold& manifold = contactCache_[key];
+                    manifold.touched = true;
+                    manifold.staleFrames = 0;
+                    if (stats.normalImpulse > 0.0) {
+                        accumulatedImpulse[key] += stats.normalImpulse;
+                    }
+                }
+            }
+        }
+
+        for (const auto& [i, j] : pairs) {
+            const ContactKey key = contactKeyForPair_(i, j);
+            if (!collision::isColliding(bodies_[i], bodies_[j])) {
+                continue;
+            }
+
+            ContactManifold& manifold = contactCache_[key];
+            manifold.touched = true;
+            manifold.staleFrames = 0;
+
+            const auto it = accumulatedImpulse.find(key);
+            if (it != accumulatedImpulse.end()) {
+                manifold.normalImpulse = it->second;
+            } else {
+                manifold.normalImpulse *= 0.9; // mild decay if no new impulse this frame
             }
         }
     }
@@ -277,5 +324,82 @@ namespace sim {
             }
         }
         return false;
+    }
+
+    World::ContactKey World::contactKeyForPair_(const std::size_t i, const std::size_t j) const
+    {
+        const std::uint64_t a = bodies_[i].id;
+        const std::uint64_t b = bodies_[j].id;
+        return (a < b) ? ContactKey{a, b} : ContactKey{b, a};
+    }
+
+    void World::assignBodyId_(Body& b)
+    {
+        b.id = nextBodyId_++;
+    }
+
+    void World::beginContactFrame_()
+    {
+        for (auto& [key, manifold] : contactCache_) {
+            (void)key;
+            manifold.touched = false;
+        }
+    }
+
+    void World::warmStartPairs_(const std::vector<std::pair<std::size_t, std::size_t>>& pairs)
+    {
+        constexpr double kWarmStartFactor = 0.85;
+        for (const auto& [i, j] : pairs) {
+            const ContactKey key = contactKeyForPair_(i, j);
+            auto it = contactCache_.find(key);
+            if (it == contactCache_.end()) {
+                continue;
+            }
+
+            ContactManifold& manifold = it->second;
+            if (manifold.normalImpulse <= 0.0) {
+                continue;
+            }
+            if (!collision::isColliding(bodies_[i], bodies_[j])) {
+                continue;
+            }
+
+            Vec3 n{};
+            if (!collision::contactNormal(bodies_[i], bodies_[j], n)) {
+                continue;
+            }
+
+            // Warm-start only when currently approaching or resting, never separating.
+            const double vN = (bodies_[j].velocity - bodies_[i].velocity).dot(n);
+            if (vN > 0.0) {
+                continue;
+            }
+
+            collision::applyNormalImpulse(
+                bodies_[i], bodies_[j], n, manifold.normalImpulse * kWarmStartFactor);
+            manifold.touched = true;
+            manifold.staleFrames = 0;
+            ++metrics_.warmStartedPairs;
+        }
+    }
+
+    void World::endContactFrame_()
+    {
+        for (auto it = contactCache_.begin(); it != contactCache_.end(); ) {
+            ContactManifold& manifold = it->second;
+            if (manifold.touched) {
+                manifold.staleFrames = 0;
+                ++it;
+                continue;
+            }
+
+            ++manifold.staleFrames;
+            manifold.normalImpulse *= 0.75;
+            if (manifold.staleFrames > 2 || manifold.normalImpulse < 1e-8) {
+                it = contactCache_.erase(it);
+            } else {
+                ++it;
+            }
+        }
     }
 } // namespace sim

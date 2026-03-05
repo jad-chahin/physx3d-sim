@@ -5,6 +5,7 @@
 #ifndef PHYSICS3D_BODY_H
 #define PHYSICS3D_BODY_H
 
+#include <cstdint>
 #include "Vec3.h"
 
 
@@ -17,6 +18,7 @@ namespace sim {
         double invMass{}; // [1/kg]  (0 means "infinite mass" / static body)
         double radius{1.0}; // [m]
         Vec3 prevPosition;
+        std::uint64_t id = 0; // Stable identity assigned by World
     };
 } // sim
 

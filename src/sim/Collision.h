@@ -18,10 +18,15 @@ namespace sim::collision {
     struct SolveStats {
         bool visited = false;
         bool impulseApplied = false;
+        bool hasNormal = false;
+        Vec3 normal{};
+        double normalImpulse = 0.0;
     };
 
     [[nodiscard]] bool isColliding(const Body& a, const Body& b);
+    [[nodiscard]] bool contactNormal(const Body& a, const Body& b, Vec3& outNormal);
     [[nodiscard]] bool sweptCollisionTime(const Body& a, const Body& b, double maxTime, double& outTime);
+    void applyNormalImpulse(Body& a, Body& b, const Vec3& normal, double impulse);
     SolveStats solveCollisionPair(Body& a, Body& b, const SolveParams& params, bool assumeColliding);
 
 } // namespace sim::collision

@@ -21,6 +21,25 @@ namespace sim::collision {
         return r2 <= minDistance * minDistance;
     }
 
+    bool contactNormal(const Body& a, const Body& b, Vec3& outNormal)
+    {
+        const Vec3 d = b.position - a.position;
+        const double dist2 = d.dot(d);
+        if (!std::isfinite(dist2) || dist2 < 0.0) {
+            return false;
+        }
+
+        const double dist = std::sqrt(dist2);
+        const double eps = epsilon(a, b);
+        if (dist < eps) {
+            outNormal = Vec3(1.0, 0.0, 0.0);
+            return true;
+        }
+
+        outNormal = d / dist;
+        return std::isfinite(outNormal.x) && std::isfinite(outNormal.y) && std::isfinite(outNormal.z);
+    }
+
     bool sweptCollisionTime(const Body& a, const Body& b, const double maxTime, double& outTime)
     {
         const Vec3 p = b.position - a.position;
@@ -68,6 +87,24 @@ namespace sim::collision {
         return true;
     }
 
+    void applyNormalImpulse(Body& a, Body& b, const Vec3& normal, const double impulse)
+    {
+        if (!std::isfinite(normal.x) || !std::isfinite(normal.y) || !std::isfinite(normal.z) ||
+            !std::isfinite(impulse) || impulse <= 0.0) {
+            return;
+        }
+
+        const double wA = a.invMass;
+        const double wB = b.invMass;
+        if (!std::isfinite(wA) || !std::isfinite(wB) || (wA == 0.0 && wB == 0.0)) {
+            return;
+        }
+
+        const Vec3 j = normal * impulse;
+        a.velocity = a.velocity - j * wA;
+        b.velocity = b.velocity + j * wB;
+    }
+
     SolveStats solveCollisionPair(Body& a, Body& b, const SolveParams& params, const bool assumeColliding)
     {
         SolveStats stats{};
@@ -100,13 +137,12 @@ namespace sim::collision {
             return stats;
         }
 
-        Vec3 n;
-        const double eps = epsilon(a, b);
-        if (dist < eps) {
-            n = Vec3(1.0, 0.0, 0.0);
-        } else {
-            n = d / dist;
+        Vec3 n{};
+        if (!contactNormal(a, b, n)) {
+            return stats;
         }
+        stats.normal = n;
+        stats.hasNormal = true;
 
         const double invMassSum = wA + wB;
         if (!std::isfinite(invMassSum) || invMassSum <= 0.0) {
@@ -124,9 +160,8 @@ namespace sim::collision {
         }
 
         const double impulse = -(1 + params.restitution) * vN / invMassSum;
-        const Vec3 j = n * impulse;
-        vA = vA - j * wA;
-        vB = vB + j * wB;
+        applyNormalImpulse(a, b, n, impulse);
+        stats.normalImpulse = impulse;
         stats.impulseApplied = true;
         return stats;
     }
