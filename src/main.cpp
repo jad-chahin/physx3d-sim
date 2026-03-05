@@ -5,7 +5,9 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstddef>
+#include <cmath>
 #include <iostream>
+#include <limits>
 #include <vector>
 #include <utility> // std::move
 
@@ -22,26 +24,216 @@ struct FramebufferSize {
 };
 static FramebufferSize g_fb;
 
+static bool raySphereHit(
+    const glm::vec3& rayOrigin,
+    const glm::vec3& rayDir,
+    const glm::vec3& center,
+    const float radius,
+    float& outT)
+{
+    const glm::vec3 oc = rayOrigin - center;
+    const float b = glm::dot(oc, rayDir);
+    const float c = glm::dot(oc, oc) - radius * radius;
+    const float disc = b * b - c;
+    if (disc < 0.0f) {
+        return false;
+    }
+    const float s = std::sqrt(disc);
+    const float t0 = -b - s;
+    const float t1 = -b + s;
+    if (t0 > 0.0f) {
+        outT = t0;
+        return true;
+    }
+    if (t1 > 0.0f) {
+        outT = t1;
+        return true;
+    }
+    return false;
+}
+
+static bool worldToScreen(
+    const glm::vec3& worldPos,
+    const glm::mat4& view,
+    const glm::mat4& proj,
+    const int fbw,
+    const int fbh,
+    float& outXPx,
+    float& outYPx)
+{
+    const glm::vec4 clip = proj * view * glm::vec4(worldPos, 1.0f);
+    if (clip.w <= 0.0f) {
+        return false;
+    }
+    const glm::vec3 ndc = glm::vec3(clip) / clip.w;
+    if (ndc.x < -1.0f || ndc.x > 1.0f || ndc.y < -1.0f || ndc.y > 1.0f) {
+        return false;
+    }
+
+    outXPx = (ndc.x * 0.5f + 0.5f) * static_cast<float>(fbw);
+    outYPx = (1.0f - (ndc.y * 0.5f + 0.5f)) * static_cast<float>(fbh);
+    return true;
+}
+
 
 int main() {
     // Init world
-    sim::Body a{};
-    a.invMass = 0.00000000000001;
-    a.prevPosition = a.position;
-    a.radius = 5.0;
-
-    sim::Body b{};
-    b.position = sim::Vec3(20, -20, 20);
-    b.velocity = sim::Vec3(0.0, 0.0, 0.0);
-    b.invMass  = 1.0;
-    b.radius   = 1.0;
-    b.prevPosition = b.position;
-
     std::vector<sim::Body> bodies;
-    bodies.push_back(a);
-    bodies.push_back(b);
+    bodies.reserve(160);
+    std::vector<sim::World::DistanceJoint> joints;
+    joints.reserve(192);
+
+    auto pushBall = [&bodies](
+        const sim::Vec3& position,
+        const sim::Vec3& velocity,
+        const double invMass,
+        const double radius,
+        const double restitution,
+        const double staticFriction,
+        const double dynamicFriction)
+        -> std::size_t
+    {
+        sim::Body b{};
+        b.position = position;
+        b.prevPosition = position;
+        b.velocity = velocity;
+        b.invMass = std::max(0.0, invMass);
+        b.radius = std::max(0.05, radius);
+        b.restitution = std::clamp(restitution, 0.0, 1.0);
+        b.staticFriction = std::max(0.0, staticFriction);
+        b.dynamicFriction = std::max(0.0, std::min(dynamicFriction, b.staticFriction));
+        bodies.push_back(b);
+        return bodies.size() - 1;
+    };
+
+    auto addJoint = [&joints](
+        const std::size_t a,
+        const std::size_t b,
+        const double rest,
+        const double stiffness,
+        const double damping,
+        const bool collideConnected = false)
+    {
+        sim::World::DistanceJoint joint{};
+        joint.bodyA = a;
+        joint.bodyB = b;
+        joint.restLength = rest;
+        joint.stiffness = stiffness;
+        joint.damping = damping;
+        joint.collideConnected = collideConnected;
+        joints.push_back(joint);
+    };
+
+    std::vector<std::size_t> chainA;
+    chainA.reserve(12);
+    constexpr double chainRadius = 0.38;
+    constexpr double chainSpacing = chainRadius * 2.0;
+    chainA.push_back(pushBall(sim::Vec3(-15.0, 16.0, -2.0), sim::Vec3(0.0, 0.0, 0.0), 0.0, chainRadius, 0.25, 0.85, 0.70));
+    for (int i = 1; i < 12; ++i) {
+        const double z = (i % 2 == 0) ? 0.18 : -0.18;
+        const std::size_t idx = pushBall(
+            sim::Vec3(-15.0, 16.0 - static_cast<double>(i) * chainSpacing, z),
+            sim::Vec3(0.0, 0.0, 0.0),
+            1.0, chainRadius, 0.55, 0.40, 0.25);
+        chainA.push_back(idx);
+        bodies[idx].angularVelocity = sim::Vec3(0.0, 2.5 + 0.15 * static_cast<double>(i), 0.0);
+    }
+    bodies[chainA.back()].velocity = sim::Vec3(15.0, 0.0, 3.0);
+    for (std::size_t i = 1; i < chainA.size(); ++i) {
+        addJoint(chainA[i - 1], chainA[i], chainSpacing, 0.88, 0.12);
+    }
+
+    std::vector<std::size_t> chainB;
+    chainB.reserve(9);
+    chainB.push_back(pushBall(sim::Vec3(15.0, 15.0, 3.0), sim::Vec3(0.0, 0.0, 0.0), 0.0, chainRadius, 0.20, 0.90, 0.75));
+    for (int i = 1; i < 9; ++i) {
+        const std::size_t idx = pushBall(
+            sim::Vec3(15.0 - 0.25 * static_cast<double>(i), 15.0 - static_cast<double>(i) * chainSpacing, 3.0),
+            sim::Vec3(0.0, 0.0, 0.0),
+            1.0, chainRadius, 0.60, 0.35, 0.20);
+        chainB.push_back(idx);
+        bodies[idx].angularVelocity = sim::Vec3(1.2, 0.8, 0.4);
+    }
+    bodies[chainB.back()].velocity = sim::Vec3(-18.0, 0.0, -8.0);
+    for (std::size_t i = 1; i < chainB.size(); ++i) {
+        addJoint(chainB[i - 1], chainB[i], chainSpacing, 0.86, 0.10);
+    }
+
+    std::vector<std::size_t> bridge;
+    bridge.reserve(14);
+    constexpr double bridgeR = 0.34;
+    constexpr int bridgeLinks = 12;
+    const std::size_t bridgeLeft = pushBall(sim::Vec3(-8.0, 8.5, -9.0), sim::Vec3(0.0, 0.0, 0.0), 0.0, bridgeR, 0.20, 0.95, 0.75);
+    const std::size_t bridgeRight = pushBall(sim::Vec3(8.0, 8.5, -9.0), sim::Vec3(0.0, 0.0, 0.0), 0.0, bridgeR, 0.20, 0.95, 0.75);
+    bridge.push_back(bridgeLeft);
+    for (int i = 1; i <= bridgeLinks; ++i) {
+        const double t = static_cast<double>(i) / static_cast<double>(bridgeLinks + 1);
+        const double x = -8.0 + 16.0 * t;
+        const double sag = 2.2 * (1.0 - std::pow(2.0 * t - 1.0, 2.0));
+        bridge.push_back(pushBall(sim::Vec3(x, 8.5 - sag, -9.0), sim::Vec3(0.0, 0.0, 0.0), 0.8, bridgeR, 0.45, 0.55, 0.30));
+    }
+    bridge.push_back(bridgeRight);
+    for (std::size_t i = 1; i < bridge.size(); ++i) {
+        addJoint(bridge[i - 1], bridge[i], bridgeR * 2.0, 0.83, 0.11);
+    }
+
+    const std::size_t heavyA = pushBall(sim::Vec3(0.0, 3.0, 0.0), sim::Vec3(0.0, 0.0, 0.0), 0.015, 3.0, 0.25, 0.90, 0.75);
+    const std::size_t heavyB = pushBall(sim::Vec3(0.0, -8.0, 5.5), sim::Vec3(0.0, 0.0, 0.0), 0.008, 3.6, 0.20, 0.95, 0.80);
+    bodies[heavyA].angularVelocity = sim::Vec3(0.0, 1.2, 0.0);
+    bodies[heavyB].angularVelocity = sim::Vec3(0.0, -0.8, 0.4);
+    pushBall(sim::Vec3(-4.0, 1.0, 6.0), sim::Vec3(10.0, 1.0, -7.0), 0.45, 1.5, 0.65, 0.35, 0.20);
+    pushBall(sim::Vec3(4.0, 2.5, -2.0), sim::Vec3(-9.0, -1.0, 5.5), 0.55, 1.35, 0.60, 0.30, 0.18);
+
+    const std::size_t center = pushBall(sim::Vec3(0.0, 6.5, 10.0), sim::Vec3(0.0, 0.0, 0.0), 0.03, 2.2, 0.30, 0.70, 0.55);
+    const std::size_t orb1 = pushBall(sim::Vec3(0.0, 11.0, 10.0), sim::Vec3(13.0, 0.0, 0.0), 1.1, 0.72, 0.75, 0.22, 0.10);
+    const std::size_t orb2 = pushBall(sim::Vec3(0.0, 2.0, 10.0), sim::Vec3(-12.0, 0.0, 0.0), 1.1, 0.72, 0.75, 0.22, 0.10);
+    bodies[orb1].angularVelocity = sim::Vec3(0.0, 6.0, 0.0);
+    bodies[orb2].angularVelocity = sim::Vec3(0.0, -5.5, 0.0);
+    addJoint(center, orb1, 4.5, 0.74, 0.08);
+    addJoint(center, orb2, 4.5, 0.74, 0.08);
+
+    for (int y = 0; y < 4; ++y) {
+        for (int x = 0; x < 6; ++x) {
+            const double rx = -3.5 + static_cast<double>(x) * 1.4;
+            const double ry = 10.0 + static_cast<double>(y) * 1.25;
+            const double rz = (x % 2 == 0) ? 1.4 : -1.4;
+            const double r = (x + y) % 3 == 0 ? 0.28 : ((x + y) % 3 == 1 ? 0.45 : 0.62);
+            const double invMass = (x + y) % 4 == 0 ? 1.8 : 0.95;
+            const double vx = (x % 2 == 0) ? 3.5 : -3.5;
+            const double vz = (y % 2 == 0) ? -2.8 : 2.8;
+            const std::size_t idx = pushBall(
+                sim::Vec3(rx, ry, rz),
+                sim::Vec3(vx, -0.4 * static_cast<double>(y), vz),
+                invMass, r, 0.72, 0.26, 0.12);
+            bodies[idx].angularVelocity = sim::Vec3(2.0 + 0.2 * static_cast<double>(x), 1.1, 0.6);
+        }
+    }
+
+    for (int i = 0; i < 12; ++i) {
+        const double y = 2.0 + static_cast<double>(i % 6) * 1.5;
+        const double z = -6.0 + static_cast<double>(i / 2);
+        const double speed = 42.0 + static_cast<double>(i) * 2.4;
+        const std::size_t a = pushBall(
+            sim::Vec3(-30.0 - static_cast<double>(i), y, z),
+            sim::Vec3(speed, 0.0, 0.5 * static_cast<double>((i % 3) - 1)),
+            2.2, 0.18, 0.88, 0.10, 0.06);
+        const std::size_t b = pushBall(
+            sim::Vec3(30.0 + static_cast<double>(i), y + 0.8, -z),
+            sim::Vec3(-speed, 0.0, -0.5 * static_cast<double>((i % 3) - 1)),
+            2.2, 0.18, 0.88, 0.10, 0.06);
+        bodies[a].angularVelocity = sim::Vec3(8.0, 0.0, 3.0);
+        bodies[b].angularVelocity = sim::Vec3(-8.0, 0.0, -3.0);
+    }
+
+    pushBall(sim::Vec3(-22.0, -2.5, -12.0), sim::Vec3(18.0, 0.0, 7.0), 0.05, 2.8, 0.40, 0.70, 0.45);
+    pushBall(sim::Vec3(22.0, -2.0, 12.0), sim::Vec3(-19.0, 0.0, -7.5), 0.05, 2.8, 0.40, 0.70, 0.45);
 
     sim::World world(std::move(bodies)); // Default params
+    world.params().jointIterations = 28;
+    world.params().collisionIterations = 2;
+    for (const auto& joint : joints) {
+        world.addDistanceJoint(joint);
+    }
 
     // Rendering
     if (!glfwInit()) {
@@ -242,6 +434,7 @@ int main() {
     constexpr const char* kWindowTitle = "physics3d";
 
     std::vector<glm::mat4> models;
+    std::vector<glm::vec3> renderPositions;
 
     while (!glfwWindowShouldClose(window)) {
         constexpr int maxStepsPerFrame = 10;
@@ -358,11 +551,13 @@ int main() {
 
         // Build instance model matrices from interpolated positions
         models.resize(n);
+        renderPositions.resize(n);
         for (std::size_t i = 0; i < n; ++i) {
             const sim::Vec3 pSim = bs[i].prevPosition + (bs[i].position - bs[i].prevPosition) * alpha;
 
             const glm::vec3 pos(static_cast<float>(pSim.x), static_cast<float>(pSim.y), static_cast<float>(pSim.z));
             const auto r = static_cast<float>(bs[i].radius);
+            renderPositions[i] = pos;
 
             glm::mat4 model(1.0f);
             model = glm::translate(model, pos);
@@ -396,9 +591,43 @@ int main() {
         glDrawElementsInstanced(GL_TRIANGLES, sphereIndexCount, GL_UNSIGNED_INT, nullptr, static_cast<GLsizei>(n));
         glBindVertexArray(0);
 
+        DebugOverlay::TargetHud targetHud{};
+        {
+            const glm::vec3 rayOrigin = cam.pos;
+            const glm::vec3 rayDir = glm::normalize(camFwd);
+
+            int bestIdx = -1;
+            float bestT = std::numeric_limits<float>::infinity();
+            for (std::size_t i = 0; i < n; ++i) {
+                float t = 0.0f;
+                if (!raySphereHit(rayOrigin, rayDir, renderPositions[i], static_cast<float>(bs[i].radius), t)) {
+                    continue;
+                }
+                if (t < bestT) {
+                    bestT = t;
+                    bestIdx = static_cast<int>(i);
+                }
+            }
+
+            if (bestIdx >= 0) {
+                const std::size_t i = static_cast<std::size_t>(bestIdx);
+                const glm::vec3 labelPos = renderPositions[i] + glm::vec3(0.0f, static_cast<float>(bs[i].radius) * 1.6f, 0.0f);
+                float sx = 0.0f;
+                float sy = 0.0f;
+                if (worldToScreen(labelPos, view, proj, g_fb.w, g_fb.h, sx, sy)) {
+                    targetHud.visible = true;
+                    targetHud.xPx = sx;
+                    targetHud.yPx = sy;
+                    targetHud.restitution = static_cast<float>(bs[i].restitution);
+                    targetHud.staticFriction = static_cast<float>(bs[i].staticFriction);
+                    targetHud.dynamicFriction = static_cast<float>(bs[i].dynamicFriction);
+                }
+            }
+        }
+
         glDisable(GL_DEPTH_TEST);
         glDisable(GL_CULL_FACE);
-        overlay.draw(g_fb.w, g_fb.h, paused);
+        overlay.draw(g_fb.w, g_fb.h, paused, targetHud);
         glEnable(GL_CULL_FACE);
         glEnable(GL_DEPTH_TEST);
 

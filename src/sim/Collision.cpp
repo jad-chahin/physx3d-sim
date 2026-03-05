@@ -11,6 +11,68 @@ namespace sim::collision {
         [[nodiscard]] double epsilon(const Body& a, const Body& b) {
             return std::max((a.radius + b.radius) * 1e-6, 1e-12);
         }
+
+        [[nodiscard]] double invInertiaSphere(const Body& b) {
+            if (std::isfinite(b.invInertia) && b.invInertia > 0.0) {
+                return b.invInertia;
+            }
+            if (!std::isfinite(b.invMass) || b.invMass <= 0.0 || !std::isfinite(b.radius) || b.radius <= 0.0) {
+                return 0.0;
+            }
+            // Solid sphere: I = 2/5 m r^2 => invI = 5/2 * invMass / r^2
+            return 2.5 * b.invMass / (b.radius * b.radius);
+        }
+
+        [[nodiscard]] Vec3 contactOffsetA(const Body& a, const Vec3& normal) {
+            return normal * a.radius;
+        }
+
+        [[nodiscard]] Vec3 contactOffsetB(const Body& b, const Vec3& normal) {
+            return normal * (-b.radius);
+        }
+
+        [[nodiscard]] Vec3 contactRelativeVelocity(const Body& a, const Body& b, const Vec3& rA, const Vec3& rB) {
+            const Vec3 vAContact = a.velocity + a.angularVelocity.cross(rA);
+            const Vec3 vBContact = b.velocity + b.angularVelocity.cross(rB);
+            return vBContact - vAContact;
+        }
+
+        [[nodiscard]] double effectiveMassAlong(
+            const Body& a, const Body& b,
+            const Vec3& rA, const Vec3& rB, const Vec3& dir)
+        {
+            const double invIA = invInertiaSphere(a);
+            const double invIB = invInertiaSphere(b);
+            const Vec3 rAxDir = rA.cross(dir);
+            const Vec3 rBxDir = rB.cross(dir);
+            const double rotA = invIA * rAxDir.dot(rAxDir);
+            const double rotB = invIB * rBxDir.dot(rBxDir);
+            return a.invMass + b.invMass + rotA + rotB;
+        }
+
+        void applyImpulseAtContact(Body& a, Body& b, const Vec3& rA, const Vec3& rB, const Vec3& impulse) {
+            if (!std::isfinite(impulse.x) || !std::isfinite(impulse.y) || !std::isfinite(impulse.z)) {
+                return;
+            }
+
+            const double wA = a.invMass;
+            const double wB = b.invMass;
+            if (!std::isfinite(wA) || !std::isfinite(wB) || (wA == 0.0 && wB == 0.0)) {
+                return;
+            }
+
+            a.velocity = a.velocity - impulse * wA;
+            b.velocity = b.velocity + impulse * wB;
+
+            const double invIA = invInertiaSphere(a);
+            const double invIB = invInertiaSphere(b);
+            if (invIA > 0.0) {
+                a.angularVelocity = a.angularVelocity - (rA.cross(impulse)) * invIA;
+            }
+            if (invIB > 0.0) {
+                b.angularVelocity = b.angularVelocity + (rB.cross(impulse)) * invIB;
+            }
+        }
     } // namespace
 
     bool isColliding(const Body& a, const Body& b)
@@ -94,15 +156,20 @@ namespace sim::collision {
             return;
         }
 
-        const double wA = a.invMass;
-        const double wB = b.invMass;
-        if (!std::isfinite(wA) || !std::isfinite(wB) || (wA == 0.0 && wB == 0.0)) {
+        const Vec3 rA = contactOffsetA(a, normal);
+        const Vec3 rB = contactOffsetB(b, normal);
+        applyImpulseAtContact(a, b, rA, rB, normal * impulse);
+    }
+
+    void applyTangentImpulse(Body& a, Body& b, const Vec3& normal, const Vec3& tangent, const double impulse)
+    {
+        if (!std::isfinite(tangent.x) || !std::isfinite(tangent.y) || !std::isfinite(tangent.z) ||
+            !std::isfinite(impulse) || impulse == 0.0) {
             return;
         }
-
-        const Vec3 j = normal * impulse;
-        a.velocity = a.velocity - j * wA;
-        b.velocity = b.velocity + j * wB;
+        const Vec3 rA = contactOffsetA(a, normal);
+        const Vec3 rB = contactOffsetB(b, normal);
+        applyImpulseAtContact(a, b, rA, rB, tangent * impulse);
     }
 
     SolveStats solveCollisionPair(Body& a, Body& b, const SolveParams& params, const bool assumeColliding)
@@ -122,8 +189,6 @@ namespace sim::collision {
 
         Vec3& pA = a.position;
         Vec3& pB = b.position;
-        Vec3& vA = a.velocity;
-        Vec3& vB = b.velocity;
 
         const Vec3 d = pB - pA;
         const double dist2 = d.dot(d);
@@ -144,6 +209,14 @@ namespace sim::collision {
         stats.normal = n;
         stats.hasNormal = true;
 
+        const Vec3 rA = contactOffsetA(a, n);
+        const Vec3 rB = contactOffsetB(b, n);
+
+        const double effMassN = effectiveMassAlong(a, b, rA, rB, n);
+        if (!std::isfinite(effMassN) || effMassN <= 0.0) {
+            return stats;
+        }
+
         const double invMassSum = wA + wB;
         if (!std::isfinite(invMassSum) || invMassSum <= 0.0) {
             return stats;
@@ -154,15 +227,43 @@ namespace sim::collision {
         pA = pA - n * (correction * wA / invMassSum);
         pB = pB + n * (correction * wB / invMassSum);
 
-        const double vN = (vB - vA).dot(n);
+        const Vec3 rv = contactRelativeVelocity(a, b, rA, rB);
+        const double vN = rv.dot(n);
         if (vN >= 0.0) {
             return stats;
         }
 
-        const double impulse = -(1 + params.restitution) * vN / invMassSum;
-        applyNormalImpulse(a, b, n, impulse);
-        stats.normalImpulse = impulse;
+        const double normalImpulse = -(1 + params.restitution) * vN / effMassN;
+        applyNormalImpulse(a, b, n, normalImpulse);
+        stats.normalImpulse = normalImpulse;
         stats.impulseApplied = true;
+
+        // Coulomb friction: solve tangent impulse after normal impulse update.
+        const Vec3 rv2 = contactRelativeVelocity(a, b, rA, rB);
+        const Vec3 tangentUnscaled = rv2 - n * rv2.dot(n);
+        const double tangentLen = tangentUnscaled.magnitude();
+        if (tangentLen > 1e-12) {
+            const Vec3 t = tangentUnscaled / tangentLen;
+            const double effMassT = effectiveMassAlong(a, b, rA, rB, t);
+            if (effMassT <= 0.0 || !std::isfinite(effMassT)) {
+                return stats;
+            }
+            const double jt = -rv2.dot(t) / effMassT;
+
+            double tangentImpulse = 0.0;
+            const double maxStatic = normalImpulse * std::max(0.0, params.staticFriction);
+            if (std::abs(jt) <= maxStatic) {
+                tangentImpulse = jt;
+            } else {
+                tangentImpulse = -normalImpulse * std::max(0.0, params.dynamicFriction) * std::copysign(1.0, jt);
+            }
+
+            applyTangentImpulse(a, b, n, t, tangentImpulse);
+            if (std::abs(tangentImpulse) > 0.0) {
+                stats.impulseApplied = true;
+            }
+        }
+
         return stats;
     }
 } // namespace sim::collision

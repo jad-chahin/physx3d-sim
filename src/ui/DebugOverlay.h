@@ -10,11 +10,20 @@
 
 class DebugOverlay {
 public:
+    struct TargetHud {
+        bool visible = false;
+        float xPx = 0.0f;
+        float yPx = 0.0f;
+        float restitution = 0.0f;
+        float staticFriction = 0.0f;
+        float dynamicFriction = 0.0f;
+    };
+
     void init();
     void shutdown();
 
     // Draw top-right controls and paused indicator
-    void draw(int fbw, int fbh, bool paused) const;
+    void draw(int fbw, int fbh, bool paused, const TargetHud& targetHud) const;
 
 private:
     GLuint program_ = 0;

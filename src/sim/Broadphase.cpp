@@ -101,27 +101,8 @@ namespace sim::broadphase {
 
         [[nodiscard]] bool useSap(const std::vector<Body>& bodies)
         {
-            if (bodies.size() < 64) {
-                return false;
-            }
-
-            double minRadius = std::numeric_limits<double>::infinity();
-            double maxRadius = 0.0;
-            std::size_t valid = 0;
-            for (const Body& b : bodies) {
-                if (!std::isfinite(b.radius) || b.radius <= 0.0) {
-                    continue;
-                }
-                minRadius = std::min(minRadius, b.radius);
-                maxRadius = std::max(maxRadius, b.radius);
-                ++valid;
-            }
-
-            if (valid < 64 || !std::isfinite(minRadius) || minRadius <= 0.0) {
-                return false;
-            }
-
-            return (maxRadius / minRadius) >= 8.0;
+            (void)bodies;
+            return true;
         }
 
         std::vector<Pair> discreteGridPairs(const std::vector<Body>& bodies)

@@ -5,6 +5,7 @@
 #include "ui/DebugOverlay.h"
 #include <array>
 #include <cstdint>
+#include <cstdio>
 #include <string>
 #include <vector>
 
@@ -71,6 +72,7 @@ static const std::array<std::uint8_t, 7>& glyph5x7(char c) {
     static constexpr std::array<std::uint8_t, 7> SP = {0,0,0,0,0,0,0};
 
     static constexpr std::array<std::uint8_t, 7> A = {0b01110,0b10001,0b10001,0b11111,0b10001,0b10001,0b10001};
+    static constexpr std::array<std::uint8_t, 7> B = {0b11110,0b10001,0b10001,0b11110,0b10001,0b10001,0b11110};
     static constexpr std::array<std::uint8_t, 7> C = {0b01110,0b10001,0b10000,0b10000,0b10000,0b10001,0b01110};
     static constexpr std::array<std::uint8_t, 7> D = {0b11110,0b10001,0b10001,0b10001,0b10001,0b10001,0b11110};
     static constexpr std::array<std::uint8_t, 7> E = {0b11111,0b10000,0b10000,0b11110,0b10000,0b10000,0b11111};
@@ -78,20 +80,36 @@ static const std::array<std::uint8_t, 7>& glyph5x7(char c) {
     static constexpr std::array<std::uint8_t, 7> K = {0b10001,0b10010,0b10100,0b11000,0b10100,0b10010,0b10001};
     static constexpr std::array<std::uint8_t, 7> L = {0b10000,0b10000,0b10000,0b10000,0b10000,0b10000,0b11111};
     static constexpr std::array<std::uint8_t, 7> M = {0b10001,0b11011,0b10101,0b10101,0b10001,0b10001,0b10001};
+    static constexpr std::array<std::uint8_t, 7> N = {0b10001,0b11001,0b10101,0b10011,0b10001,0b10001,0b10001};
     static constexpr std::array<std::uint8_t, 7> O = {0b01110,0b10001,0b10001,0b10001,0b10001,0b10001,0b01110};
     static constexpr std::array<std::uint8_t, 7> P = {0b11110,0b10001,0b10001,0b11110,0b10000,0b10000,0b10000};
     static constexpr std::array<std::uint8_t, 7> Q = {0b01110,0b10001,0b10001,0b10001,0b10101,0b10010,0b01101};
+    static constexpr std::array<std::uint8_t, 7> R = {0b11110,0b10001,0b10001,0b11110,0b10100,0b10010,0b10001};
     static constexpr std::array<std::uint8_t, 7> S = {0b01111,0b10000,0b10000,0b01110,0b00001,0b00001,0b11110};
     static constexpr std::array<std::uint8_t, 7> T = {0b11111,0b00100,0b00100,0b00100,0b00100,0b00100,0b00100};
     static constexpr std::array<std::uint8_t, 7> U = {0b10001,0b10001,0b10001,0b10001,0b10001,0b10001,0b01110};
     static constexpr std::array<std::uint8_t, 7> V = {0b10001,0b10001,0b10001,0b10001,0b10001,0b01010,0b00100};
     static constexpr std::array<std::uint8_t, 7> W = {0b10001,0b10001,0b10001,0b10101,0b10101,0b11011,0b10001};
 
+    static constexpr std::array<std::uint8_t, 7> N0 = {0b01110,0b10001,0b10011,0b10101,0b11001,0b10001,0b01110};
+    static constexpr std::array<std::uint8_t, 7> N1 = {0b00100,0b01100,0b00100,0b00100,0b00100,0b00100,0b01110};
+    static constexpr std::array<std::uint8_t, 7> N2 = {0b01110,0b10001,0b00001,0b00010,0b00100,0b01000,0b11111};
+    static constexpr std::array<std::uint8_t, 7> N3 = {0b11110,0b00001,0b00001,0b01110,0b00001,0b00001,0b11110};
+    static constexpr std::array<std::uint8_t, 7> N4 = {0b00010,0b00110,0b01010,0b10010,0b11111,0b00010,0b00010};
+    static constexpr std::array<std::uint8_t, 7> N5 = {0b11111,0b10000,0b10000,0b11110,0b00001,0b00001,0b11110};
+    static constexpr std::array<std::uint8_t, 7> N6 = {0b01110,0b10000,0b10000,0b11110,0b10001,0b10001,0b01110};
+    static constexpr std::array<std::uint8_t, 7> N7 = {0b11111,0b00001,0b00010,0b00100,0b01000,0b01000,0b01000};
+    static constexpr std::array<std::uint8_t, 7> N8 = {0b01110,0b10001,0b10001,0b01110,0b10001,0b10001,0b01110};
+    static constexpr std::array<std::uint8_t, 7> N9 = {0b01110,0b10001,0b10001,0b01111,0b00001,0b00001,0b01110};
+
     static constexpr std::array<std::uint8_t, 7> COLON = {0b00000,0b00100,0b00100,0b00000,0b00100,0b00100,0b00000};
     static constexpr std::array<std::uint8_t, 7> PLUS  = {0b00000,0b00100,0b00100,0b11111,0b00100,0b00100,0b00000};
+    static constexpr std::array<std::uint8_t, 7> DOT   = {0b00000,0b00000,0b00000,0b00000,0b00000,0b00110,0b00110};
+    static constexpr std::array<std::uint8_t, 7> UNDERSCORE = {0b00000,0b00000,0b00000,0b00000,0b00000,0b00000,0b11111};
 
     switch (c) {
         case 'A': return A;
+        case 'B': return B;
         case 'C': return C;
         case 'D': return D;
         case 'E': return E;
@@ -99,16 +117,30 @@ static const std::array<std::uint8_t, 7>& glyph5x7(char c) {
         case 'K': return K;
         case 'L': return L;
         case 'M': return M;
+        case 'N': return N;
         case 'O': return O;
         case 'P': return P;
         case 'Q': return Q;
+        case 'R': return R;
         case 'S': return S;
         case 'T': return T;
         case 'U': return U;
         case 'V': return V;
         case 'W': return W;
+        case '0': return N0;
+        case '1': return N1;
+        case '2': return N2;
+        case '3': return N3;
+        case '4': return N4;
+        case '5': return N5;
+        case '6': return N6;
+        case '7': return N7;
+        case '8': return N8;
+        case '9': return N9;
         case ':': return COLON;
         case '+': return PLUS;
+        case '.': return DOT;
+        case '_': return UNDERSCORE;
         default:  return SP;
     }
 }
@@ -196,7 +228,7 @@ void DebugOverlay::shutdown() {
     program_ = 0;
 }
 
-void DebugOverlay::draw(const int fbw, const int fbh, const bool paused) const {
+void DebugOverlay::draw(const int fbw, const int fbh, const bool paused, const TargetHud& targetHud) const {
     const std::string controls =
         "ESC: TOGGLE MOUSE\n"
         "SPACE: PAUSE\n"
@@ -212,6 +244,8 @@ void DebugOverlay::draw(const int fbw, const int fbh, const bool paused) const {
 
     std::vector<float> verts;
     verts.reserve(8000);
+    std::vector<float> crosshair;
+    crosshair.reserve(24);
 
     std::size_t pausedVertsCount = 0;
     if (paused) {
@@ -222,6 +256,31 @@ void DebugOverlay::draw(const int fbw, const int fbh, const bool paused) const {
 
     appendTextPx(verts, x, y, scalePx, controls);
 
+    std::vector<float> popupBg;
+    if (targetHud.visible) {
+        char popup[160];
+        std::snprintf(
+            popup, sizeof(popup),
+            "E:%.2f\nS:%.2f\nD:%.2f",
+            targetHud.restitution, targetHud.staticFriction, targetHud.dynamicFriction);
+
+        const float popupW = measureLinePx("D:00.00", scalePx) + 8.0f;
+        const float popupH = static_cast<float>((kFontH + 2) * 3) * scalePx + 8.0f;
+        const float px = targetHud.xPx - popupW * 0.5f;
+        const float py = targetHud.yPx - popupH - 12.0f;
+
+        pushQuadPx(popupBg, px, py, px + popupW, py + popupH);
+        appendTextPx(verts, px + 4.0f, py + 4.0f, scalePx, popup);
+    }
+
+    // Center crosshair for easier target selection.
+    const float cx = static_cast<float>(fbw) * 0.5f;
+    const float cy = static_cast<float>(fbh) * 0.5f;
+    constexpr float crossHalf = 7.0f;
+    constexpr float crossThick = 1.0f;
+    pushQuadPx(crosshair, cx - crossHalf, cy - crossThick, cx + crossHalf, cy + crossThick);
+    pushQuadPx(crosshair, cx - crossThick, cy - crossHalf, cx + crossThick, cy + crossHalf);
+
     glDisable(GL_DEPTH_TEST);
 
     glUseProgram(program_);
@@ -231,6 +290,14 @@ void DebugOverlay::draw(const int fbw, const int fbh, const bool paused) const {
     glBindBuffer(GL_ARRAY_BUFFER, vbo_);
     glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(verts.size() * sizeof(float)), verts.data(), GL_DYNAMIC_DRAW);
 
+    if (!popupBg.empty()) {
+        glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(popupBg.size() * sizeof(float)), popupBg.data(), GL_DYNAMIC_DRAW);
+        glUniform3f(uColor_, 0.08f, 0.08f, 0.08f);
+        glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(popupBg.size() / 2));
+
+        glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(verts.size() * sizeof(float)), verts.data(), GL_DYNAMIC_DRAW);
+    }
+
     if (pausedVertsCount > 0) {
         glUniform3f(uColor_, 1.0f, 0.2f, 0.2f);
         glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(pausedVertsCount / 2));
@@ -239,6 +306,12 @@ void DebugOverlay::draw(const int fbw, const int fbh, const bool paused) const {
     glUniform3f(uColor_, 1.0f, 1.0f, 1.0f);
     glDrawArrays(GL_TRIANGLES, static_cast<GLint>(pausedVertsCount / 2),
                  static_cast<GLsizei>((verts.size() - pausedVertsCount) / 2));
+
+    if (!crosshair.empty()) {
+        glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(crosshair.size() * sizeof(float)), crosshair.data(), GL_DYNAMIC_DRAW);
+        glUniform3f(uColor_, 0.85f, 0.95f, 0.30f);
+        glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(crosshair.size() / 2));
+    }
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
