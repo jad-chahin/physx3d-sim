@@ -105,17 +105,22 @@ int main() {
     };
 
     // Massive attractor (very heavy, effectively fixed).
-    const std::size_t attractor = pushBall(
+    pushBall(
         sim::Vec3(0.0, 0.0, 0.0),
         sim::Vec3(0.0, 0.0, 0.0),
         1e-12, 3.2, 0.25, 0.85, 0.65);
-    bodies[attractor].angularVelocity = sim::Vec3(0.0, 0.8, 0.2);
 
-    // Body that falls mostly radially into the attractor and should settle near contact.
+    // Body that starts on top of the attractor.
     pushBall(
-        sim::Vec3(-10.0, 0.0, 0.0),
+        sim::Vec3(0.0, 4.05, 0.0),
         sim::Vec3(0.0, 0.0, 0.0),
         1.0, 0.85, 0.02, 1.20, 1.00);
+
+    // Body on the opposite side with initial tangential velocity and medium friction.
+    pushBall(
+        sim::Vec3(0.0, -4.05, 0.0),
+        sim::Vec3(1.2, 0.0, 0.0),
+        1.0, 0.85, 0.15, 0.55, 0.35);
 
     // Body with mostly tangential velocity to demonstrate orbiting behavior.
     const std::size_t orbiter = pushBall(
@@ -164,7 +169,11 @@ int main() {
     bool mouseCaptured = true;
     bool escWasDown = false;
     bool spaceWasDown = false;
+    bool minusWasDown = false;
+    bool equalWasDown = false;
+    bool oneWasDown = false;
     bool paused = false;
+    double simSpeed = 1.0;
 
     // VSync 0=OFF 1=ON
     glfwSwapInterval(0);
@@ -360,6 +369,28 @@ int main() {
         }
         spaceWasDown = spaceDown;
 
+        // '-' halves speed, '=' doubles speed, '1' resets to real-time speed.
+        const bool minusDown = (glfwGetKey(window, GLFW_KEY_MINUS) == GLFW_PRESS);
+        if (minusDown && !minusWasDown) {
+            simSpeed *= 0.5;
+            if (simSpeed < (1.0 / 64.0)) {
+                simSpeed = 1.0 / 64.0;
+            }
+        }
+        minusWasDown = minusDown;
+
+        const bool equalDown = (glfwGetKey(window, GLFW_KEY_EQUAL) == GLFW_PRESS);
+        if (equalDown && !equalWasDown) {
+            simSpeed *= 2.0;
+        }
+        equalWasDown = equalDown;
+
+        const bool oneDown = (glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS);
+        if (oneDown && !oneWasDown) {
+            simSpeed = 1.0;
+        }
+        oneWasDown = oneDown;
+
 
         const double now = glfwGetTime();
         double frameTime = now - lastTime;
@@ -370,7 +401,7 @@ int main() {
         if (fpsElapsed >= fpsUpdateInterval) {
             const double fps = static_cast<double>(fpsFrames) / fpsElapsed;
             char title[128];
-            std::snprintf(title, sizeof(title), "%s - FPS: %.1f", kWindowTitle, fps);
+            std::snprintf(title, sizeof(title), "%s - FPS: %.1f - Speed: %.3gx", kWindowTitle, fps, simSpeed);
             glfwSetWindowTitle(window, title);
             fpsElapsed = 0.0;
             fpsFrames = 0;
@@ -407,7 +438,7 @@ int main() {
         }
 
         if (!paused) {
-            accumulator += frameTime;
+            accumulator += frameTime * simSpeed;
 
             while (accumulator >= dt) {
                 for (auto& body : bs) {

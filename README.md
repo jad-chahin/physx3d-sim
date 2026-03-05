@@ -30,6 +30,8 @@ If you get a DLL error on Windows when launching from terminal, make sure runtim
 
 - `ESC` toggle mouse capture
 - `SPACE` pause/unpause simulation
+- `- / =` decrease/increase simulation speed
+- `1` reset simulation speed to `1x`
 - `W A S D` move camera on horizontal plane
 - `Q / E` move camera down/up
 - `Mouse` look around

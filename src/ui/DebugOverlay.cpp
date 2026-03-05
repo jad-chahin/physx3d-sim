@@ -104,6 +104,8 @@ static const std::array<std::uint8_t, 7>& glyph5x7(char c) {
 
     static constexpr std::array<std::uint8_t, 7> COLON = {0b00000,0b00100,0b00100,0b00000,0b00100,0b00100,0b00000};
     static constexpr std::array<std::uint8_t, 7> PLUS  = {0b00000,0b00100,0b00100,0b11111,0b00100,0b00100,0b00000};
+    static constexpr std::array<std::uint8_t, 7> MINUS = {0b00000,0b00000,0b00000,0b11111,0b00000,0b00000,0b00000};
+    static constexpr std::array<std::uint8_t, 7> EQUAL = {0b00000,0b11111,0b00000,0b11111,0b00000,0b00000,0b00000};
     static constexpr std::array<std::uint8_t, 7> DOT   = {0b00000,0b00000,0b00000,0b00000,0b00000,0b00110,0b00110};
     static constexpr std::array<std::uint8_t, 7> UNDERSCORE = {0b00000,0b00000,0b00000,0b00000,0b00000,0b00000,0b11111};
 
@@ -139,6 +141,8 @@ static const std::array<std::uint8_t, 7>& glyph5x7(char c) {
         case '9': return N9;
         case ':': return COLON;
         case '+': return PLUS;
+        case '-': return MINUS;
+        case '=': return EQUAL;
         case '.': return DOT;
         case '_': return UNDERSCORE;
         default:  return SP;
@@ -232,6 +236,9 @@ void DebugOverlay::draw(const int fbw, const int fbh, const bool paused, const T
     const std::string controls =
         "ESC: TOGGLE MOUSE\n"
         "SPACE: PAUSE\n"
+        "-: SPEED DOWN\n"
+        "=: SPEED UP\n"
+        "1: SPEED RESET\n"
         "WASD + QE: MOVE\n"
         "MOUSE: LOOK";
 
