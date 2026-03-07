@@ -26,15 +26,17 @@ cmake --build .\cmake-build-debug --target physics3d -j 6
 
 If you get a DLL error on Windows when launching from terminal, make sure runtime DLL locations are available in `PATH` (for example MinGW runtime and GLFW build output folders used by your environment).
 
-## Controls
+## Controls (Defaults)
 
-- `ESC` toggle mouse capture
-- `SPACE` pause/unpause simulation
+- `ESC` open/close pause menu (releases/captures mouse)
+- `SPACE` freeze/unfreeze simulation
 - `- / =` decrease/increase simulation speed
 - `1` reset simulation speed to `1x`
 - `W A S D` move camera on horizontal plane
 - `Q / E` move camera down/up
 - `Mouse` look around
+- Pause menu controls section: press `1-0` to pick an action, then press a key to rebind it
+- Control bindings are saved to `controls.cfg` in the working directory
 
 ## Project Layout
 

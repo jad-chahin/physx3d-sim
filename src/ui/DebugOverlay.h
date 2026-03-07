@@ -6,6 +6,8 @@
 #define PHYSICS3D_DEBUGOVERLAY_H
 
 #include <glad/glad.h>
+#include <string>
+#include <vector>
 
 
 class DebugOverlay {
@@ -19,11 +21,25 @@ public:
         float dynamicFriction = 0.0f;
     };
 
+    struct PauseMenuHud {
+        bool visible = false;
+        bool awaitingBind = false;
+        std::string pendingAction;
+        std::vector<std::string> controlLines;
+    };
+
     void init();
     void shutdown();
 
-    // Draw top-right controls and paused indicator
-    void draw(int fbw, int fbh, bool paused, const TargetHud& targetHud) const;
+    // Draw freeze indicator, optional pause menu, and target HUD.
+    void draw(
+        int fbw,
+        int fbh,
+        bool simFrozen,
+        double simSpeed,
+        double fps,
+        const PauseMenuHud& pauseMenu,
+        const TargetHud& targetHud) const;
 
 private:
     GLuint program_ = 0;

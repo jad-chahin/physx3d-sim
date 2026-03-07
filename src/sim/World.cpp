@@ -345,7 +345,6 @@ namespace sim {
             if (!found) {
                 solveDistanceJoints_(remaining);
                 advancePositions_(remaining);
-                remaining = 0.0;
                 break;
             }
 
@@ -488,15 +487,10 @@ namespace sim {
 
     bool World::hasAnyOverlapInPairs_(const std::vector<std::pair<std::size_t, std::size_t>>& pairs) const
     {
-        for (const auto& [i, j] : pairs) {
-            if (!shouldCollidePair_(i, j)) {
-                continue;
-            }
-            if (collision::isColliding(bodies_[i], bodies_[j])) {
-                return true;
-            }
-        }
-        return false;
+        return std::ranges::any_of(pairs, [this](const auto& pair) {
+            const auto [i, j] = pair;
+            return shouldCollidePair_(i, j) && collision::isColliding(bodies_[i], bodies_[j]);
+        });
     }
 
     bool World::shouldCollidePair_(const std::size_t i, const std::size_t j) const

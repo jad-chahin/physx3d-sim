@@ -3,11 +3,16 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
+#include <array>
+#include <cctype>
 #include <cstdio>
 #include <cstddef>
 #include <cmath>
+#include <fstream>
 #include <iostream>
 #include <limits>
+#include <string>
+#include <unordered_map>
 #include <vector>
 #include <utility> // std::move
 
@@ -74,6 +79,252 @@ static bool worldToScreen(
     outYPx = (1.0f - (ndc.y * 0.5f + 0.5f)) * static_cast<float>(fbh);
     return true;
 }
+
+namespace {
+    struct ControlBindings {
+        int freeze = GLFW_KEY_SPACE;
+        int speedDown = GLFW_KEY_MINUS;
+        int speedUp = GLFW_KEY_EQUAL;
+        int speedReset = GLFW_KEY_1;
+        int moveForward = GLFW_KEY_W;
+        int moveBack = GLFW_KEY_S;
+        int moveLeft = GLFW_KEY_A;
+        int moveRight = GLFW_KEY_D;
+        int moveUp = GLFW_KEY_E;
+        int moveDown = GLFW_KEY_Q;
+    };
+
+    struct RebindAction {
+        const char* label;
+        const char* configKey;
+        int ControlBindings::* member;
+    };
+
+    constexpr std::array<RebindAction, 10> kRebindActions{{
+        {"FREEZE", "FREEZE", &ControlBindings::freeze},
+        {"SPEED DOWN", "SPEED_DOWN", &ControlBindings::speedDown},
+        {"SPEED UP", "SPEED_UP", &ControlBindings::speedUp},
+        {"SPEED RESET", "SPEED_RESET", &ControlBindings::speedReset},
+        {"MOVE FORWARD", "MOVE_FORWARD", &ControlBindings::moveForward},
+        {"MOVE BACK", "MOVE_BACK", &ControlBindings::moveBack},
+        {"MOVE LEFT", "MOVE_LEFT", &ControlBindings::moveLeft},
+        {"MOVE RIGHT", "MOVE_RIGHT", &ControlBindings::moveRight},
+        {"MOVE UP", "MOVE_UP", &ControlBindings::moveUp},
+        {"MOVE DOWN", "MOVE_DOWN", &ControlBindings::moveDown},
+    }};
+
+    int g_lastPressedKey = GLFW_KEY_UNKNOWN;
+
+    void keyCaptureCallback(GLFWwindow*, const int key, const int scancode, const int action, const int mods) {
+        (void)scancode;
+        (void)mods;
+        if (action == GLFW_PRESS && key != GLFW_KEY_UNKNOWN) {
+            g_lastPressedKey = key;
+        }
+    }
+
+    int consumeLastPressedKey() {
+        const int key = g_lastPressedKey;
+        g_lastPressedKey = GLFW_KEY_UNKNOWN;
+        return key;
+    }
+
+    std::string trimCopy(const std::string& s) {
+        const auto first = s.find_first_not_of(" \t\r\n");
+        if (first == std::string::npos) {
+            return "";
+        }
+        const auto last = s.find_last_not_of(" \t\r\n");
+        return s.substr(first, last - first + 1);
+    }
+
+    std::string toUpperCopy(std::string s) {
+        for (char& c : s) {
+            c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        }
+        return s;
+    }
+
+    std::string keyNameForCode(const int key) {
+        switch (key) {
+            case GLFW_KEY_SPACE: return "SPACE";
+            case GLFW_KEY_MINUS: return "MINUS";
+            case GLFW_KEY_EQUAL: return "EQUAL";
+            case GLFW_KEY_0: return "0";
+            case GLFW_KEY_1: return "1";
+            case GLFW_KEY_2: return "2";
+            case GLFW_KEY_3: return "3";
+            case GLFW_KEY_4: return "4";
+            case GLFW_KEY_5: return "5";
+            case GLFW_KEY_6: return "6";
+            case GLFW_KEY_7: return "7";
+            case GLFW_KEY_8: return "8";
+            case GLFW_KEY_9: return "9";
+            case GLFW_KEY_A: return "A";
+            case GLFW_KEY_B: return "B";
+            case GLFW_KEY_C: return "C";
+            case GLFW_KEY_D: return "D";
+            case GLFW_KEY_E: return "E";
+            case GLFW_KEY_F: return "F";
+            case GLFW_KEY_G: return "G";
+            case GLFW_KEY_H: return "H";
+            case GLFW_KEY_I: return "I";
+            case GLFW_KEY_J: return "J";
+            case GLFW_KEY_K: return "K";
+            case GLFW_KEY_L: return "L";
+            case GLFW_KEY_M: return "M";
+            case GLFW_KEY_N: return "N";
+            case GLFW_KEY_O: return "O";
+            case GLFW_KEY_P: return "P";
+            case GLFW_KEY_Q: return "Q";
+            case GLFW_KEY_R: return "R";
+            case GLFW_KEY_S: return "S";
+            case GLFW_KEY_T: return "T";
+            case GLFW_KEY_U: return "U";
+            case GLFW_KEY_V: return "V";
+            case GLFW_KEY_W: return "W";
+            case GLFW_KEY_X: return "X";
+            case GLFW_KEY_Y: return "Y";
+            case GLFW_KEY_Z: return "Z";
+            default: return "UNKNOWN";
+        }
+    }
+
+    bool tryCodeForKeyName(const std::string& keyName, int& outKey) {
+        static const std::unordered_map<std::string, int> kNameToCode = {
+            {"SPACE", GLFW_KEY_SPACE},
+            {"MINUS", GLFW_KEY_MINUS},
+            {"EQUAL", GLFW_KEY_EQUAL},
+            {"0", GLFW_KEY_0},
+            {"1", GLFW_KEY_1},
+            {"2", GLFW_KEY_2},
+            {"3", GLFW_KEY_3},
+            {"4", GLFW_KEY_4},
+            {"5", GLFW_KEY_5},
+            {"6", GLFW_KEY_6},
+            {"7", GLFW_KEY_7},
+            {"8", GLFW_KEY_8},
+            {"9", GLFW_KEY_9},
+            {"A", GLFW_KEY_A},
+            {"B", GLFW_KEY_B},
+            {"C", GLFW_KEY_C},
+            {"D", GLFW_KEY_D},
+            {"E", GLFW_KEY_E},
+            {"F", GLFW_KEY_F},
+            {"G", GLFW_KEY_G},
+            {"H", GLFW_KEY_H},
+            {"I", GLFW_KEY_I},
+            {"J", GLFW_KEY_J},
+            {"K", GLFW_KEY_K},
+            {"L", GLFW_KEY_L},
+            {"M", GLFW_KEY_M},
+            {"N", GLFW_KEY_N},
+            {"O", GLFW_KEY_O},
+            {"P", GLFW_KEY_P},
+            {"Q", GLFW_KEY_Q},
+            {"R", GLFW_KEY_R},
+            {"S", GLFW_KEY_S},
+            {"T", GLFW_KEY_T},
+            {"U", GLFW_KEY_U},
+            {"V", GLFW_KEY_V},
+            {"W", GLFW_KEY_W},
+            {"X", GLFW_KEY_X},
+            {"Y", GLFW_KEY_Y},
+            {"Z", GLFW_KEY_Z},
+        };
+
+        const auto it = kNameToCode.find(toUpperCopy(keyName));
+        if (it == kNameToCode.end()) {
+            return false;
+        }
+        outKey = it->second;
+        return true;
+    }
+
+    bool isBindableKey(const int key) {
+        if (key == GLFW_KEY_ESCAPE || key == GLFW_KEY_UNKNOWN) {
+            return false;
+        }
+        return keyNameForCode(key) != "UNKNOWN";
+    }
+
+    int actionIndexFromDigitKey(const int key) {
+        switch (key) {
+            case GLFW_KEY_1: return 0;
+            case GLFW_KEY_2: return 1;
+            case GLFW_KEY_3: return 2;
+            case GLFW_KEY_4: return 3;
+            case GLFW_KEY_5: return 4;
+            case GLFW_KEY_6: return 5;
+            case GLFW_KEY_7: return 6;
+            case GLFW_KEY_8: return 7;
+            case GLFW_KEY_9: return 8;
+            case GLFW_KEY_0: return 9;
+            default: return -1;
+        }
+    }
+
+    char actionSlotDigit(const int actionIndex) {
+        return (actionIndex == 9) ? '0' : static_cast<char>('1' + actionIndex);
+    }
+
+    void saveControlBindings(const ControlBindings& controls, const std::string& path) {
+        std::ofstream out(path, std::ios::trunc);
+        if (!out) {
+            return;
+        }
+
+        for (const auto& action : kRebindActions) {
+            const int key = controls.*(action.member);
+            out << action.configKey << "=" << keyNameForCode(key) << "\n";
+        }
+    }
+
+    void loadControlBindings(ControlBindings& controls, const std::string& path) {
+        std::ifstream in(path);
+        if (!in) {
+            saveControlBindings(controls, path);
+            return;
+        }
+
+        std::unordered_map<std::string, int*> keyTargets;
+        keyTargets.reserve(kRebindActions.size());
+        for (const auto& action : kRebindActions) {
+            keyTargets.emplace(action.configKey, &(controls.*(action.member)));
+        }
+
+        std::string line;
+        while (std::getline(in, line)) {
+            const auto eq = line.find('=');
+            if (eq == std::string::npos) {
+                continue;
+            }
+
+            const std::string rawKey = trimCopy(line.substr(0, eq));
+            const std::string rawValue = trimCopy(line.substr(eq + 1));
+            if (rawKey.empty() || rawValue.empty()) {
+                continue;
+            }
+
+            const std::string cfgKey = toUpperCopy(rawKey);
+            auto keyIt = keyTargets.find(cfgKey);
+            if (keyIt == keyTargets.end()) {
+                continue;
+            }
+
+            int parsedKey = GLFW_KEY_UNKNOWN;
+            if (!tryCodeForKeyName(rawValue, parsedKey)) {
+                continue;
+            }
+            if (!isBindableKey(parsedKey)) {
+                continue;
+            }
+            *keyIt->second = parsedKey;
+        }
+
+        saveControlBindings(controls, path);
+    }
+} // namespace
 
 
 int main() {
@@ -172,8 +423,16 @@ int main() {
     bool minusWasDown = false;
     bool equalWasDown = false;
     bool oneWasDown = false;
-    bool paused = false;
+    bool simFrozen = false;
+    bool pauseMenuOpen = false;
+    bool awaitingRebind = false;
+    int awaitingRebindAction = -1;
     double simSpeed = 1.0;
+    constexpr double kMinSimSpeed = 1.0 / 128.0;
+    constexpr double kMaxSimSpeed = 128.0;
+    ControlBindings controls{};
+    const std::string controlsConfigPath = "controls.cfg";
+    loadControlBindings(controls, controlsConfigPath);
 
     // VSync 0=OFF 1=ON
     glfwSwapInterval(0);
@@ -206,6 +465,7 @@ int main() {
         g_fb.h = h;
         glViewport(0, 0, w, h);
     });
+    glfwSetKeyCallback(window, keyCaptureCallback);
 
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
@@ -332,9 +592,9 @@ int main() {
     double lastTime = glfwGetTime();
     double accumulator = 0.0;
     double fpsElapsed = 0.0;
+    double hudFps = 0.0;
     int fpsFrames = 0;
     constexpr double fpsUpdateInterval = 0.5;
-    constexpr const char* kWindowTitle = "physics3d";
 
     std::vector<glm::mat4> models;
     std::vector<glm::vec3> renderPositions;
@@ -342,23 +602,54 @@ int main() {
     while (!glfwWindowShouldClose(window)) {
         constexpr int maxStepsPerFrame = 10;
         glfwPollEvents();
+        const int pressedKey = consumeLastPressedKey();
         auto& bs = world.bodies();
 
-        // ESC toggles mouse capture
+        // ESC toggles pause menu and mouse capture state.
         const bool escDown = (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS);
         if (escDown && !escWasDown) {
-            mouseCaptured = !mouseCaptured;
-            glfwSetInputMode(window, GLFW_CURSOR, mouseCaptured ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
-            firstMouse = true; // prevent jump when recapturing
+            if (pauseMenuOpen && awaitingRebind) {
+                awaitingRebind = false;
+                awaitingRebindAction = -1;
+            } else {
+                pauseMenuOpen = !pauseMenuOpen;
+                mouseCaptured = !pauseMenuOpen;
+                glfwSetInputMode(window, GLFW_CURSOR, mouseCaptured ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+                firstMouse = true; // prevent jump when recapturing
+
+                // prevent a big frameTime and freeze interpolation cleanly
+                lastTime = glfwGetTime();
+                accumulator = 0.0;
+                for (auto& body : bs) {
+                    body.prevPosition = body.position;
+                }
+            }
         }
         escWasDown = escDown;
 
-        // SPACE toggles pause
-        const bool spaceDown = (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS);
-        if (spaceDown && !spaceWasDown) {
-            paused = !paused;
+        if (pauseMenuOpen) {
+            if (awaitingRebind) {
+                if (pressedKey != GLFW_KEY_UNKNOWN && pressedKey != GLFW_KEY_ESCAPE && isBindableKey(pressedKey)) {
+                    controls.*(kRebindActions[awaitingRebindAction].member) = pressedKey;
+                    saveControlBindings(controls, controlsConfigPath);
+                    awaitingRebind = false;
+                    awaitingRebindAction = -1;
+                }
+            } else {
+                const int actionIdx = actionIndexFromDigitKey(pressedKey);
+                if (actionIdx >= 0 && actionIdx < static_cast<int>(kRebindActions.size())) {
+                    awaitingRebind = true;
+                    awaitingRebindAction = actionIdx;
+                }
+            }
+        }
 
-            // prevent a big frameTime after pausing/unpausing
+        // SPACE toggles simulation freeze (disabled while pause menu is open).
+        const bool spaceDown = (glfwGetKey(window, controls.freeze) == GLFW_PRESS);
+        if (!pauseMenuOpen && spaceDown && !spaceWasDown) {
+            simFrozen = !simFrozen;
+
+            // prevent a big frameTime after freezing/unfreezing
             lastTime = glfwGetTime();
             accumulator = 0.0;
 
@@ -369,24 +660,21 @@ int main() {
         }
         spaceWasDown = spaceDown;
 
-        // '-' halves speed, '=' doubles speed, '1' resets to real-time speed.
-        const bool minusDown = (glfwGetKey(window, GLFW_KEY_MINUS) == GLFW_PRESS);
-        if (minusDown && !minusWasDown) {
-            simSpeed *= 0.5;
-            if (simSpeed < (1.0 / 64.0)) {
-                simSpeed = 1.0 / 64.0;
-            }
+        // Speed controls are disabled while pause menu is open.
+        const bool minusDown = (glfwGetKey(window, controls.speedDown) == GLFW_PRESS);
+        if (!pauseMenuOpen && minusDown && !minusWasDown) {
+            simSpeed = std::max(kMinSimSpeed, simSpeed * 0.5);
         }
         minusWasDown = minusDown;
 
-        const bool equalDown = (glfwGetKey(window, GLFW_KEY_EQUAL) == GLFW_PRESS);
-        if (equalDown && !equalWasDown) {
-            simSpeed *= 2.0;
+        const bool equalDown = (glfwGetKey(window, controls.speedUp) == GLFW_PRESS);
+        if (!pauseMenuOpen && equalDown && !equalWasDown) {
+            simSpeed = std::min(kMaxSimSpeed, simSpeed * 2.0);
         }
         equalWasDown = equalDown;
 
-        const bool oneDown = (glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS);
-        if (oneDown && !oneWasDown) {
+        const bool oneDown = (glfwGetKey(window, controls.speedReset) == GLFW_PRESS);
+        if (!pauseMenuOpen && oneDown && !oneWasDown) {
             simSpeed = 1.0;
         }
         oneWasDown = oneDown;
@@ -399,10 +687,7 @@ int main() {
         fpsElapsed += frameTime;
         ++fpsFrames;
         if (fpsElapsed >= fpsUpdateInterval) {
-            const double fps = static_cast<double>(fpsFrames) / fpsElapsed;
-            char title[128];
-            std::snprintf(title, sizeof(title), "%s - FPS: %.1f - Speed: %.3gx", kWindowTitle, fps, simSpeed);
-            glfwSetWindowTitle(window, title);
+            hudFps = static_cast<double>(fpsFrames) / fpsElapsed;
             fpsElapsed = 0.0;
             fpsFrames = 0;
         }
@@ -429,15 +714,15 @@ int main() {
 
             // Keyboard move (uses real frameTime)
             const float move = cam.moveSpeed * static_cast<float>(frameTime);
-            if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) cam.pos += forwardDir(cam) * move;
-            if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) cam.pos -= forwardDir(cam) * move;
-            if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) cam.pos += rightDir(cam)   * move;
-            if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) cam.pos -= rightDir(cam)   * move;
-            if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS) cam.pos += glm::vec3(0,1,0) * move;
-            if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) cam.pos -= glm::vec3(0,1,0) * move;
+            if (glfwGetKey(window, controls.moveForward) == GLFW_PRESS) cam.pos += forwardDir(cam) * move;
+            if (glfwGetKey(window, controls.moveBack) == GLFW_PRESS) cam.pos -= forwardDir(cam) * move;
+            if (glfwGetKey(window, controls.moveRight) == GLFW_PRESS) cam.pos += rightDir(cam)   * move;
+            if (glfwGetKey(window, controls.moveLeft) == GLFW_PRESS) cam.pos -= rightDir(cam)   * move;
+            if (glfwGetKey(window, controls.moveUp) == GLFW_PRESS) cam.pos += glm::vec3(0,1,0) * move;
+            if (glfwGetKey(window, controls.moveDown) == GLFW_PRESS) cam.pos -= glm::vec3(0,1,0) * move;
         }
 
-        if (!paused) {
+        if (!simFrozen && !pauseMenuOpen) {
             accumulator += frameTime * simSpeed;
 
             while (accumulator >= dt) {
@@ -454,8 +739,10 @@ int main() {
 
         const std::size_t n = bs.size();
 
-        if (paused) {
-            glClearColor(0.20f, 0.02f, 0.02f, 1.0f); // paused tint
+        if (pauseMenuOpen) {
+            glClearColor(0.02f, 0.02f, 0.03f, 1.0f);
+        } else if (simFrozen) {
+            glClearColor(0.20f, 0.02f, 0.02f, 1.0f); // frozen tint
         } else {
             glClearColor(0.05f, 0.05f, 0.08f, 1.0f);
         }
@@ -516,6 +803,25 @@ int main() {
         glDrawElementsInstanced(GL_TRIANGLES, sphereIndexCount, GL_UNSIGNED_INT, nullptr, static_cast<GLsizei>(n));
         glBindVertexArray(0);
 
+        DebugOverlay::PauseMenuHud pauseMenuHud{};
+        pauseMenuHud.visible = pauseMenuOpen;
+        pauseMenuHud.awaitingBind = awaitingRebind;
+        if (awaitingRebind && awaitingRebindAction >= 0 && awaitingRebindAction < static_cast<int>(kRebindActions.size())) {
+            pauseMenuHud.pendingAction = kRebindActions[awaitingRebindAction].label;
+        }
+        pauseMenuHud.controlLines.reserve(kRebindActions.size());
+        for (std::size_t i = 0; i < kRebindActions.size(); ++i) {
+            const auto& action = kRebindActions[i];
+            const int key = controls.*(action.member);
+            std::string line;
+            line += actionSlotDigit(static_cast<int>(i));
+            line += " ";
+            line += action.label;
+            line += ": ";
+            line += keyNameForCode(key);
+            pauseMenuHud.controlLines.push_back(std::move(line));
+        }
+
         DebugOverlay::TargetHud targetHud{};
         {
             const glm::vec3 rayOrigin = cam.pos;
@@ -535,7 +841,7 @@ int main() {
             }
 
             if (bestIdx >= 0) {
-                const std::size_t i = static_cast<std::size_t>(bestIdx);
+                const auto i = static_cast<std::size_t>(bestIdx);
                 const glm::vec3 labelPos = renderPositions[i] + glm::vec3(0.0f, static_cast<float>(bs[i].radius) * 1.6f, 0.0f);
                 float sx = 0.0f;
                 float sy = 0.0f;
@@ -552,7 +858,7 @@ int main() {
 
         glDisable(GL_DEPTH_TEST);
         glDisable(GL_CULL_FACE);
-        overlay.draw(g_fb.w, g_fb.h, paused, targetHud);
+        overlay.draw(g_fb.w, g_fb.h, simFrozen, simSpeed, hudFps, pauseMenuHud, targetHud);
         glEnable(GL_CULL_FACE);
         glEnable(GL_DEPTH_TEST);
 
