@@ -3,6 +3,7 @@
 //
 
 #include "ui/DebugOverlay.h"
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cmath>
@@ -272,7 +273,8 @@ void DebugOverlay::draw(
 {
     constexpr float scalePx = 2.0f;
     constexpr float hudHintScalePx = scalePx;
-    constexpr float controlsScalePx = 2.60f;
+    constexpr float settingsScalePx = 2.10f;
+    constexpr float controlsScalePx = 2.30f;
     constexpr float titleScalePx = 3.0f;
 
     std::vector<float> panelFill;
@@ -330,7 +332,7 @@ void DebugOverlay::draw(
             scalePx,
             resume);
 
-        std::string rebindLine = "PRESS 1-0 TO REBIND";
+        std::string rebindLine = "UP DOWN TO SELECT\nENTER TO REBIND";
         if (pauseMenu.awaitingBind && !pauseMenu.pendingAction.empty()) {
             rebindLine = "PRESS KEY FOR " + pauseMenu.pendingAction;
             appendTextPx(
@@ -347,35 +349,70 @@ void DebugOverlay::draw(
             scalePx,
             rebindLine);
 
-        const float controlsX0 = cardX0 + 22.0f;
-        const float controlsX1 = cardX1 - 22.0f;
-        const float controlsY0 = cardY0 + 156.0f;
-        const float controlsY1 = cardY1 - 16.0f;
-        pushQuadPx(panelFill, controlsX0, controlsY0, controlsX1, controlsY1);
-        pushFramePx(panelFrame, controlsX0, controlsY0, controlsX1, controlsY1, 1.5f);
-        pushQuadPx(accentFill, controlsX0, controlsY0, controlsX1, controlsY0 + 3.0f);
+        const float sectionX0 = cardX0 + 22.0f;
+        const float sectionX1 = cardX1 - 22.0f;
 
-        appendTextPx(
-            textAccent,
-            controlsX0 + 12.0f,
-            controlsY0 + 12.0f,
-            2.8f,
-            "CONTROLS");
+        const float settingsY0 = cardY0 + 176.0f;
+        const float settingsY1 = settingsY0 + std::min(170.0f, (cardY1 - settingsY0 - 26.0f) * 0.38f);
+        pushQuadPx(panelFill, sectionX0, settingsY0, sectionX1, settingsY1);
+        pushFramePx(panelFrame, sectionX0, settingsY0, sectionX1, settingsY1, 1.5f);
+        pushQuadPx(accentFill, sectionX0, settingsY0, sectionX1, settingsY0 + 3.0f);
+        appendTextPx(textAccent, sectionX0 + 12.0f, settingsY0 + 12.0f, 2.4f, "SETTINGS");
 
-        float linesStartY = controlsY0 + 50.0f;
-        const float lineStep = static_cast<float>(kFontH + 5) * controlsScalePx;
-        const float maxLines = std::floor((controlsY1 - linesStartY - 14.0f) / lineStep);
-        const std::size_t visibleLines = std::min<std::size_t>(
-            pauseMenu.controlLines.size(),
-            static_cast<std::size_t>(std::max(0.0f, maxLines)));
-
-        for (std::size_t i = 0; i < visibleLines; ++i) {
+        const float settingsStartY = settingsY0 + 44.0f;
+        const float settingsStep = static_cast<float>(kFontH + 3) * settingsScalePx;
+        const float maxSettings = std::floor((settingsY1 - settingsStartY - 10.0f) / settingsStep);
+        const std::size_t visibleSettings = std::min<std::size_t>(
+            pauseMenu.settingLines.size(),
+            static_cast<std::size_t>(std::max(0.0f, maxSettings)));
+        for (std::size_t i = 0; i < visibleSettings; ++i) {
             appendTextPx(
                 textPrimary,
-                controlsX0 + 12.0f,
-                linesStartY + static_cast<float>(i) * lineStep,
+                sectionX0 + 12.0f,
+                settingsStartY + static_cast<float>(i) * settingsStep,
+                settingsScalePx,
+                pauseMenu.settingLines[i]);
+        }
+
+        const float controlsY0 = settingsY1 + 14.0f;
+        const float controlsY1 = cardY1 - 16.0f;
+        pushQuadPx(panelFill, sectionX0, controlsY0, sectionX1, controlsY1);
+        pushFramePx(panelFrame, sectionX0, controlsY0, sectionX1, controlsY1, 1.5f);
+        pushQuadPx(accentFill, sectionX0, controlsY0, sectionX1, controlsY0 + 3.0f);
+        appendTextPx(textAccent, sectionX0 + 12.0f, controlsY0 + 12.0f, 2.4f, "CONTROLS");
+
+        const float controlsStartY = controlsY0 + 46.0f;
+        const float controlsStep = static_cast<float>(kFontH + 4) * controlsScalePx;
+        const float maxControls = std::floor((controlsY1 - controlsStartY - 12.0f) / controlsStep);
+        const std::size_t totalControls = pauseMenu.controlLines.size();
+        const std::size_t visibleControls = std::min<std::size_t>(
+            totalControls,
+            static_cast<std::size_t>(std::max(0.0f, maxControls)));
+
+        std::size_t firstControl = 0;
+        if (visibleControls > 0 && totalControls > visibleControls) {
+            const int clampedSelected = std::clamp(
+                pauseMenu.selectedControlIndex,
+                0,
+                static_cast<int>(totalControls - 1));
+            const std::size_t selected = static_cast<std::size_t>(clampedSelected);
+            if (selected >= visibleControls) {
+                firstControl = selected - visibleControls + 1;
+            }
+            const std::size_t maxFirst = totalControls - visibleControls;
+            if (firstControl > maxFirst) {
+                firstControl = maxFirst;
+            }
+        }
+
+        for (std::size_t i = 0; i < visibleControls; ++i) {
+            const std::size_t lineIdx = firstControl + i;
+            appendTextPx(
+                textPrimary,
+                sectionX0 + 12.0f,
+                controlsStartY + static_cast<float>(i) * controlsStep,
                 controlsScalePx,
-                pauseMenu.controlLines[i]);
+                pauseMenu.controlLines[lineIdx]);
         }
     } else {
         const float hudX0 = 16.0f;

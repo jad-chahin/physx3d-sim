@@ -92,6 +92,7 @@ namespace {
         int moveRight = GLFW_KEY_D;
         int moveUp = GLFW_KEY_E;
         int moveDown = GLFW_KEY_Q;
+        int cameraBoost = GLFW_KEY_LEFT_SHIFT;
     };
 
     struct RebindAction {
@@ -100,7 +101,7 @@ namespace {
         int ControlBindings::* member;
     };
 
-    constexpr std::array<RebindAction, 10> kRebindActions{{
+    constexpr std::array<RebindAction, 11> kRebindActions{{
         {"FREEZE", "FREEZE", &ControlBindings::freeze},
         {"SPEED DOWN", "SPEED_DOWN", &ControlBindings::speedDown},
         {"SPEED UP", "SPEED_UP", &ControlBindings::speedUp},
@@ -111,6 +112,7 @@ namespace {
         {"MOVE RIGHT", "MOVE_RIGHT", &ControlBindings::moveRight},
         {"MOVE UP", "MOVE_UP", &ControlBindings::moveUp},
         {"MOVE DOWN", "MOVE_DOWN", &ControlBindings::moveDown},
+        {"BOOST", "CAMERA_BOOST", &ControlBindings::cameraBoost},
     }};
 
     int g_lastPressedKey = GLFW_KEY_UNKNOWN;
@@ -150,6 +152,8 @@ namespace {
             case GLFW_KEY_SPACE: return "SPACE";
             case GLFW_KEY_MINUS: return "MINUS";
             case GLFW_KEY_EQUAL: return "EQUAL";
+            case GLFW_KEY_LEFT_SHIFT: return "LSHIFT";
+            case GLFW_KEY_RIGHT_SHIFT: return "RSHIFT";
             case GLFW_KEY_0: return "0";
             case GLFW_KEY_1: return "1";
             case GLFW_KEY_2: return "2";
@@ -195,6 +199,10 @@ namespace {
             {"SPACE", GLFW_KEY_SPACE},
             {"MINUS", GLFW_KEY_MINUS},
             {"EQUAL", GLFW_KEY_EQUAL},
+            {"LSHIFT", GLFW_KEY_LEFT_SHIFT},
+            {"RSHIFT", GLFW_KEY_RIGHT_SHIFT},
+            {"LEFT_SHIFT", GLFW_KEY_LEFT_SHIFT},
+            {"RIGHT_SHIFT", GLFW_KEY_RIGHT_SHIFT},
             {"0", GLFW_KEY_0},
             {"1", GLFW_KEY_1},
             {"2", GLFW_KEY_2},
@@ -246,26 +254,6 @@ namespace {
             return false;
         }
         return keyNameForCode(key) != "UNKNOWN";
-    }
-
-    int actionIndexFromDigitKey(const int key) {
-        switch (key) {
-            case GLFW_KEY_1: return 0;
-            case GLFW_KEY_2: return 1;
-            case GLFW_KEY_3: return 2;
-            case GLFW_KEY_4: return 3;
-            case GLFW_KEY_5: return 4;
-            case GLFW_KEY_6: return 5;
-            case GLFW_KEY_7: return 6;
-            case GLFW_KEY_8: return 7;
-            case GLFW_KEY_9: return 8;
-            case GLFW_KEY_0: return 9;
-            default: return -1;
-        }
-    }
-
-    char actionSlotDigit(const int actionIndex) {
-        return (actionIndex == 9) ? '0' : static_cast<char>('1' + actionIndex);
     }
 
     void saveControlBindings(const ControlBindings& controls, const std::string& path) {
@@ -406,6 +394,11 @@ int main() {
         glfwTerminate();
         return 1;
     }
+    constexpr int kMinWindowWidth = 960;
+    constexpr int kMinWindowHeight = 540;
+    constexpr int kMaxWindowWidth = 3840;
+    constexpr int kMaxWindowHeight = 2160;
+    glfwSetWindowSizeLimits(window, kMinWindowWidth, kMinWindowHeight, kMaxWindowWidth, kMaxWindowHeight);
 
     glfwMakeContextCurrent(window);
 
@@ -416,6 +409,7 @@ int main() {
     bool firstMouse = true;
 
     Camera cam{};
+    constexpr float kCameraBoostMultiplier = 4.0f;
 
     bool mouseCaptured = true;
     bool escWasDown = false;
@@ -427,6 +421,7 @@ int main() {
     bool pauseMenuOpen = false;
     bool awaitingRebind = false;
     int awaitingRebindAction = -1;
+    int selectedRebindAction = 0;
     double simSpeed = 1.0;
     constexpr double kMinSimSpeed = 1.0 / 128.0;
     constexpr double kMaxSimSpeed = 128.0;
@@ -636,10 +631,15 @@ int main() {
                     awaitingRebindAction = -1;
                 }
             } else {
-                const int actionIdx = actionIndexFromDigitKey(pressedKey);
-                if (actionIdx >= 0 && actionIdx < static_cast<int>(kRebindActions.size())) {
+                if (pressedKey == GLFW_KEY_UP) {
+                    const int count = static_cast<int>(kRebindActions.size());
+                    selectedRebindAction = (selectedRebindAction - 1 + count) % count;
+                } else if (pressedKey == GLFW_KEY_DOWN) {
+                    const int count = static_cast<int>(kRebindActions.size());
+                    selectedRebindAction = (selectedRebindAction + 1) % count;
+                } else if (pressedKey == GLFW_KEY_ENTER || pressedKey == GLFW_KEY_KP_ENTER) {
                     awaitingRebind = true;
-                    awaitingRebindAction = actionIdx;
+                    awaitingRebindAction = selectedRebindAction;
                 }
             }
         }
@@ -713,7 +713,11 @@ int main() {
             clampPitch(cam);
 
             // Keyboard move (uses real frameTime)
-            const float move = cam.moveSpeed * static_cast<float>(frameTime);
+            float move = cam.moveSpeed * static_cast<float>(frameTime);
+            const bool boostDown = glfwGetKey(window, controls.cameraBoost) == GLFW_PRESS;
+            if (boostDown) {
+                move *= kCameraBoostMultiplier;
+            }
             if (glfwGetKey(window, controls.moveForward) == GLFW_PRESS) cam.pos += forwardDir(cam) * move;
             if (glfwGetKey(window, controls.moveBack) == GLFW_PRESS) cam.pos -= forwardDir(cam) * move;
             if (glfwGetKey(window, controls.moveRight) == GLFW_PRESS) cam.pos += rightDir(cam)   * move;
@@ -806,22 +810,22 @@ int main() {
         DebugOverlay::PauseMenuHud pauseMenuHud{};
         pauseMenuHud.visible = pauseMenuOpen;
         pauseMenuHud.awaitingBind = awaitingRebind;
+        pauseMenuHud.selectedControlIndex = selectedRebindAction;
         if (awaitingRebind && awaitingRebindAction >= 0 && awaitingRebindAction < static_cast<int>(kRebindActions.size())) {
             pauseMenuHud.pendingAction = kRebindActions[awaitingRebindAction].label;
         }
+
         pauseMenuHud.controlLines.reserve(kRebindActions.size());
         for (std::size_t i = 0; i < kRebindActions.size(); ++i) {
             const auto& action = kRebindActions[i];
             const int key = controls.*(action.member);
             std::string line;
-            line += actionSlotDigit(static_cast<int>(i));
-            line += " ";
+            line += (static_cast<int>(i) == selectedRebindAction) ? "X " : "_ ";
             line += action.label;
             line += ": ";
             line += keyNameForCode(key);
             pauseMenuHud.controlLines.push_back(std::move(line));
         }
-
         DebugOverlay::TargetHud targetHud{};
         {
             const glm::vec3 rayOrigin = cam.pos;

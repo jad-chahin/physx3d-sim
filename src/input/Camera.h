@@ -15,7 +15,7 @@ struct Camera {
     float yaw   = -glm::half_pi<float>(); // looking toward -Z by default
     float pitch = 0.0f;
 
-    float moveSpeed = 20.0f; // units/sec
+    float moveSpeed = 40.0f; // units/sec
     float lookSpeed = 0.0025f;
 };
 

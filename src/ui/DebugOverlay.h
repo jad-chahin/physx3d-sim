@@ -25,6 +25,8 @@ public:
         bool visible = false;
         bool awaitingBind = false;
         std::string pendingAction;
+        int selectedControlIndex = -1;
+        std::vector<std::string> settingLines;
         std::vector<std::string> controlLines;
     };
 

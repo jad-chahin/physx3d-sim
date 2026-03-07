@@ -34,8 +34,9 @@ If you get a DLL error on Windows when launching from terminal, make sure runtim
 - `1` reset simulation speed to `1x`
 - `W A S D` move camera on horizontal plane
 - `Q / E` move camera down/up
+- `Left Shift` hold for camera boost (rebindable in pause menu, fixed `4x` boost)
 - `Mouse` look around
-- Pause menu controls section: press `1-0` to pick an action, then press a key to rebind it
+- Pause menu controls section: use `Up / Down` to select an action, then `Enter` to rebind it
 - Control bindings are saved to `controls.cfg` in the working directory
 
 ## Project Layout
