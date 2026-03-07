@@ -41,7 +41,7 @@ namespace sim {
             static constexpr int kDefaultJointIterations = 8;
 
             double G;
-            double restitution;
+            double restitution; // Global upper bound for contact restitution [0..1]
             double penetrationSlop;
             double positionCorrectionPercent;
             int collisionIterations;

@@ -318,49 +318,102 @@ namespace sim {
             return;
         }
 
-        const auto pairs = broadphase::sweptPairs(bodies_, remaining);
-        metrics_.broadphaseCandidatesSwept += pairs.size();
+        while (remaining > timeTol) {
+            const auto pairs = broadphase::sweptPairs(bodies_, remaining);
+            metrics_.broadphaseCandidatesSwept += pairs.size();
 
-        bool found = false;
-        double tHit = std::numeric_limits<double>::infinity();
-        for (const auto& [i, j] : pairs) {
-            const Body& A = bodies_[i];
-            const Body& B = bodies_[j];
-            if (A.invMass == 0.0 && B.invMass == 0.0) continue;
-            if (!shouldCollidePair_(i, j)) continue;
+            bool found = false;
+            double tHit = std::numeric_limits<double>::infinity();
+            std::size_t toiI = 0;
+            std::size_t toiJ = 0;
+            for (const auto& [i, j] : pairs) {
+                const Body& A = bodies_[i];
+                const Body& B = bodies_[j];
+                if (A.invMass == 0.0 && B.invMass == 0.0) continue;
+                if (!shouldCollidePair_(i, j)) continue;
 
-            double t = 0.0;
-            if (!collision::sweptCollisionTime(A, B, remaining, t)) continue;
-            if (t < tHit) {
-                tHit = t;
-                found = true;
+                double t = 0.0;
+                if (!collision::sweptCollisionTime(A, B, remaining, t)) continue;
+                if (t < tHit) {
+                    tHit = t;
+                    toiI = i;
+                    toiJ = j;
+                    found = true;
+                }
             }
-        }
 
-        if (!found) {
-            solveDistanceJoints_(remaining);
-            advancePositions_(remaining);
-            remaining = 0.0;
-        } else if (tHit > timeTol) {
-            const double nextRemaining = remaining - tHit;
-            if (nextRemaining < remaining) {
-                solveDistanceJoints_(tHit);
-                advancePositions_(tHit);
-                remaining = nextRemaining;
+            if (!found) {
+                solveDistanceJoints_(remaining);
+                advancePositions_(remaining);
+                remaining = 0.0;
+                break;
             }
-        }
 
-        const auto overlapPairs = broadphase::discretePairs(bodies_);
-        metrics_.broadphaseCandidatesDiscrete += overlapPairs.size();
-        if (hasAnyOverlapInPairs_(overlapPairs)) {
-            collidePairs_(overlapPairs, params_.collisionIterations);
+            bool advancedToToi = false;
+            if (tHit > timeTol) {
+                const double consumeToToi = std::min(tHit, remaining);
+                if (consumeToToi > timeTol) {
+                    solveDistanceJoints_(consumeToToi);
+                    advancePositions_(consumeToToi);
+                    remaining = std::max(0.0, remaining - consumeToToi);
+                    advancedToToi = true;
+                }
+            }
+
+            const auto toiStats = collision::solveCollisionPair(
+                bodies_[toiI], bodies_[toiJ], solveParamsForPair_(toiI, toiJ), true);
+            metrics_.pairsVisited += toiStats.visited ? 1 : 0;
+            metrics_.pairsImpulseApplied += toiStats.impulseApplied ? 1 : 0;
+
+            if (toiStats.hasNormal) {
+                ContactManifold& manifold = contactCache_[contactKeyForPair_(toiI, toiJ)];
+                manifold.touched = true;
+                manifold.staleFrames = 0;
+                if (toiStats.normalImpulse > 0.0) {
+                    manifold.normalImpulse = toiStats.normalImpulse;
+                } else {
+                    manifold.normalImpulse *= 0.9;
+                }
+            }
             ++metrics_.ccdEvents;
-            metrics_.ccdZeroTimePairsResolved += overlapPairs.size();
-        }
 
-        if (remaining > timeTol) {
-            solveDistanceJoints_(remaining);
-            advancePositions_(remaining);
+            const auto overlapPairs = broadphase::discretePairs(bodies_);
+            metrics_.broadphaseCandidatesDiscrete += overlapPairs.size();
+            std::size_t zeroTimeOverlapPairs = 0;
+            for (const auto& [i, j] : overlapPairs) {
+                if (!shouldCollidePair_(i, j)) {
+                    continue;
+                }
+                const Body& A = bodies_[i];
+                const Body& B = bodies_[j];
+                if (A.invMass == 0.0 && B.invMass == 0.0) {
+                    continue;
+                }
+                if (collision::isColliding(A, B)) {
+                    ++zeroTimeOverlapPairs;
+                }
+            }
+
+            if (zeroTimeOverlapPairs > 0) {
+                collidePairs_(overlapPairs, params_.collisionIterations);
+                ++metrics_.ccdEvents;
+                if (params_.collisionIterations > 0) {
+                    metrics_.ccdZeroTimePairsResolved += zeroTimeOverlapPairs;
+                }
+            }
+
+            if (!advancedToToi) {
+                // Ensure forward progress for repeated zero-time TOI contacts.
+                const double minConsume = std::max(timeTol * 32.0, std::max(0.0, dt) / 128.0);
+                const double consume = std::min(remaining, minConsume);
+                if (consume > 0.0) {
+                    solveDistanceJoints_(consume);
+                    advancePositions_(consume);
+                    remaining = std::max(0.0, remaining - consume);
+                } else {
+                    break;
+                }
+            }
         }
     }
 
@@ -468,7 +521,11 @@ namespace sim {
         const Body& b = bodies_[j];
 
         collision::SolveParams params{};
-        params.restitution = std::clamp(std::min(a.restitution, b.restitution), 0.0, 1.0);
+        const double pairRestitution = std::clamp(std::min(a.restitution, b.restitution), 0.0, 1.0);
+        const double worldRestitution = std::isfinite(params_.restitution)
+            ? std::clamp(params_.restitution, 0.0, 1.0)
+            : Params::kDefaultRestitution;
+        params.restitution = std::min(pairRestitution, worldRestitution);
         params.staticFriction = std::sqrt(std::max(0.0, a.staticFriction) * std::max(0.0, b.staticFriction));
         params.dynamicFriction = std::sqrt(std::max(0.0, a.dynamicFriction) * std::max(0.0, b.dynamicFriction));
         if (params.dynamicFriction > params.staticFriction) {
