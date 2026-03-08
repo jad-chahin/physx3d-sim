@@ -359,17 +359,17 @@ static void drawPauseMenu(
             helpText += "\nACTION: " + pauseMenu.pendingAction;
         }
     } else if (pauseMenu.selectedRowIsControl) {
-        helpText = "UP DOWN: SELECT OPTION\nENTER: REBIND OR RESET\n1 2 3 4 5: PAGES\nCLICK EXIT: QUIT";
+        helpText = "UP DOWN: SELECT OPTION\nENTER: REBIND OR RESET";
     } else {
-        helpText = "UP DOWN: SELECT OPTION\nLEFT RIGHT: CHANGE\nENTER: APPLY\nCLICK EXIT: QUIT";
+        helpText = "UP DOWN: SELECT OPTION\nLEFT RIGHT: CHANGE\nENTER: APPLY";
     }
 
     const std::string helpLayoutReference =
-        "UP DOWN: SELECT OPTION\nLEFT RIGHT: CHANGE\nENTER: APPLY\nCLICK EXIT: QUIT";
+        "UP DOWN: SELECT OPTION\nLEFT RIGHT: CHANGE\nENTER: APPLY";
     const float helpBaseY = cardY0 + 96.0f * menuScale;
     const float helpScalePx = fitScaleForWidth(helpLayoutReference, baseScalePx * 0.98f, infoWidth);
     const float helpLineStep = (static_cast<float>(kFontH) + 2.0f) * helpScalePx;
-    const float helpReservedHeight = helpLineStep * 4.0f;
+    const float helpReservedHeight = helpLineStep * 3.0f;
     appendTextPx(
         buffers.textPrimary,
         centerX - measureMaxLinePx(helpText, helpScalePx) * 0.5f,
@@ -402,7 +402,7 @@ static void drawPauseMenu(
     }
     const float tabHeight = (static_cast<float>(kFontH) + 2.0f) * tabsScalePx + tabPadY * 2.0f;
     const float exitPadX = 12.0f * menuScale;
-    const std::string exitLabel = "EXIT";
+    const std::string exitLabel = "QUIT";
     const float exitWidth = measureMaxLinePx(exitLabel, tabsScalePx) + exitPadX * 2.0f;
     const float exitX1 = cardX1 - 18.0f * menuScale;
     const float exitX0 = exitX1 - exitWidth;

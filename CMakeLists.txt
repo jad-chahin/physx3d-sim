@@ -5,6 +5,22 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+if (WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    # CLion's bundled MinGW keeps cc1/cc1plus under libexec and runtime DLLs under bin.
+    # Ensure compile steps can resolve those DLLs even when PATH is minimal.
+    get_filename_component(PHYSICS3D_GNU_BIN_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    if (EXISTS "${PHYSICS3D_GNU_BIN_DIR}/libwinpthread-1.dll")
+        string(REPLACE ";" "\\;" PHYSICS3D_TOOLCHAIN_PATH
+                "${PHYSICS3D_GNU_BIN_DIR};$ENV{PATH}")
+        set(PHYSICS3D_GNU_LAUNCHER
+                "${CMAKE_COMMAND};-E;env;PATH=${PHYSICS3D_TOOLCHAIN_PATH}")
+        set(CMAKE_C_COMPILER_LAUNCHER "${PHYSICS3D_GNU_LAUNCHER}")
+        set(CMAKE_CXX_COMPILER_LAUNCHER "${PHYSICS3D_GNU_LAUNCHER}")
+        set(CMAKE_C_LINKER_LAUNCHER "${PHYSICS3D_GNU_LAUNCHER}")
+        set(CMAKE_CXX_LINKER_LAUNCHER "${PHYSICS3D_GNU_LAUNCHER}")
+    endif()
+endif()
+
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
