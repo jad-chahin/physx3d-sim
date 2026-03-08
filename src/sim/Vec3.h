@@ -7,53 +7,76 @@
 
 #include <cmath>
 
-
 namespace sim {
+    struct Vec3 {
+        double x = 0.0;
+        double y = 0.0;
+        double z = 0.0;
 
-    class Vec3 {
-        public:
-        double x{}, y{}, z{};
+        constexpr Vec3() = default;
+        constexpr Vec3(const double xIn, const double yIn, const double zIn)
+            : x(xIn), y(yIn), z(zIn) {}
 
-        Vec3 operator+(const Vec3& o) const {
+        [[nodiscard]] constexpr Vec3 operator+(const Vec3& o) const {
             return {x + o.x, y + o.y, z + o.z};
         }
 
-        Vec3 operator-(const Vec3& o) const {
+        [[nodiscard]] constexpr Vec3 operator-(const Vec3& o) const {
             return {x - o.x, y - o.y, z - o.z};
         }
 
-
-        Vec3 operator*(double s) const {
+        [[nodiscard]] constexpr Vec3 operator*(const double s) const {
             return {x * s, y * s, z * s};
         }
 
-        Vec3 operator/(double s) const {
+        [[nodiscard]] constexpr Vec3 operator/(const double s) const {
             return {x / s, y / s, z / s};
         }
 
-        [[nodiscard]] double dot(const Vec3& o) const {
+        constexpr Vec3& operator+=(const Vec3& o) {
+            x += o.x;
+            y += o.y;
+            z += o.z;
+            return *this;
+        }
+
+        constexpr Vec3& operator-=(const Vec3& o) {
+            x -= o.x;
+            y -= o.y;
+            z -= o.z;
+            return *this;
+        }
+
+        constexpr Vec3& operator*=(const double s) {
+            x *= s;
+            y *= s;
+            z *= s;
+            return *this;
+        }
+
+        constexpr Vec3& operator/=(const double s) {
+            x /= s;
+            y /= s;
+            z /= s;
+            return *this;
+        }
+
+        [[nodiscard]] constexpr double dot(const Vec3& o) const {
             return x * o.x + y * o.y + z * o.z;
         }
 
         [[nodiscard]] double magnitude() const {
-            return sqrt(x * x + y * y + z * z);
+            return std::sqrt(dot(*this));
         }
 
-        [[nodiscard]] Vec3 cross(const Vec3& o) const {
-            return {y*o.z - z*o.y, z*o.x - x*o.z, x*o.y - y*o.x};
+        [[nodiscard]] constexpr Vec3 cross(const Vec3& o) const {
+            return {
+                y * o.z - z * o.y,
+                z * o.x - x * o.z,
+                x * o.y - y * o.x
+            };
         }
-
-
-        Vec3() = default;
-
-        Vec3(double xIn, double yIn, double zIn)
-        {
-            x = xIn;
-            y = yIn;
-            z = zIn;
-        }
-
     };
-} // sim
+} // namespace sim
 
-#endif //PHYSICS3D_VEC3_H
+#endif // PHYSICS3D_VEC3_H

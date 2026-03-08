@@ -14,9 +14,6 @@ struct Camera {
     glm::vec3 pos{0.0f, 0.0f, 30.0f};
     float yaw   = -glm::half_pi<float>(); // looking toward -Z by default
     float pitch = 0.0f;
-
-    float moveSpeed = 40.0f; // units/sec
-    float lookSpeed = 0.0025f;
 };
 
 void clampPitch(Camera& c);

@@ -123,7 +123,6 @@ namespace sim {
         void applyGravityPair_(std::size_t i, std::size_t j);
 
         void collidePairs_(const std::vector<std::pair<std::size_t, std::size_t>>& pairs, int iterations);
-        [[nodiscard]] bool hasAnyOverlapInPairs_(const std::vector<std::pair<std::size_t, std::size_t>>& pairs) const;
         [[nodiscard]] bool shouldCollidePair_(std::size_t i, std::size_t j) const;
         [[nodiscard]] ContactKey contactKeyForPair_(std::size_t i, std::size_t j) const;
         [[nodiscard]] collision::SolveParams solveParamsForPair_(std::size_t i, std::size_t j) const;

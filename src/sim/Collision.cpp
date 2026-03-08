@@ -61,16 +61,16 @@ namespace sim::collision {
                 return;
             }
 
-            a.velocity = a.velocity - impulse * wA;
-            b.velocity = b.velocity + impulse * wB;
+            a.velocity -= impulse * wA;
+            b.velocity += impulse * wB;
 
             const double invIA = invInertiaSphere(a);
             const double invIB = invInertiaSphere(b);
             if (invIA > 0.0) {
-                a.angularVelocity = a.angularVelocity - (rA.cross(impulse)) * invIA;
+                a.angularVelocity -= (rA.cross(impulse)) * invIA;
             }
             if (invIB > 0.0) {
-                b.angularVelocity = b.angularVelocity + (rB.cross(impulse)) * invIB;
+                b.angularVelocity += (rB.cross(impulse)) * invIB;
             }
         }
     } // namespace
@@ -224,8 +224,8 @@ namespace sim::collision {
 
         const double correction =
             std::max(0.0, pen - params.penetrationSlop) * params.positionCorrectionPercent;
-        pA = pA - n * (correction * wA / invMassSum);
-        pB = pB + n * (correction * wB / invMassSum);
+        pA -= n * (correction * wA / invMassSum);
+        pB += n * (correction * wB / invMassSum);
 
         const Vec3 rv = contactRelativeVelocity(a, b, rA, rB);
         const double vN = rv.dot(n);

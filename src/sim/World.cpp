@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <ranges>
 #include <utility>
 
 namespace sim {
@@ -130,9 +131,7 @@ namespace sim {
 
     void World::resetForces_()
     {
-        for (auto& force : forces_) {
-            force = Vec3(0.0, 0.0, 0.0);
-        }
+        std::ranges::fill(forces_, Vec3{});
     }
 
     void World::computeForces_()
@@ -169,8 +168,8 @@ namespace sim {
         const double invR3 = invR * invR * invR;
 
         const Vec3 f12 = d * (params_.G * m1 * m2 * invR3);
-        forces_[i] = forces_[i] + f12;
-        forces_[j] = forces_[j] - f12;
+        forces_[i] += f12;
+        forces_[j] -= f12;
     }
 
     void World::integrate_(const double dt)
@@ -181,14 +180,14 @@ namespace sim {
                 continue;
             }
             const Vec3 a = forces_[i] * b.invMass;
-            b.velocity = b.velocity + a * dt;
+            b.velocity += a * dt;
 
             const double invI = effectiveInvInertia(b);
             if (invI > 0.0) {
                 const Vec3 alpha = b.torque * invI;
-                b.angularVelocity = b.angularVelocity + alpha * dt;
+                b.angularVelocity += alpha * dt;
             }
-            b.torque = Vec3(0.0, 0.0, 0.0);
+            b.torque = Vec3{};
         }
     }
 
@@ -229,16 +228,16 @@ namespace sim {
                 // Position solve: correct distance error directly to avoid explosive bias impulses.
                 if (std::isfinite(correctionMag) && correctionMag != 0.0) {
                     const Vec3 correction = n * correctionMag;
-                    a.position = a.position + correction * (a.invMass / invMassSum);
-                    b.position = b.position - correction * (b.invMass / invMassSum);
+                    a.position += correction * (a.invMass / invMassSum);
+                    b.position -= correction * (b.invMass / invMassSum);
                 }
 
                 // Velocity solve: damping only (no restorative energy injection).
                 const double relSpeed = (b.velocity - a.velocity).dot(n);
                 const double lambdaDamp = -(joint.damping * relSpeed) / invMassSum;
                 if (std::isfinite(lambdaDamp) && lambdaDamp != 0.0) {
-                    a.velocity = a.velocity - n * (lambdaDamp * a.invMass);
-                    b.velocity = b.velocity + n * (lambdaDamp * b.invMass);
+                    a.velocity -= n * (lambdaDamp * a.invMass);
+                    b.velocity += n * (lambdaDamp * b.invMass);
                 }
 
                 // Keep previous position aligned with corrected pose to avoid interpolation slingshots.
@@ -252,7 +251,7 @@ namespace sim {
     void World::advancePositions_(const double dt)
     {
         for (auto& b : bodies_) {
-            b.position = b.position + b.velocity * dt;
+            b.position += b.velocity * dt;
             integrateOrientation(b.orientation, b.angularVelocity, dt);
         }
     }
@@ -485,14 +484,6 @@ namespace sim {
         }
     }
 
-    bool World::hasAnyOverlapInPairs_(const std::vector<std::pair<std::size_t, std::size_t>>& pairs) const
-    {
-        return std::ranges::any_of(pairs, [this](const auto& pair) {
-            const auto [i, j] = pair;
-            return shouldCollidePair_(i, j) && collision::isColliding(bodies_[i], bodies_[j]);
-        });
-    }
-
     bool World::shouldCollidePair_(const std::size_t i, const std::size_t j) const
     {
         if (i == j || i >= bodies_.size() || j >= bodies_.size()) {
@@ -548,16 +539,15 @@ namespace sim {
 
     void World::beginContactFrame_()
     {
-        for (auto& [key, manifold] : contactCache_) {
-            (void)key;
-            manifold.touched = false;
+        for (auto &val: contactCache_ | std::views::values) {
+            val.touched = false;
         }
     }
 
     void World::warmStartPairs_(const std::vector<std::pair<std::size_t, std::size_t>>& pairs)
     {
-        constexpr double kWarmStartFactor = 0.85;
         for (const auto& [i, j] : pairs) {
+            constexpr double kWarmStartFactor = 0.85;
             if (!shouldCollidePair_(i, j)) continue;
             const ContactKey key = contactKeyForPair_(i, j);
             auto it = contactCache_.find(key);

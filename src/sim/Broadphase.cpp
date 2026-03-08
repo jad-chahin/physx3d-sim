@@ -5,8 +5,6 @@
 #include "Broadphase.h"
 #include <algorithm>
 #include <cmath>
-#include <cstdint>
-#include <unordered_map>
 #include <unordered_set>
 
 namespace sim::broadphase {

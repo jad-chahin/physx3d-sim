@@ -12,22 +12,29 @@
 
 class DebugOverlay {
 public:
+    struct PauseMenuHudLine {
+        std::string text;
+        bool header = false;
+        bool disabled = false;
+    };
+
     struct TargetHud {
         bool visible = false;
         float xPx = 0.0f;
         float yPx = 0.0f;
-        float restitution = 0.0f;
-        float staticFriction = 0.0f;
-        float dynamicFriction = 0.0f;
+        std::vector<std::string> lines;
     };
 
     struct PauseMenuHud {
         bool visible = false;
         bool awaitingBind = false;
+        bool selectedRowIsControl = false;
         std::string pendingAction;
-        int selectedControlIndex = -1;
-        std::vector<std::string> settingLines;
-        std::vector<std::string> controlLines;
+        std::string statusLine;
+        int activePageIndex = 0;
+        int selectedSettingLineIndex = -1;
+        int appliedSettingLineIndex = -1;
+        std::vector<PauseMenuHudLine> lines;
     };
 
     void init();
@@ -41,7 +48,10 @@ public:
         double simSpeed,
         double fps,
         const PauseMenuHud& pauseMenu,
-        const TargetHud& targetHud) const;
+        const TargetHud& targetHud,
+        float uiScale,
+        bool showHud,
+        const std::vector<std::string>& hudDebugLines) const;
 
 private:
     GLuint program_ = 0;

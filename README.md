@@ -36,7 +36,14 @@ If you get a DLL error on Windows when launching from terminal, make sure runtim
 - `Q / E` move camera down/up
 - `Left Shift` hold for camera boost (rebindable in pause menu, fixed `4x` boost)
 - `Mouse` look around
-- Pause menu controls section: use `Up / Down` to select an action, then `Enter` to rebind it
+- Pause menu pages: click page tabs or use `1 / 2 / 3` to jump to `Display / Simulation / Controls`; `Tab` (or `Page Up / Page Down`) also cycles pages
+- Pause menu navigation: `Up / Down` selects options on the current page
+- Pause menu settings: use `Left / Right` to change values, `Enter` to apply the selected option
+- Pause menu behavior: moving off an edited option with `Up / Down` discards unapplied changes
+- Pause menu key rebinding: select a control, press `Enter`, then press the new key
+- Pause menu controls page: `RESET CONTROLS` restores default bindings and rewrites `controls.cfg`
+- Pause menu exit: click `EXIT` button (or press `X`) to close the app
+- Keybind safety: duplicate key assignments are blocked (one key per action)
 - Control bindings are saved to `controls.cfg` in the working directory
 
 ## Project Layout
