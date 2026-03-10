@@ -1,7 +1,3 @@
-//
-// Created by Codex on 2026-03-07.
-//
-
 #ifndef PHYSICS3D_BINDINGS_H
 #define PHYSICS3D_BINDINGS_H
 
@@ -38,9 +34,6 @@ namespace input {
     };
 
     const std::array<RebindAction, 11>& rebindActions();
-
-    void keyCaptureCallback(GLFWwindow*, int key, int scancode, int action, int mods);
-    int consumeLastPressedKey();
 
     bool isBindableKey(int key);
     std::string keyNameForCode(int key);

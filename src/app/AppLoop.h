@@ -1,7 +1,3 @@
-//
-// Created by Codex on 2026-03-07.
-//
-
 #ifndef PHYSICS3D_APPLOOP_H
 #define PHYSICS3D_APPLOOP_H
 
