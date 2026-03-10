@@ -1,7 +1,3 @@
-//
-// Created by jchah on 2025-12-19.
-//
-
 #include "World.h"
 #include "Broadphase.h"
 #include "Collision.h"

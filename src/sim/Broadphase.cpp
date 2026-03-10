@@ -1,7 +1,3 @@
-//
-// Broadphase pair generation helpers.
-//
-
 #include "Broadphase.h"
 #include <algorithm>
 #include <cmath>

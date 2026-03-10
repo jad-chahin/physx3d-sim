@@ -1,5 +1,5 @@
 #include "app/AppLoop.h"
-#include "sim/DefaultScene.h"
+#include "sim/DefaultWorld.h"
 
 
 int main() {

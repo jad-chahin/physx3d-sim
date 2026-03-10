@@ -1,8 +1,4 @@
-//
-// Created by Codex on 2026-03-07.
-//
-
-#include "sim/DefaultScene.h"
+#include "sim/DefaultWorld.h"
 
 #include <algorithm>
 #include <utility>

@@ -1,7 +1,3 @@
-//
-// Created by Codex on 2026-03-07.
-//
-
 #ifndef PHYSICS3D_PAUSEMENUCONTROLLER_H
 #define PHYSICS3D_PAUSEMENUCONTROLLER_H
 
@@ -11,7 +7,7 @@
 
 #include "input/Bindings.h"
 #include "sim/Body.h"
-#include "ui/DebugOverlay.h"
+#include "ui/OverlayRenderer.h"
 
 struct GLFWwindow;
 
@@ -29,8 +25,8 @@ namespace ui {
     };
 
     struct SimulationSettings {
-        double minSimSpeed = 1.0 / 128.0;
-        double maxSimSpeed = 128.0;
+        double minSimSpeed = 1.0 / 64.0;
+        double maxSimSpeed = 64.0;
         bool gravityEnabled = true;
         double gravityStrength = 6.6743e-11;
         int collisionIterations = 2;
@@ -94,10 +90,10 @@ namespace ui {
             float scrollDeltaY = 0.0f);
         void updateContinuousInput(
             GLFWwindow* window,
-            input::ControlBindings& controls,
+            const input::ControlBindings& controls,
             const std::string& controlsConfigPath);
 
-        DebugOverlay::PauseMenuHud buildHud(
+        OverlayRenderer::PauseMenuHud buildHud(
             const input::ControlBindings& controls,
             bool advanceApplyIndicator = true) const;
 
@@ -183,12 +179,12 @@ namespace ui {
         void selectPrev();
         bool isSettingRowDisabled(int row) const;
         std::string disabledReasonForRow(int row) const;
-        DebugOverlay::PauseMenuControlType controlTypeForRow(int row) const;
+        OverlayRenderer::PauseMenuControlType controlTypeForRow(int row) const;
         bool supportsContinuousAdjust(int row) const;
         int optionCountForRow(int row) const;
         int optionIndexForRow(int row) const;
-        bool setOptionIndexForRow(int row, int targetIndex, GLFWwindow* window);
-        void adjustSelectedSetting(int delta, GLFWwindow* window);
+        bool setOptionIndexForRow(int row, int targetIndex);
+        void adjustSelectedSetting(int delta);
         void applyDisplaySettings(GLFWwindow* window, const DisplaySettings& settings);
         void resetAllSettings(GLFWwindow* window);
         static bool hasControlChanges(const input::ControlBindings& controls);

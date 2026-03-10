@@ -1,7 +1,3 @@
-//
-// Created by jchah on 2026-01-04.
-//
-
 #ifndef PHYSICS3D_SPHEREMESH_H
 #define PHYSICS3D_SPHEREMESH_H
 

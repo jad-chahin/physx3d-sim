@@ -50,10 +50,11 @@ If you get a DLL error on Windows when launching from terminal, make sure runtim
 
 - `src/sim` physics simulation core (world stepping, broadphase, collision, joints)
 - `src/render` rendering helpers and shaders
-- `src/ui` on-screen debug overlay
+- `src/ui` HUD, pause menu, and target overlays
 - `src/input` camera/input utilities
-- `src/main.cpp` app entrypoint and scene setup
+- `src/main.cpp` app entrypoint
+- `src/sim/DefaultWorld.*` default world setup
 
 ## Development Notes
 
-- Scene setup is currently code-driven in `main.cpp`.
+- Default world setup is currently code-driven in `src/sim/DefaultWorld.*`.

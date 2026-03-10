@@ -1,16 +1,12 @@
-//
-// Created by jchah on 2026-01-04.
-//
-
-#ifndef PHYSICS3D_DEBUGOVERLAY_H
-#define PHYSICS3D_DEBUGOVERLAY_H
+#ifndef PHYSICS3D_OVERLAYRENDERER_H
+#define PHYSICS3D_OVERLAYRENDERER_H
 
 #include <glad/glad.h>
 #include <string>
 #include <vector>
 
 
-class DebugOverlay {
+class OverlayRenderer {
 public:
     enum class PauseMenuControlType {
         None = 0,
@@ -90,4 +86,4 @@ private:
     GLint uColor_ = -1;
 };
 
-#endif //PHYSICS3D_DEBUGOVERLAY_H
+#endif //PHYSICS3D_OVERLAYRENDERER_H

@@ -47,18 +47,20 @@ add_subdirectory("${PHYSICS3D_GLM_DIR}" "${CMAKE_BINARY_DIR}/third_party/glm")
 add_executable(physics3d
         src/main.cpp
         src/app/AppLoop.cpp
-        src/sim/DefaultScene.cpp
+        src/sim/DefaultWorld.cpp
         src/sim/World.cpp
         src/sim/Broadphase.cpp
         src/sim/Collision.cpp
         src/third_party/glad/src/glad.c
-        src/ui/DebugOverlay.cpp
+        src/ui/OverlayRenderer.cpp
         src/ui/PauseMenuController.cpp
         src/render/ShaderUtil.cpp
         src/render/SphereMesh.cpp
         src/input/Camera.cpp
         src/input/Bindings.cpp
 )
+
+set(PHYSICS3D_GLAD_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/glad/src/glad.c")
 
 target_include_directories(physics3d PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -75,4 +77,6 @@ if (MSVC)
     target_compile_options(physics3d PRIVATE /W4 /permissive-)
 else()
     target_compile_options(physics3d PRIVATE -Wall -Wextra -Wpedantic)
+    set_source_files_properties("${PHYSICS3D_GLAD_SOURCE}" PROPERTIES
+            COMPILE_OPTIONS "-Wno-pedantic")
 endif()

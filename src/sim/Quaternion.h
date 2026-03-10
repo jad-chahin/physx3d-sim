@@ -1,7 +1,3 @@
-//
-// Minimal quaternion utilities for body orientation integration.
-//
-
 #ifndef PHYSICS3D_QUATERNION_H
 #define PHYSICS3D_QUATERNION_H
 

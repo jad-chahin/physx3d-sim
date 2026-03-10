@@ -1,7 +1,3 @@
-//
-// Created by jchah on 2026-01-04.
-//
-
 #include "render/SphereMesh.h"
 #include <algorithm>
 #include <glm/glm.hpp>

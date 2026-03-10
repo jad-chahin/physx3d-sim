@@ -1,7 +1,3 @@
-//
-// Created by jchah on 2026-01-04.
-//
-
 #include "ShaderUtil.h"
 #include <iostream>
 

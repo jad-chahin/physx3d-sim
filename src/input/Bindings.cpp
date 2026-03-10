@@ -6,6 +6,7 @@
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
+#include <algorithm>
 
 
 namespace input {
@@ -113,13 +114,10 @@ namespace input {
             return key >= GLFW_KEY_KP_0 && key <= GLFW_KEY_KP_9;
         }
 
-        bool isNamedKeyCode(const int key) {
-            for (const auto& keyEntry : kKeyNames) {
-                if (keyEntry.code == key && keyEntry.canonical) {
-                    return true;
-                }
-            }
-            return false;
+        bool isNamedKeyCode(int key) {
+            return std::ranges::any_of(kKeyNames, [key](const auto& keyEntry) {
+                return keyEntry.code == key && keyEntry.canonical;
+            });
         }
 
         std::string trimCopy(const std::string& s) {
@@ -389,10 +387,10 @@ namespace input {
             return mouseEntry->name;
         }
         if (isDigitKey(key)) {
-            return std::string(1, static_cast<char>('0' + (key - GLFW_KEY_0)));
+            return {static_cast<char>('0' + (key - GLFW_KEY_0))};
         }
         if (isLetterKey(key)) {
-            return std::string(1, static_cast<char>('A' + (key - GLFW_KEY_A)));
+            return {static_cast<char>('A' + (key - GLFW_KEY_A))};
         }
         if (isFunctionKey(key)) {
             return "F" + std::to_string(key - GLFW_KEY_F1 + 1);

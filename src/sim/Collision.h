@@ -1,7 +1,3 @@
-//
-// Collision helpers extracted from World orchestrator.
-//
-
 #ifndef PHYSICS3D_COLLISION_H
 #define PHYSICS3D_COLLISION_H
 

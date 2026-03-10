@@ -1,8 +1,4 @@
-//
-// Created by jchah on 2026-01-04.
-//
-
-#include "ui/DebugOverlay.h"
+#include "ui/OverlayRenderer.h"
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -314,7 +310,7 @@ struct OverlayBuffers {
 };
 
 static void drawPauseMenu(
-    const DebugOverlay::PauseMenuHud& pauseMenu,
+    const OverlayRenderer::PauseMenuHud& pauseMenu,
     const OverlayGeometry& geometry,
     const OverlayBuffers& buffers)
 {
@@ -482,17 +478,17 @@ static void drawPauseMenu(
             continue;
         }
         switch (line.controlType) {
-            case DebugOverlay::PauseMenuControlType::Toggle:
+            case OverlayRenderer::PauseMenuControlType::Toggle:
                 maxControlReserve = std::max(maxControlReserve, 128.0f * menuScale);
                 break;
-            case DebugOverlay::PauseMenuControlType::Choice:
-            case DebugOverlay::PauseMenuControlType::Numeric:
+            case OverlayRenderer::PauseMenuControlType::Choice:
+            case OverlayRenderer::PauseMenuControlType::Numeric:
                 maxControlReserve = std::max(maxControlReserve, 248.0f * menuScale);
                 break;
-            case DebugOverlay::PauseMenuControlType::Rebind:
+            case OverlayRenderer::PauseMenuControlType::Rebind:
                 maxControlReserve = std::max(maxControlReserve, 240.0f * menuScale);
                 break;
-            case DebugOverlay::PauseMenuControlType::Action:
+            case OverlayRenderer::PauseMenuControlType::Action:
                 maxControlReserve = std::max(maxControlReserve, 120.0f * menuScale);
                 break;
             default:
@@ -552,7 +548,7 @@ static void drawPauseMenu(
             0.0f,
             1.0f);
         const float thumbH = std::max(18.0f * menuScale, (trackY1 - trackY0) * visibleRatio);
-        const float maxFirst = static_cast<float>(totalLines - visibleLines);
+        const auto maxFirst = static_cast<float>(totalLines - visibleLines);
         const float scrollT = maxFirst > 0.0f
             ? static_cast<float>(firstLine) / maxFirst
             : 0.0f;
@@ -617,14 +613,14 @@ static void drawPauseMenu(
         const float popupY1 = popupY0 + popupH;
         const float popupScalePx = baseScalePx * 0.98f;
         const float buttonScalePx = baseScalePx * 0.92f;
-        const float buttonPadX = 16.0f * menuScale;
+        const float buttonPadX1 = 16.0f * menuScale;
         const float buttonPadY = 8.0f * menuScale;
         const std::string titleText = "ARE YOU SURE?";
         const std::string bodyText = "RESET ALL SETTINGS";
         const std::string yesLabel = "RESET";
         const std::string noLabel = "CANCEL";
-        const float yesW = measureMaxLinePx(yesLabel, buttonScalePx) + buttonPadX * 2.0f;
-        const float noW = measureMaxLinePx(noLabel, buttonScalePx) + buttonPadX * 2.0f;
+        const float yesW = measureMaxLinePx(yesLabel, buttonScalePx) + buttonPadX1 * 2.0f;
+        const float noW = measureMaxLinePx(noLabel, buttonScalePx) + buttonPadX1 * 2.0f;
         const float buttonH = (static_cast<float>(kFontH) + 2.0f) * buttonScalePx + buttonPadY * 2.0f;
         const float buttonsY1 = popupY1 - 14.0f * menuScale;
         const float buttonsY0 = buttonsY1 - buttonH;
@@ -653,13 +649,13 @@ static void drawPauseMenu(
             pushQuadPx(buffers.panelFill, yesX0, buttonsY0, yesX1, buttonsY1);
         }
         pushFramePx(buffers.textWarning, yesX0, buttonsY0, yesX1, buttonsY1, 1.5f);
-        appendTextPx(buffers.textWarning, yesX0 + buttonPadX, buttonsY0 + buttonPadY, buttonScalePx, yesLabel);
+        appendTextPx(buffers.textWarning, yesX0 + buttonPadX1, buttonsY0 + buttonPadY, buttonScalePx, yesLabel);
 
         if (pauseMenu.hoverResetConfirmNo) {
             pushQuadPx(buffers.panelFill, noX0, buttonsY0, noX1, buttonsY1);
         }
         pushFramePx(buffers.panelFrame, noX0, buttonsY0, noX1, buttonsY1, 1.5f);
-        appendTextPx(buffers.textPrimary, noX0 + buttonPadX, buttonsY0 + buttonPadY, buttonScalePx, noLabel);
+        appendTextPx(buffers.textPrimary, noX0 + buttonPadX1, buttonsY0 + buttonPadY, buttonScalePx, noLabel);
     }
 
     for (std::size_t i = 0; i < visibleLines; ++i) {
@@ -731,7 +727,7 @@ static void drawPauseMenu(
         };
 
         switch (pauseMenu.lines[lineIdx].controlType) {
-            case DebugOverlay::PauseMenuControlType::Toggle: {
+            case OverlayRenderer::PauseMenuControlType::Toggle: {
                 const float valueW = 220.0f * menuScale;
                 const float rightX1 = lineX1 - 10.0f * menuScale;
                 const float valueX1 = rightX1 - 24.0f * menuScale - 6.0f * menuScale;
@@ -763,12 +759,12 @@ static void drawPauseMenu(
                     toggleText);
                 break;
             }
-            case DebugOverlay::PauseMenuControlType::Choice:
-            case DebugOverlay::PauseMenuControlType::Numeric: {
+            case OverlayRenderer::PauseMenuControlType::Choice:
+            case OverlayRenderer::PauseMenuControlType::Numeric: {
                 const float arrowW = 24.0f * menuScale;
                 const float gap = 6.0f * menuScale;
                 const float valueW = 220.0f * menuScale;
-                const bool numeric = pauseMenu.lines[lineIdx].controlType == DebugOverlay::PauseMenuControlType::Numeric;
+                const bool numeric = pauseMenu.lines[lineIdx].controlType == OverlayRenderer::PauseMenuControlType::Numeric;
                 const char* leftSymbol = numeric ? "-" : "<";
                 const char* rightSymbol = numeric ? "+" : ">";
                 const float rightX1 = lineX1 - 10.0f * menuScale;
@@ -803,7 +799,7 @@ static void drawPauseMenu(
                 }
                 break;
             }
-            case DebugOverlay::PauseMenuControlType::Rebind: {
+            case OverlayRenderer::PauseMenuControlType::Rebind: {
                 const float valueW = std::clamp(
                     measureMaxLinePx(valueText, valueScalePx) + 18.0f * menuScale,
                     88.0f * menuScale,
@@ -818,7 +814,7 @@ static void drawPauseMenu(
                     valueText);
                 break;
             }
-            case DebugOverlay::PauseMenuControlType::Action: {
+            case OverlayRenderer::PauseMenuControlType::Action: {
                 if (!valueText.empty()) {
                     const float valueW = std::clamp(
                         measureMaxLinePx(valueText, valueScalePx) + 18.0f * menuScale,
@@ -835,7 +831,7 @@ static void drawPauseMenu(
                 }
                 break;
             }
-            case DebugOverlay::PauseMenuControlType::None:
+            case OverlayRenderer::PauseMenuControlType::None:
             default:
                 if (!valueText.empty()) {
                     const float valueW = measureMaxLinePx(valueText, valueScalePx);
@@ -927,7 +923,7 @@ static void drawCrosshair(const OverlayGeometry& geometry, const OverlayBuffers&
 }
 
 static void drawTargetPopup(
-    const DebugOverlay::TargetHud& targetHud,
+    const OverlayRenderer::TargetHud& targetHud,
     const OverlayGeometry& geometry,
     const OverlayBuffers& buffers)
 {
@@ -958,7 +954,7 @@ static void drawTargetPopup(
     appendTextPx(buffers.popupText, px + 8.0f, py + 6.0f, baseScalePx, popup);
 }
 
-void DebugOverlay::init() {
+void OverlayRenderer::init() {
     const GLuint vs = compileShader(GL_VERTEX_SHADER, kUiVert);
     const GLuint fs = compileShader(GL_FRAGMENT_SHADER, kUiFrag);
     program_ = linkProgram(vs, fs);
@@ -982,7 +978,7 @@ void DebugOverlay::init() {
     glBindVertexArray(0);
 }
 
-void DebugOverlay::shutdown() {
+void OverlayRenderer::shutdown() {
     if (vbo_) glDeleteBuffers(1, &vbo_);
     if (vao_) glDeleteVertexArrays(1, &vao_);
     if (program_) glDeleteProgram(program_);
@@ -991,7 +987,7 @@ void DebugOverlay::shutdown() {
     program_ = 0;
 }
 
-void DebugOverlay::draw(
+void OverlayRenderer::draw(
     const int fbw,
     const int fbh,
     const bool simFrozen,

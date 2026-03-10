@@ -1,7 +1,3 @@
-//
-// Created by Codex on 2026-03-07.
-//
-
 #include "ui/PauseMenuController.h"
 
 #ifndef GLFW_INCLUDE_NONE
@@ -57,9 +53,7 @@ namespace ui {
             1.40f,
         }};
 
-        constexpr std::array<double, 11> kMinSpeedChoices{{
-            1.0 / 1024.0,
-            1.0 / 512.0,
+        constexpr std::array<double, 9> kMinSpeedChoices{{
             1.0 / 256.0,
             1.0 / 128.0,
             1.0 / 64.0,
@@ -71,7 +65,7 @@ namespace ui {
             1.0,
         }};
 
-        constexpr std::array<double, 11> kMaxSpeedChoices{{
+        constexpr std::array<double, 9> kMaxSpeedChoices{{
             1.0,
             2.0,
             4.0,
@@ -81,23 +75,22 @@ namespace ui {
             64.0,
             128.0,
             256.0,
-            512.0,
-            1024.0,
         }};
 
         constexpr double kDefaultGravityStrength = 6.6743e-11;
-        constexpr std::array<double, 11> kGravityStrengthChoices{{
-            kDefaultGravityStrength * 0.01,
-            kDefaultGravityStrength * 0.05,
-            kDefaultGravityStrength * 0.10,
+        constexpr std::array<double, 12> kGravityStrengthChoices{{
             kDefaultGravityStrength * 0.25,
             kDefaultGravityStrength * 0.50,
+            kDefaultGravityStrength * 0.75,
             kDefaultGravityStrength * 1.00,
+            kDefaultGravityStrength * 1.25,
+            kDefaultGravityStrength * 1.50,
+            kDefaultGravityStrength * 1.75,
             kDefaultGravityStrength * 2.00,
-            kDefaultGravityStrength * 5.00,
-            kDefaultGravityStrength * 10.00,
-            kDefaultGravityStrength * 25.00,
-            kDefaultGravityStrength * 100.00,
+            kDefaultGravityStrength * 2.25,
+            kDefaultGravityStrength * 2.50,
+            kDefaultGravityStrength * 2.75,
+            kDefaultGravityStrength * 3.00,
         }};
 
         constexpr std::array<int, 8> kCollisionIterationChoices{{
@@ -274,14 +267,13 @@ namespace ui {
 
         std::string formatGravityMultiplier(const double value) {
             char buffer[32];
-            const double multiplier = value / kDefaultGravityStrength;
-            if (multiplier >= 10.0) {
+
+            if (const double multiplier = value / kDefaultGravityStrength; multiplier >= 10.0) {
                 std::snprintf(buffer, sizeof(buffer), "%.0fX", multiplier);
-            } else if (multiplier >= 1.0) {
-                std::snprintf(buffer, sizeof(buffer), "%.2fX", multiplier);
             } else {
                 std::snprintf(buffer, sizeof(buffer), "%.2fX", multiplier);
             }
+
             return buffer;
         }
 
@@ -618,8 +610,7 @@ namespace ui {
 
         const bool escDown = glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
         const bool backDown = glfwGetKey(window, GLFW_KEY_BACKSPACE) == GLFW_PRESS;
-        const bool closePressed = (escDown && !escWasDown_) || (backDown && !backWasDown_) || resumeRequested_;
-        if (closePressed) {
+        if ((escDown && !escWasDown_) || (backDown && !backWasDown_) || resumeRequested_) {
             if (open_ && awaitingRebind_) {
                 awaitingRebind_ = false;
                 awaitingRebindAction_ = -1;
@@ -769,12 +760,12 @@ namespace ui {
                 return;
             case GLFW_KEY_LEFT:
                 if (!isControlPage()) {
-                    adjustSelectedSetting(-1, window);
+                    adjustSelectedSetting(-1);
                 }
                 return;
             case GLFW_KEY_RIGHT:
                 if (!isControlPage()) {
-                    adjustSelectedSetting(1, window);
+                    adjustSelectedSetting(1);
                 }
                 return;
             case GLFW_KEY_ENTER:
@@ -804,10 +795,10 @@ namespace ui {
                         statusMessage_ = disabledReasonForRow(selectedSettingRow_);
                         return;
                     }
-                    if (controlTypeForRow(selectedSettingRow_) == DebugOverlay::PauseMenuControlType::Action) {
+                    if (controlTypeForRow(selectedSettingRow_) == OverlayRenderer::PauseMenuControlType::Action) {
                         commitSelectedSetting(window);
                     } else {
-                        adjustSelectedSetting(1, window);
+                        adjustSelectedSetting(1);
                     }
                 }
                 return;
@@ -863,11 +854,11 @@ namespace ui {
         double cursorX = 0.0;
         double cursorY = 0.0;
         glfwGetCursorPos(window, &cursorX, &cursorY);
-        const float xPx = static_cast<float>(cursorX * (static_cast<double>(fbw) / static_cast<double>(ww)));
-        const float yPx = static_cast<float>(cursorY * (static_cast<double>(fbh) / static_cast<double>(wh)));
+        const auto xPx = static_cast<float>(cursorX * (static_cast<double>(fbw) / static_cast<double>(ww)));
+        const auto yPx = static_cast<float>(cursorY * (static_cast<double>(fbh) / static_cast<double>(wh)));
 
-        const float w = static_cast<float>(fbw);
-        const float h = static_cast<float>(fbh);
+        const auto w = static_cast<float>(fbw);
+        const auto h = static_cast<float>(fbh);
         const float menuScale = std::clamp(uiScale(), 0.80f, 1.40f);
         const float baseScalePx = 2.0f * menuScale;
         const float cardW = std::min(w * 0.82f, 1240.0f);
@@ -902,7 +893,7 @@ namespace ui {
 
         const float tabHeight = (static_cast<float>(kFontH) + 2.0f) * tabsScalePx + tabPadY * 2.0f;
 
-        const DebugOverlay::PauseMenuHud hud = buildHud(controls, false);
+        const OverlayRenderer::PauseMenuHud hud = buildHud(controls, false);
         if (hud.lines.empty()) {
             hoveredSettingRow_ = -1;
             return;
@@ -927,17 +918,17 @@ namespace ui {
                 continue;
             }
             switch (line.controlType) {
-                case DebugOverlay::PauseMenuControlType::Toggle:
+                case OverlayRenderer::PauseMenuControlType::Toggle:
                     maxControlReserve = std::max(maxControlReserve, 128.0f * menuScale);
                     break;
-                case DebugOverlay::PauseMenuControlType::Choice:
-                case DebugOverlay::PauseMenuControlType::Numeric:
+                case OverlayRenderer::PauseMenuControlType::Choice:
+                case OverlayRenderer::PauseMenuControlType::Numeric:
                     maxControlReserve = std::max(maxControlReserve, 248.0f * menuScale);
                     break;
-                case DebugOverlay::PauseMenuControlType::Rebind:
+                case OverlayRenderer::PauseMenuControlType::Rebind:
                     maxControlReserve = std::max(maxControlReserve, 240.0f * menuScale);
                     break;
-                case DebugOverlay::PauseMenuControlType::Action:
+                case OverlayRenderer::PauseMenuControlType::Action:
                     maxControlReserve = std::max(maxControlReserve, 120.0f * menuScale);
                     break;
                 default:
@@ -1091,11 +1082,11 @@ namespace ui {
                 const auto controlType = controlTypeForRow(hoveredRowIndex);
                 if (!isControlPage() &&
                     !isSettingRowDisabled(hoveredRowIndex) &&
-                    (controlType == DebugOverlay::PauseMenuControlType::Numeric ||
-                     controlType == DebugOverlay::PauseMenuControlType::Choice))
+                    (controlType == OverlayRenderer::PauseMenuControlType::Numeric ||
+                     controlType == OverlayRenderer::PauseMenuControlType::Choice))
                 {
                     for (int i = 0; i < wheelSteps; ++i) {
-                        adjustSelectedSetting(wheelDirection, window);
+                        adjustSelectedSetting(wheelDirection);
                     }
                     return;
                 }
@@ -1178,12 +1169,12 @@ namespace ui {
             const float popupX1 = popupX0 + popupW;
             const float popupY1 = popupY0 + popupH;
             const float buttonScalePx = baseScalePx * 0.98f;
-            const float buttonPadX = 16.0f * menuScale;
+            const float buttonPadX1 = 16.0f * menuScale;
             const float buttonPadY = 8.0f * menuScale;
             const std::string yesLabel = "RESET";
             const std::string noLabel = "CANCEL";
-            const float yesW = measureMaxLinePx(yesLabel, buttonScalePx) + buttonPadX * 2.0f;
-            const float noW = measureMaxLinePx(noLabel, buttonScalePx) + buttonPadX * 2.0f;
+            const float yesW = measureMaxLinePx(yesLabel, buttonScalePx) + buttonPadX1 * 2.0f;
+            const float noW = measureMaxLinePx(noLabel, buttonScalePx) + buttonPadX1 * 2.0f;
             const float buttonH = (static_cast<float>(kFontH) + 2.0f) * buttonScalePx + buttonPadY * 2.0f;
             const float buttonsY1 = popupY1 - 14.0f * menuScale;
             const float buttonsY0 = buttonsY1 - buttonH;
@@ -1270,8 +1261,8 @@ namespace ui {
             return;
         }
 
-        const DebugOverlay::PauseMenuControlType controlType = controlTypeForRow(hoveredRowIndex);
-        if (controlType == DebugOverlay::PauseMenuControlType::Toggle) {
+        const OverlayRenderer::PauseMenuControlType controlType = controlTypeForRow(hoveredRowIndex);
+        if (controlType == OverlayRenderer::PauseMenuControlType::Toggle) {
             const float valueW = 220.0f * menuScale;
             const float rightX1 = hoveredLineX1 - 10.0f * menuScale;
             const float valueX1 = rightX1 - 24.0f * menuScale - 6.0f * menuScale;
@@ -1283,13 +1274,13 @@ namespace ui {
             const float bx1 = bx0 + box;
             const float by1 = by0 + box;
             if (xPx >= bx0 && xPx <= bx1 && yPx >= by0 && yPx <= by1) {
-                adjustSelectedSetting(1, window);
+                adjustSelectedSetting(1);
                 return;
             }
         }
 
-        if (controlType == DebugOverlay::PauseMenuControlType::Choice ||
-            controlType == DebugOverlay::PauseMenuControlType::Numeric)
+        if (controlType == OverlayRenderer::PauseMenuControlType::Choice ||
+            controlType == OverlayRenderer::PauseMenuControlType::Numeric)
         {
             const float arrowW = 24.0f * menuScale;
             const float gap = 6.0f * menuScale;
@@ -1302,11 +1293,11 @@ namespace ui {
             const float leftArrowX0 = leftArrowX1 - arrowW;
 
             if (xPx >= leftArrowX0 && xPx <= leftArrowX1 && yPx >= hoveredLineY0 && yPx <= hoveredLineY1) {
-                adjustSelectedSetting(-1, window);
+                adjustSelectedSetting(-1);
                 return;
             }
             if (xPx >= rightArrowX0 && xPx <= rightX1 && yPx >= hoveredLineY0 && yPx <= hoveredLineY1) {
-                adjustSelectedSetting(1, window);
+                adjustSelectedSetting(1);
                 return;
             }
         }
@@ -1315,13 +1306,13 @@ namespace ui {
             return;
         }
 
-        if (controlType == DebugOverlay::PauseMenuControlType::Toggle) {
-            adjustSelectedSetting(1, window);
+        if (controlType == OverlayRenderer::PauseMenuControlType::Toggle) {
+            adjustSelectedSetting(1);
             return;
         }
 
-        if (controlType == DebugOverlay::PauseMenuControlType::Choice ||
-            controlType == DebugOverlay::PauseMenuControlType::Numeric)
+        if (controlType == OverlayRenderer::PauseMenuControlType::Choice ||
+            controlType == OverlayRenderer::PauseMenuControlType::Numeric)
         {
             const float arrowW = 24.0f * menuScale;
             const float gap = 6.0f * menuScale;
@@ -1330,14 +1321,12 @@ namespace ui {
             const float rightArrowX0 = rightX1 - arrowW;
             const float valueX1 = rightArrowX0 - gap;
             const float valueX0 = valueX1 - valueW;
-            const float leftArrowX1 = valueX0 - gap;
-            const float leftArrowX0 = leftArrowX1 - arrowW;
             const float sliderX0 = valueX0 + 6.0f * menuScale;
             const float sliderX1 = valueX1 - 6.0f * menuScale;
             const float sliderY1 = hoveredLineY1 - 3.0f * menuScale;
             const float sliderY0 = sliderY1 - 6.0f * menuScale;
 
-            if (controlType == DebugOverlay::PauseMenuControlType::Numeric &&
+            if (controlType == OverlayRenderer::PauseMenuControlType::Numeric &&
                 xPx >= sliderX0 && xPx <= sliderX1 && yPx >= sliderY0 && yPx <= sliderY1)
             {
                 const float width = std::max(1.0f, sliderX1 - sliderX0);
@@ -1348,18 +1337,18 @@ namespace ui {
                         static_cast<int>(std::round(t * static_cast<float>(optionCount - 1))),
                         0,
                         optionCount - 1);
-                    setOptionIndexForRow(hoveredRowIndex, target, window);
+                    setOptionIndexForRow(hoveredRowIndex, target);
                 }
                 return;
             }
             if (xPx >= valueX0 && xPx <= valueX1 && yPx >= hoveredLineY0 && yPx <= hoveredLineY1) {
-                adjustSelectedSetting(1, window);
+                adjustSelectedSetting(1);
                 return;
             }
             return;
         }
 
-        if (controlType == DebugOverlay::PauseMenuControlType::Action) {
+        if (controlType == OverlayRenderer::PauseMenuControlType::Action) {
             if (settingsPage_ == SettingsPage::Interface && hoveredRowIndex == interfaceSettingRowCount() - 1) {
                 resetAllSettings(window);
             } else {
@@ -1368,17 +1357,17 @@ namespace ui {
             return;
         }
 
-        if (controlType == DebugOverlay::PauseMenuControlType::None) {
-            adjustSelectedSetting(1, window);
+        if (controlType == OverlayRenderer::PauseMenuControlType::None) {
+            adjustSelectedSetting(1);
             return;
         }
 
-        adjustSelectedSetting(1, window);
+        adjustSelectedSetting(1);
     }
 
     void PauseMenuController::updateContinuousInput(
         GLFWwindow* window,
-        input::ControlBindings& controls,
+        const input::ControlBindings& controls,
         const std::string& controlsConfigPath)
     {
         (void)controls;
@@ -1429,10 +1418,10 @@ namespace ui {
             supportsContinuousAdjust(selectedSettingRow_))
         {
             stepRepeat(GLFW_KEY_LEFT, leftHeld_, leftNextRepeatAt_, [&]() {
-                adjustSelectedSetting(-1, window);
+                adjustSelectedSetting(-1);
             });
             stepRepeat(GLFW_KEY_RIGHT, rightHeld_, rightNextRepeatAt_, [&]() {
-                adjustSelectedSetting(1, window);
+                adjustSelectedSetting(1);
             });
         } else {
             leftHeld_ = false;
@@ -1442,11 +1431,11 @@ namespace ui {
         }
     }
 
-    DebugOverlay::PauseMenuHud PauseMenuController::buildHud(
+    OverlayRenderer::PauseMenuHud PauseMenuController::buildHud(
         const input::ControlBindings& controls,
         const bool advanceApplyIndicator) const
     {
-        DebugOverlay::PauseMenuHud hud{};
+        OverlayRenderer::PauseMenuHud hud{};
         hud.visible = open_;
         if (!open_) {
             return hud;
@@ -1515,7 +1504,7 @@ namespace ui {
             return std::clamp(static_cast<float>(idx) / static_cast<float>(count - 1), 0.0f, 1.0f);
         };
         const auto addHeader = [&](const std::string& title) {
-            DebugOverlay::PauseMenuHudLine line{};
+            OverlayRenderer::PauseMenuHudLine line{};
             line.text = title;
             line.header = true;
             hud.lines.push_back(line);
@@ -1523,13 +1512,13 @@ namespace ui {
         const auto addRow = [&](const std::string& label,
                                 const std::string& value,
                                 const bool disabled,
-                                const DebugOverlay::PauseMenuControlType type,
+                                const OverlayRenderer::PauseMenuControlType type,
                                 const bool boolValue,
                                 const bool showArrows,
                                 const bool showSlider,
                                 const float sliderT,
                                 const std::string& hint = std::string()) {
-            DebugOverlay::PauseMenuHudLine line{};
+            OverlayRenderer::PauseMenuHudLine line{};
             line.text = label;
             line.valueText = value;
             line.hintText = hint;
@@ -1552,7 +1541,7 @@ namespace ui {
                 "WINDOW MODE",
                 windowModeLabel(displayRef.windowMode),
                 false,
-                DebugOverlay::PauseMenuControlType::Choice,
+                OverlayRenderer::PauseMenuControlType::Choice,
                 false,
                 true,
                 false,
@@ -1566,7 +1555,7 @@ namespace ui {
                 "RESOLUTION",
                 resolutionValue,
                 resolutionLocked,
-                DebugOverlay::PauseMenuControlType::Choice,
+                OverlayRenderer::PauseMenuControlType::Choice,
                 false,
                 true,
                 false,
@@ -1576,7 +1565,7 @@ namespace ui {
                 "VSYNC",
                 displayRef.vsync ? "ON" : "OFF",
                 false,
-                DebugOverlay::PauseMenuControlType::Toggle,
+                OverlayRenderer::PauseMenuControlType::Toggle,
                 displayRef.vsync,
                 false,
                 false,
@@ -1599,7 +1588,7 @@ namespace ui {
                 "MIN SPEED",
                 formatSpeedMultiplier(simRef.minSimSpeed),
                 false,
-                DebugOverlay::PauseMenuControlType::Numeric,
+                OverlayRenderer::PauseMenuControlType::Numeric,
                 false,
                 true,
                 true,
@@ -1609,7 +1598,7 @@ namespace ui {
                 "MAX SPEED",
                 formatSpeedMultiplier(simRef.maxSimSpeed),
                 false,
-                DebugOverlay::PauseMenuControlType::Numeric,
+                OverlayRenderer::PauseMenuControlType::Numeric,
                 false,
                 true,
                 true,
@@ -1620,7 +1609,7 @@ namespace ui {
                 "GRAVITY",
                 simRef.gravityEnabled ? "ON" : "OFF",
                 false,
-                DebugOverlay::PauseMenuControlType::Toggle,
+                OverlayRenderer::PauseMenuControlType::Toggle,
                 simRef.gravityEnabled,
                 false,
                 false,
@@ -1630,7 +1619,7 @@ namespace ui {
                 "GRAVITY STRENGTH",
                 formatGravityMultiplier(simRef.gravityStrength),
                 false,
-                DebugOverlay::PauseMenuControlType::Numeric,
+                OverlayRenderer::PauseMenuControlType::Numeric,
                 false,
                 true,
                 true,
@@ -1642,7 +1631,7 @@ namespace ui {
                 "COLLISION ITERATIONS",
                 std::to_string(simRef.collisionIterations),
                 false,
-                DebugOverlay::PauseMenuControlType::Numeric,
+                OverlayRenderer::PauseMenuControlType::Numeric,
                 false,
                 true,
                 true,
@@ -1666,7 +1655,7 @@ namespace ui {
                 "LOOK SENSITIVITY",
                 sensitivityBuffer,
                 false,
-                DebugOverlay::PauseMenuControlType::Numeric,
+                OverlayRenderer::PauseMenuControlType::Numeric,
                 false,
                 true,
                 true,
@@ -1680,7 +1669,7 @@ namespace ui {
                 "BASE MOVE SPEED",
                 moveSpeedBuffer,
                 false,
-                DebugOverlay::PauseMenuControlType::Numeric,
+                OverlayRenderer::PauseMenuControlType::Numeric,
                 false,
                 true,
                 true,
@@ -1691,7 +1680,7 @@ namespace ui {
                 "INVERT Y",
                 cameraRef.invertY ? "ON" : "OFF",
                 false,
-                DebugOverlay::PauseMenuControlType::Toggle,
+                OverlayRenderer::PauseMenuControlType::Toggle,
                 cameraRef.invertY,
                 false,
                 false,
@@ -1705,7 +1694,7 @@ namespace ui {
                 "FOV",
                 fovBuffer,
                 false,
-                DebugOverlay::PauseMenuControlType::Numeric,
+                OverlayRenderer::PauseMenuControlType::Numeric,
                 false,
                 true,
                 true,
@@ -1729,7 +1718,7 @@ namespace ui {
                 "UI SCALE",
                 scaleBuffer,
                 false,
-                DebugOverlay::PauseMenuControlType::Numeric,
+                OverlayRenderer::PauseMenuControlType::Numeric,
                 false,
                 true,
                 true,
@@ -1739,7 +1728,7 @@ namespace ui {
                 "SHOW HUD",
                 interfaceRef.showHud ? "ON" : "OFF",
                 false,
-                DebugOverlay::PauseMenuControlType::Toggle,
+                OverlayRenderer::PauseMenuControlType::Toggle,
                 interfaceRef.showHud,
                 false,
                 false,
@@ -1749,7 +1738,7 @@ namespace ui {
                 "CROSSHAIR",
                 interfaceRef.showCrosshair ? "ON" : "OFF",
                 false,
-                DebugOverlay::PauseMenuControlType::Toggle,
+                OverlayRenderer::PauseMenuControlType::Toggle,
                 interfaceRef.showCrosshair,
                 false,
                 false,
@@ -1759,7 +1748,7 @@ namespace ui {
                 "OBJECT INFO",
                 interfaceRef.objectInfo ? "ON" : "OFF",
                 false,
-                DebugOverlay::PauseMenuControlType::Toggle,
+                OverlayRenderer::PauseMenuControlType::Toggle,
                 interfaceRef.objectInfo,
                 false,
                 false,
@@ -1769,7 +1758,7 @@ namespace ui {
                 "OBJECT INFO MATERIAL",
                 interfaceRef.objectInfoMaterial ? "ON" : "OFF",
                 !interfaceRef.objectInfo,
-                DebugOverlay::PauseMenuControlType::Toggle,
+                OverlayRenderer::PauseMenuControlType::Toggle,
                 interfaceRef.objectInfoMaterial,
                 false,
                 false,
@@ -1779,7 +1768,7 @@ namespace ui {
                 "OBJECT INFO VELOCITY",
                 interfaceRef.objectInfoVelocity ? "ON" : "OFF",
                 !interfaceRef.objectInfo,
-                DebugOverlay::PauseMenuControlType::Toggle,
+                OverlayRenderer::PauseMenuControlType::Toggle,
                 interfaceRef.objectInfoVelocity,
                 false,
                 false,
@@ -1789,7 +1778,7 @@ namespace ui {
                 "OBJECT INFO MASS",
                 interfaceRef.objectInfoMass ? "ON" : "OFF",
                 !interfaceRef.objectInfo,
-                DebugOverlay::PauseMenuControlType::Toggle,
+                OverlayRenderer::PauseMenuControlType::Toggle,
                 interfaceRef.objectInfoMass,
                 false,
                 false,
@@ -1799,7 +1788,7 @@ namespace ui {
                 "OBJECT INFO RADIUS",
                 interfaceRef.objectInfoRadius ? "ON" : "OFF",
                 !interfaceRef.objectInfo,
-                DebugOverlay::PauseMenuControlType::Toggle,
+                OverlayRenderer::PauseMenuControlType::Toggle,
                 interfaceRef.objectInfoRadius,
                 false,
                 false,
@@ -1825,7 +1814,7 @@ namespace ui {
                     action.label,
                     input::keyNameForCode(keyCode),
                     false,
-                    DebugOverlay::PauseMenuControlType::Rebind,
+                    OverlayRenderer::PauseMenuControlType::Rebind,
                     false,
                     false,
                     false,
@@ -1964,7 +1953,7 @@ namespace ui {
     }
 
     bool PauseMenuController::hasControlChanges(const input::ControlBindings& controls) {
-        const input::ControlBindings defaults{};
+        constexpr input::ControlBindings defaults{};
         return controls.freeze != defaults.freeze ||
                controls.speedDown != defaults.speedDown ||
                controls.speedUp != defaults.speedUp ||
@@ -2197,48 +2186,48 @@ namespace ui {
         return "SETTING LOCKED";
     }
 
-    DebugOverlay::PauseMenuControlType PauseMenuController::controlTypeForRow(const int row) const {
+    OverlayRenderer::PauseMenuControlType PauseMenuController::controlTypeForRow(const int row) const {
         if (row < 0) {
-            return DebugOverlay::PauseMenuControlType::None;
+            return OverlayRenderer::PauseMenuControlType::None;
         }
         if (settingsPage_ == SettingsPage::Display) {
             if (row == 2) {
-                return DebugOverlay::PauseMenuControlType::Toggle;
+                return OverlayRenderer::PauseMenuControlType::Toggle;
             }
-            return row <= 1 ? DebugOverlay::PauseMenuControlType::Choice : DebugOverlay::PauseMenuControlType::None;
+            return row <= 1 ? OverlayRenderer::PauseMenuControlType::Choice : OverlayRenderer::PauseMenuControlType::None;
         }
         if (settingsPage_ == SettingsPage::Simulation) {
             if (row == 2) {
-                return DebugOverlay::PauseMenuControlType::Toggle;
+                return OverlayRenderer::PauseMenuControlType::Toggle;
             }
-            return row <= 4 ? DebugOverlay::PauseMenuControlType::Numeric : DebugOverlay::PauseMenuControlType::None;
+            return row <= 4 ? OverlayRenderer::PauseMenuControlType::Numeric : OverlayRenderer::PauseMenuControlType::None;
         }
         if (settingsPage_ == SettingsPage::Camera) {
             if (row == 2) {
-                return DebugOverlay::PauseMenuControlType::Toggle;
+                return OverlayRenderer::PauseMenuControlType::Toggle;
             }
-            return row <= 3 ? DebugOverlay::PauseMenuControlType::Numeric : DebugOverlay::PauseMenuControlType::None;
+            return row <= 3 ? OverlayRenderer::PauseMenuControlType::Numeric : OverlayRenderer::PauseMenuControlType::None;
         }
         if (settingsPage_ == SettingsPage::Interface) {
             if (row == 0) {
-                return DebugOverlay::PauseMenuControlType::Numeric;
+                return OverlayRenderer::PauseMenuControlType::Numeric;
             }
             if (row <= 7) {
-                return DebugOverlay::PauseMenuControlType::Toggle;
+                return OverlayRenderer::PauseMenuControlType::Toggle;
             }
-            return DebugOverlay::PauseMenuControlType::None;
+            return OverlayRenderer::PauseMenuControlType::None;
         }
         if (settingsPage_ == SettingsPage::Controls) {
-            return row < controlCount() ? DebugOverlay::PauseMenuControlType::Rebind
-                                        : DebugOverlay::PauseMenuControlType::Action;
+            return row < controlCount() ? OverlayRenderer::PauseMenuControlType::Rebind
+                                        : OverlayRenderer::PauseMenuControlType::Action;
         }
-        return DebugOverlay::PauseMenuControlType::None;
+        return OverlayRenderer::PauseMenuControlType::None;
     }
 
     bool PauseMenuController::supportsContinuousAdjust(const int row) const {
         const auto type = controlTypeForRow(row);
-        return type == DebugOverlay::PauseMenuControlType::Numeric ||
-               type == DebugOverlay::PauseMenuControlType::Choice;
+        return type == OverlayRenderer::PauseMenuControlType::Numeric ||
+               type == OverlayRenderer::PauseMenuControlType::Choice;
     }
 
     int PauseMenuController::optionCountForRow(const int row) const {
@@ -2338,7 +2327,7 @@ namespace ui {
         return 0;
     }
 
-    bool PauseMenuController::setOptionIndexForRow(const int row, const int targetIndex, GLFWwindow* window) {
+    bool PauseMenuController::setOptionIndexForRow(const int row, const int targetIndex) {
         if (isControlPage()) {
             return false;
         }
@@ -2356,7 +2345,7 @@ namespace ui {
         const int target = std::clamp(targetIndex, 0, optionCount - 1);
         while (current != target) {
             const int previous = current;
-            adjustSelectedSetting(target > current ? 1 : -1, window);
+            adjustSelectedSetting(target > current ? 1 : -1);
             current = optionIndexForRow(selectedSettingRow_);
             if (current == previous) {
                 break;
@@ -2365,7 +2354,7 @@ namespace ui {
         return current == target;
     }
 
-    void PauseMenuController::adjustSelectedSetting(const int delta, GLFWwindow* window) {
+    void PauseMenuController::adjustSelectedSetting(const int delta) {
         if (isControlPage()) {
             return;
         }
@@ -2386,18 +2375,18 @@ namespace ui {
             }
             pendingDisplayChanges_ = true;
 
-            auto& settings = draftDisplaySettings_;
+            auto&[windowMode, vsync, resolutionIndex] = draftDisplaySettings_;
             switch (selectedSettingRow_) {
                 case 0:
-                    settings.windowMode = static_cast<WindowMode>(
-                        wrapSelectionRow(static_cast<int>(settings.windowMode) + delta, 3));
+                    windowMode = static_cast<WindowMode>(
+                        wrapSelectionRow(static_cast<int>(windowMode) + delta, 3));
                     break;
                 case 1:
-                    settings.resolutionIndex =
-                        wrapSelectionRow(settings.resolutionIndex + delta, resolutionChoiceCount());
+                    resolutionIndex =
+                        wrapSelectionRow(resolutionIndex + delta, resolutionChoiceCount());
                     break;
                 case 2:
-                    settings.vsync = !settings.vsync;
+                    vsync = !vsync;
                     break;
                 default:
                     break;

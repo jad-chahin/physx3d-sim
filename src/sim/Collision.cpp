@@ -1,7 +1,3 @@
-//
-// Collision helpers extracted from World orchestrator.
-//
-
 #include "Collision.h"
 #include <algorithm>
 #include <cmath>

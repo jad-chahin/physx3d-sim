@@ -1,7 +1,3 @@
-//
-// Broadphase pair generation helpers.
-//
-
 #ifndef PHYSICS3D_BROADPHASE_H
 #define PHYSICS3D_BROADPHASE_H
 

@@ -1,7 +1,3 @@
-//
-// Created by jchah on 2025-12-19.
-//
-
 #ifndef PHYSICS3D_VEC3_H
 #define PHYSICS3D_VEC3_H
 

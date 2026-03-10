@@ -17,7 +17,7 @@
 #include "input/Camera.h"
 #include "render/ShaderUtil.h"
 #include "render/SphereMesh.h"
-#include "ui/DebugOverlay.h"
+#include "ui/OverlayRenderer.h"
 #include "ui/PauseMenuController.h"
 
 
@@ -399,7 +399,7 @@ namespace {
         glBindVertexArray(0);
     }
 
-    DebugOverlay::TargetHud buildTargetHud(
+    OverlayRenderer::TargetHud buildTargetHud(
         const sim::World& world,
         const ui::InterfaceSettings& interfaceSettings,
         const input::Camera& cam,
@@ -407,7 +407,7 @@ namespace {
         const FramebufferSize& framebufferSize,
         const std::vector<glm::vec3>& renderPositions)
     {
-        DebugOverlay::TargetHud targetHud{};
+        OverlayRenderer::TargetHud targetHud{};
         if (!interfaceSettings.objectInfo || renderPositions.empty()) {
             return targetHud;
         }
@@ -478,11 +478,11 @@ namespace {
     }
 
     void drawOverlay(
-        const DebugOverlay& overlay,
+        const OverlayRenderer& overlay,
         const FramebufferSize& framebufferSize,
         const RuntimeState& runtime,
-        const DebugOverlay::PauseMenuHud& pauseMenuHud,
-        const DebugOverlay::TargetHud& targetHud,
+        const OverlayRenderer::PauseMenuHud& pauseMenuHud,
+        const OverlayRenderer::TargetHud& targetHud,
         const float uiScale,
         const ui::InterfaceSettings& interfaceSettings)
     {
@@ -679,7 +679,7 @@ namespace app {
         glBindBuffer(GL_ARRAY_BUFFER, 0);
         glBindVertexArray(0);
 
-        DebugOverlay overlay;
+        OverlayRenderer overlay;
         overlay.init();
 
         runtime.lastTime = glfwGetTime();
@@ -727,8 +727,8 @@ namespace app {
             }
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-            const DebugOverlay::PauseMenuHud pauseMenuHud = pauseMenu.buildHud(controls);
-            DebugOverlay::TargetHud targetHud{};
+            const OverlayRenderer::PauseMenuHud pauseMenuHud = pauseMenu.buildHud(controls);
+            OverlayRenderer::TargetHud targetHud{};
             if (!bs.empty()) {
                 const SceneView sceneView = buildSceneView(cam, cameraSettings, appState.framebufferSize);
                 buildRenderModels(world, alpha, models, renderPositions);
