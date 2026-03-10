@@ -14,6 +14,9 @@
 
 
 namespace input {
+    constexpr int kMouseBindingBase = -1000;
+    constexpr int kMouseBindingMaxButtons = 8;
+
     struct ControlBindings {
         int freeze = GLFW_KEY_SPACE;
         int speedDown = GLFW_KEY_MINUS;
@@ -41,6 +44,10 @@ namespace input {
 
     bool isBindableKey(int key);
     std::string keyNameForCode(int key);
+    bool isMouseBindingCode(int bindingCode);
+    int bindingCodeFromMouseButton(int button);
+    int mouseButtonFromBindingCode(int bindingCode);
+    bool isBindingPressed(GLFWwindow* window, int bindingCode);
 
     void saveControlBindings(const ControlBindings& controls, const std::string& path);
     void loadControlBindings(ControlBindings& controls, const std::string& path);

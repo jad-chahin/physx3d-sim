@@ -31,6 +31,7 @@ namespace {
         int h = 0;
     };
     FramebufferSize g_fb;
+    double g_scrollDeltaY = 0.0;
 
     bool raySphereHit(
         const glm::vec3& rayOrigin,
@@ -82,6 +83,12 @@ namespace {
         outYPx = (1.0f - (ndc.y * 0.5f + 0.5f)) * static_cast<float>(fbh);
         return true;
     }
+
+    double consumeScrollDeltaY() {
+        const double value = g_scrollDeltaY;
+        g_scrollDeltaY = 0.0;
+        return value;
+    }
 }
 
 namespace app {
@@ -129,6 +136,8 @@ namespace app {
         input::loadControlBindings(controls, controlsConfigPath);
 
         ui::PauseMenuController pauseMenu;
+        const std::string settingsConfigPath = "settings.cfg";
+        pauseMenu.loadSettings(settingsConfigPath);
         pauseMenu.applyCurrentDisplaySettings(window);
 
         if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress))) {
@@ -159,6 +168,10 @@ namespace app {
             glViewport(0, 0, w, h);
         });
         glfwSetKeyCallback(window, input::keyCaptureCallback);
+        glfwSetScrollCallback(window, [](GLFWwindow*, const double xoffset, const double yoffset) {
+            (void)xoffset;
+            g_scrollDeltaY += yoffset;
+        });
 
         glEnable(GL_DEPTH_TEST);
         glEnable(GL_CULL_FACE);
@@ -269,17 +282,22 @@ namespace app {
             constexpr std::vector<std::string> noHudDebugLines;
             glfwPollEvents();
             const int pressedKey = input::consumeLastPressedKey();
+            const float scrollDeltaY = static_cast<float>(consumeScrollDeltaY());
             auto& bs = world.bodies();
 
             pauseMenu.updateEscapeState(window, mouseCaptured, firstMouse, lastTime, accumulator, bs);
-            pauseMenu.handlePointerInput(window, controls);
+            pauseMenu.handlePointerInput(window, controls, controlsConfigPath, scrollDeltaY);
             pauseMenu.handlePressedKey(window, pressedKey, controls, controlsConfigPath);
+            pauseMenu.updateContinuousInput(window, controls, controlsConfigPath);
             const auto& simSettings = pauseMenu.simulationSettings();
             const auto& cameraSettings = pauseMenu.cameraSettings();
             const auto& interfaceSettings = pauseMenu.interfaceSettings();
+            world.params().enableGravity = simSettings.gravityEnabled;
+            world.params().G = simSettings.gravityStrength;
+            world.params().collisionIterations = simSettings.collisionIterations;
             simSpeed = std::clamp(simSpeed, simSettings.minSimSpeed, simSettings.maxSimSpeed);
 
-            const bool spaceDown = (glfwGetKey(window, controls.freeze) == GLFW_PRESS);
+            const bool spaceDown = input::isBindingPressed(window, controls.freeze);
             if (!pauseMenu.isOpen() && spaceDown && !spaceWasDown) {
                 simFrozen = !simFrozen;
                 lastTime = glfwGetTime();
@@ -290,19 +308,19 @@ namespace app {
             }
             spaceWasDown = spaceDown;
 
-            const bool minusDown = (glfwGetKey(window, controls.speedDown) == GLFW_PRESS);
+            const bool minusDown = input::isBindingPressed(window, controls.speedDown);
             if (!pauseMenu.isOpen() && minusDown && !minusWasDown) {
                 simSpeed = std::max(simSettings.minSimSpeed, simSpeed * 0.5);
             }
             minusWasDown = minusDown;
 
-            const bool equalDown = (glfwGetKey(window, controls.speedUp) == GLFW_PRESS);
+            const bool equalDown = input::isBindingPressed(window, controls.speedUp);
             if (!pauseMenu.isOpen() && equalDown && !equalWasDown) {
                 simSpeed = std::min(simSettings.maxSimSpeed, simSpeed * 2.0);
             }
             equalWasDown = equalDown;
 
-            const bool oneDown = (glfwGetKey(window, controls.speedReset) == GLFW_PRESS);
+            const bool oneDown = input::isBindingPressed(window, controls.speedReset);
             if (!pauseMenu.isOpen() && oneDown && !oneWasDown) {
                 simSpeed = std::clamp(1.0, simSettings.minSimSpeed, simSettings.maxSimSpeed);
             }
@@ -321,7 +339,8 @@ namespace app {
                 fpsFrames = 0;
             }
 
-            const int maxStepsPerFrame = std::max(1, simSettings.maxPhysicsStepsPerFrame);
+            constexpr int kInternalMaxPhysicsStepsPerFrame = 512;
+            const int maxStepsPerFrame = kInternalMaxPhysicsStepsPerFrame;
             const double simFrameTime = std::min(frameTime, static_cast<double>(maxStepsPerFrame) * dt);
 
             if (mouseCaptured) {
@@ -348,17 +367,17 @@ namespace app {
 
                 float move = cameraSettings.baseMoveSpeed * static_cast<float>(frameTime);
                 // Camera movement speed boost
-                if (glfwGetKey(window, controls.cameraBoost) == GLFW_PRESS) {
+                if (input::isBindingPressed(window, controls.cameraBoost)) {
                     constexpr float kCameraBoostMultiplier = 4.0f;
                     move *= kCameraBoostMultiplier;
                 }
 
-                if (glfwGetKey(window, controls.moveForward) == GLFW_PRESS) cam.pos += forwardDir(cam) * move;
-                if (glfwGetKey(window, controls.moveBack) == GLFW_PRESS) cam.pos -= forwardDir(cam) * move;
-                if (glfwGetKey(window, controls.moveRight) == GLFW_PRESS) cam.pos += rightDir(cam) * move;
-                if (glfwGetKey(window, controls.moveLeft) == GLFW_PRESS) cam.pos -= rightDir(cam) * move;
-                if (glfwGetKey(window, controls.moveUp) == GLFW_PRESS) cam.pos += glm::vec3(0, 1, 0) * move;
-                if (glfwGetKey(window, controls.moveDown) == GLFW_PRESS) cam.pos -= glm::vec3(0, 1, 0) * move;
+                if (input::isBindingPressed(window, controls.moveForward)) cam.pos += forwardDir(cam) * move;
+                if (input::isBindingPressed(window, controls.moveBack)) cam.pos -= forwardDir(cam) * move;
+                if (input::isBindingPressed(window, controls.moveRight)) cam.pos += rightDir(cam) * move;
+                if (input::isBindingPressed(window, controls.moveLeft)) cam.pos -= rightDir(cam) * move;
+                if (input::isBindingPressed(window, controls.moveUp)) cam.pos += glm::vec3(0, 1, 0) * move;
+                if (input::isBindingPressed(window, controls.moveDown)) cam.pos -= glm::vec3(0, 1, 0) * move;
             }
 
             if (!simFrozen && !pauseMenu.isOpen()) {
@@ -382,9 +401,7 @@ namespace app {
             const double alpha = std::clamp(accumulator / dt, 0.0, 1.0);
             const std::size_t n = bs.size();
 
-            if (pauseMenu.isOpen()) {
-                glClearColor(0.02f, 0.02f, 0.03f, 1.0f);
-            } else if (simFrozen) {
+            if (simFrozen && !pauseMenu.isOpen()) {
                 glClearColor(0.20f, 0.02f, 0.02f, 1.0f);
             } else {
                 glClearColor(0.05f, 0.05f, 0.08f, 1.0f);
@@ -509,6 +526,7 @@ namespace app {
                 targetHud,
                 pauseMenu.uiScale(),
                 interfaceSettings.showHud,
+                interfaceSettings.showCrosshair,
                 noHudDebugLines);
             glEnable(GL_CULL_FACE);
             glEnable(GL_DEPTH_TEST);

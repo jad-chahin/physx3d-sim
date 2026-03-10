@@ -10,8 +10,22 @@ void APIENTRY glDebugCallback(
     const GLenum source, const GLenum type, const GLuint id, const GLenum severity,
     const GLsizei length, const GLchar* message, const void* userParam)
 {
-    (void)source; (void)type; (void)id; (void)severity; (void)length; (void)userParam;
-    std::cerr << "[GL DEBUG] " << message << "\n";
+    (void)source; (void)type; (void)length; (void)userParam;
+
+    // Filter chatty driver notifications (e.g., buffer placement info).
+    if (severity == GL_DEBUG_SEVERITY_NOTIFICATION) {
+        return;
+    }
+
+    const char* severityText = "UNKNOWN";
+    switch (severity) {
+        case GL_DEBUG_SEVERITY_HIGH: severityText = "HIGH"; break;
+        case GL_DEBUG_SEVERITY_MEDIUM: severityText = "MEDIUM"; break;
+        case GL_DEBUG_SEVERITY_LOW: severityText = "LOW"; break;
+        default: break;
+    }
+
+    std::cerr << "[GL DEBUG][" << severityText << "][id=" << id << "] " << message << "\n";
 }
 
 GLuint compileShader(const GLenum type, const char* src) {

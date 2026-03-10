@@ -59,9 +59,9 @@ void main() {
 static auto kUiFrag = R"GLSL(
 #version 330 core
 out vec4 FragColor;
-uniform vec3 uColor;
+uniform vec4 uColor;
 void main() {
-    FragColor = vec4(uColor, 1.0);
+    FragColor = uColor;
 }
 )GLSL";
 
@@ -115,6 +115,8 @@ static const std::array<std::uint8_t, 7>& glyph5x7(char c) {
     static constexpr std::array<std::uint8_t, 7> N9 = {0b01110,0b10001,0b10001,0b01111,0b00001,0b00001,0b01110};
 
     static constexpr std::array<std::uint8_t, 7> COLON = {0b00000,0b00100,0b00100,0b00000,0b00100,0b00100,0b00000};
+    static constexpr std::array<std::uint8_t, 7> LT    = {0b00001,0b00010,0b00100,0b01000,0b00100,0b00010,0b00001};
+    static constexpr std::array<std::uint8_t, 7> GT    = {0b10000,0b01000,0b00100,0b00010,0b00100,0b01000,0b10000};
     static constexpr std::array<std::uint8_t, 7> PLUS  = {0b00000,0b00100,0b00100,0b11111,0b00100,0b00100,0b00000};
     static constexpr std::array<std::uint8_t, 7> MINUS = {0b00000,0b00000,0b00000,0b11111,0b00000,0b00000,0b00000};
     static constexpr std::array<std::uint8_t, 7> EQUAL = {0b00000,0b11111,0b00000,0b11111,0b00000,0b00000,0b00000};
@@ -159,6 +161,8 @@ static const std::array<std::uint8_t, 7>& glyph5x7(char c) {
         case '8': return N8;
         case '9': return N9;
         case ':': return COLON;
+        case '<': return LT;
+        case '>': return GT;
         case '+': return PLUS;
         case '-': return MINUS;
         case '=': return EQUAL;
@@ -266,6 +270,7 @@ struct OverlayGeometry {
 };
 
 struct OverlayBuffers {
+    std::vector<float>& screenDim;
     std::vector<float>& panelFill;
     std::vector<float>& panelFrame;
     std::vector<float>& accentFill;
@@ -280,6 +285,7 @@ struct OverlayBuffers {
     std::vector<float>& popupText;
 
     OverlayBuffers(
+        std::vector<float>& screenDimIn,
         std::vector<float>& panelFillIn,
         std::vector<float>& panelFrameIn,
         std::vector<float>& accentFillIn,
@@ -292,7 +298,8 @@ struct OverlayBuffers {
         std::vector<float>& popupBgIn,
         std::vector<float>& popupFrameIn,
         std::vector<float>& popupTextIn)
-        : panelFill(panelFillIn),
+        : screenDim(screenDimIn),
+          panelFill(panelFillIn),
           panelFrame(panelFrameIn),
           accentFill(accentFillIn),
           textPrimary(textPrimaryIn),
@@ -313,15 +320,15 @@ static void drawPauseMenu(
 {
     const float w = geometry.width;
     const float h = geometry.height;
-    const float menuScale = std::clamp(geometry.uiScale, 0.80f, 1.35f);
+    const float menuScale = std::clamp(geometry.uiScale, 0.80f, 1.40f);
     const float baseScalePx = kBaseScalePx * menuScale;
     const float preferredRowScalePx = kSettingsScalePx * menuScale;
     const float preferredTitleScalePx = kTitleScalePx * menuScale;
 
-    pushQuadPx(buffers.panelFill, 0.0f, 0.0f, w, h);
+    pushQuadPx(buffers.screenDim, 0.0f, 0.0f, w, h);
 
-    const float cardW = std::min(w * 0.88f, 1360.0f);
-    const float cardH = std::min(h * 0.92f, 1020.0f);
+    const float cardW = std::min(w * 0.82f, 1240.0f);
+    const float cardH = std::min(h * 0.86f, 920.0f);
     const float cardX0 = (w - cardW) * 0.5f;
     const float cardY0 = (h - cardH) * 0.5f;
     const float cardX1 = cardX0 + cardW;
@@ -352,32 +359,7 @@ static void drawPauseMenu(
         resumeScalePx,
         resume);
 
-    std::string helpText;
-    if (pauseMenu.awaitingBind) {
-        helpText = "PRESS KEY TO REBIND";
-        if (!pauseMenu.pendingAction.empty()) {
-            helpText += "\nACTION: " + pauseMenu.pendingAction;
-        }
-    } else if (pauseMenu.selectedRowIsControl) {
-        helpText = "UP DOWN: SELECT OPTION\nENTER: REBIND OR RESET";
-    } else {
-        helpText = "UP DOWN: SELECT OPTION\nLEFT RIGHT: CHANGE\nENTER: APPLY";
-    }
-
-    const std::string helpLayoutReference =
-        "UP DOWN: SELECT OPTION\nLEFT RIGHT: CHANGE\nENTER: APPLY";
-    const float helpBaseY = cardY0 + 96.0f * menuScale;
-    const float helpScalePx = fitScaleForWidth(helpLayoutReference, baseScalePx * 0.98f, infoWidth);
-    const float helpLineStep = (static_cast<float>(kFontH) + 2.0f) * helpScalePx;
-    const float helpReservedHeight = helpLineStep * 3.0f;
-    appendTextPx(
-        buffers.textPrimary,
-        centerX - measureMaxLinePx(helpText, helpScalePx) * 0.5f,
-        helpBaseY,
-        helpScalePx,
-        helpText);
-
-    const float statusSlotY = helpBaseY + helpReservedHeight + 10.0f * menuScale;
+    const float statusSlotY = cardY0 + 96.0f * menuScale;
     const float statusReservedScalePx = baseScalePx * 0.95f;
     const float statusReservedHeight = (static_cast<float>(kFontH) + 2.0f) * statusReservedScalePx;
     if (!pauseMenu.statusLine.empty()) {
@@ -390,7 +372,7 @@ static void drawPauseMenu(
             pauseMenu.statusLine);
     }
 
-    const float tabsSlotY = statusSlotY + statusReservedHeight + 12.0f * menuScale;
+    const float tabsSlotY = statusSlotY + statusReservedHeight + 16.0f * menuScale;
     constexpr std::array<const char*, 5> kPageTabLabels{{"DISPLAY", "SIMULATION", "CAMERA", "INTERFACE", "CONTROLS"}};
     const float tabsScalePx = baseScalePx * 1.00f;
     const float tabPadX = 12.0f * menuScale;
@@ -401,13 +383,27 @@ static void drawPauseMenu(
         tabWidths[i] = measureMaxLinePx(kPageTabLabels[i], tabsScalePx) + tabPadX * 2.0f;
     }
     const float tabHeight = (static_cast<float>(kFontH) + 2.0f) * tabsScalePx + tabPadY * 2.0f;
-    const float exitPadX = 12.0f * menuScale;
-    const std::string exitLabel = "QUIT";
-    const float exitWidth = measureMaxLinePx(exitLabel, tabsScalePx) + exitPadX * 2.0f;
+    const float buttonPadX = 12.0f * menuScale;
+    const std::string exitLabel = "EXIT TO HOME";
+    const float exitWidth = measureMaxLinePx(exitLabel, tabsScalePx) + buttonPadX * 2.0f;
     const float exitX1 = cardX1 - 18.0f * menuScale;
     const float exitX0 = exitX1 - exitWidth;
     const float exitY0 = tabsSlotY;
     const float exitY1 = exitY0 + tabHeight;
+    const std::string closeLabel = "X";
+    const float closePadX = 12.0f * menuScale;
+    const float closeWidth = measureMaxLinePx(closeLabel, tabsScalePx) + closePadX * 2.0f;
+    const float closeX1 = cardX1 - 18.0f * menuScale;
+    const float closeX0 = closeX1 - closeWidth;
+    const float closeY0 = cardY0 + 18.0f * menuScale;
+    const float closeY1 = closeY0 + tabHeight;
+    const std::string resetIconLabel = "R";
+    const float resetPadX = 12.0f * menuScale;
+    const float resetWidth = measureMaxLinePx(resetIconLabel, tabsScalePx) + resetPadX * 2.0f;
+    const float resetX0 = cardX0 + 18.0f * menuScale;
+    const float resetX1 = resetX0 + resetWidth;
+    const float resetY0 = cardY0 + 18.0f * menuScale;
+    const float resetY1 = resetY0 + tabHeight;
 
     const float tabXStart = cardX0 + 18.0f * menuScale;
     float tabX = tabXStart;
@@ -435,15 +431,40 @@ static void drawPauseMenu(
     pushFramePx(buffers.textWarning, exitX0, exitY0, exitX1, exitY1, 1.5f);
     appendTextPx(
         buffers.textWarning,
-        exitX0 + exitPadX,
+        exitX0 + buttonPadX,
         exitY0 + tabPadY,
         tabsScalePx,
         exitLabel);
-    float settingsY0 = std::max(cardY0 + 196.0f * menuScale, tabsSlotY + tabHeight + 16.0f * menuScale);
+    pushQuadPx(buffers.panelFill, closeX0, closeY0, closeX1, closeY1);
+    pushFramePx(buffers.panelFrame, closeX0, closeY0, closeX1, closeY1, 1.5f);
+    appendTextPx(
+        buffers.textPrimary,
+        closeX0 + closePadX,
+        closeY0 + tabPadY,
+        tabsScalePx,
+        closeLabel);
+    if (pauseMenu.showResetIcon) {
+        pushQuadPx(buffers.panelFill, resetX0, resetY0, resetX1, resetY1);
+        pushFramePx(
+            pauseMenu.hoverResetIcon ? buffers.textWarning : buffers.panelFrame,
+            resetX0,
+            resetY0,
+            resetX1,
+            resetY1,
+            1.5f);
+        appendTextPx(
+            pauseMenu.hoverResetIcon ? buffers.textWarning : buffers.textPrimary,
+            resetX0 + resetPadX,
+            resetY0 + tabPadY,
+            tabsScalePx,
+            resetIconLabel);
+    }
+    const float footerReservedH = (static_cast<float>(kFontH) + 3.0f) * (baseScalePx * 0.92f) + 18.0f * menuScale;
+    float settingsY0 = std::max(cardY0 + 170.0f * menuScale, tabsSlotY + tabHeight + 16.0f * menuScale);
 
     const float sectionX0 = cardX0 + 26.0f * menuScale;
     const float sectionX1 = cardX1 - 26.0f * menuScale;
-    const float settingsY1 = cardY1 - 20.0f * menuScale;
+    const float settingsY1 = cardY1 - 20.0f * menuScale - footerReservedH;
     if (settingsY1 - settingsY0 < 220.0f) {
         settingsY0 = settingsY1 - 220.0f;
     }
@@ -454,10 +475,31 @@ static void drawPauseMenu(
 
     float rowScalePx = preferredRowScalePx * 1.8f;
     float maxRowWidth = 0.0f;
+    float maxControlReserve = 0.0f;
     for (const auto& line : pauseMenu.lines) {
         maxRowWidth = std::max(maxRowWidth, measureMaxLinePx(line.text, 1.0f));
+        if (line.header) {
+            continue;
+        }
+        switch (line.controlType) {
+            case DebugOverlay::PauseMenuControlType::Toggle:
+                maxControlReserve = std::max(maxControlReserve, 128.0f * menuScale);
+                break;
+            case DebugOverlay::PauseMenuControlType::Choice:
+            case DebugOverlay::PauseMenuControlType::Numeric:
+                maxControlReserve = std::max(maxControlReserve, 248.0f * menuScale);
+                break;
+            case DebugOverlay::PauseMenuControlType::Rebind:
+                maxControlReserve = std::max(maxControlReserve, 240.0f * menuScale);
+                break;
+            case DebugOverlay::PauseMenuControlType::Action:
+                maxControlReserve = std::max(maxControlReserve, 120.0f * menuScale);
+                break;
+            default:
+                break;
+        }
     }
-    const float rowAreaWidth = (sectionX1 - sectionX0) - 28.0f * menuScale;
+    const float rowAreaWidth = (sectionX1 - sectionX0) - 28.0f * menuScale - maxControlReserve;
     if (maxRowWidth > 0.0f && rowAreaWidth > 0.0f) {
         rowScalePx = std::min(rowScalePx, rowAreaWidth / maxRowWidth);
     }
@@ -469,7 +511,12 @@ static void drawPauseMenu(
 
     const float linesStartY = sectionHeaderY + (static_cast<float>(kFontH) + 3.0f) * sectionHeaderScalePx + 9.0f * menuScale;
     const float rowStep = (static_cast<float>(kFontH) + 4.0f) * rowScalePx;
-    const float maxLines = std::floor((settingsY1 - linesStartY - 10.0f * menuScale) / rowStep);
+    const float settingsBottomPad = 10.0f * menuScale;
+    const float actionReservedH =
+        (pauseMenu.showDisplayApplyAction ||
+         pauseMenu.showResetControlsAction) ? 44.0f * menuScale : 0.0f;
+    const float contentY1 = settingsY1 - settingsBottomPad - actionReservedH;
+    const float maxLines = std::floor((contentY1 - linesStartY) / rowStep);
     const std::size_t totalLines = pauseMenu.lines.size();
     const std::size_t visibleLines = std::min<std::size_t>(
         totalLines,
@@ -491,50 +538,335 @@ static void drawPauseMenu(
         }
     }
 
+    if (visibleLines > 0 && totalLines > visibleLines) {
+        const float trackW = 8.0f * menuScale;
+        const float trackX1 = sectionX1 - 8.0f * menuScale;
+        const float trackX0 = trackX1 - trackW;
+        const float trackY0 = linesStartY;
+        const float trackY1 = contentY1;
+        pushQuadPx(buffers.panelFill, trackX0, trackY0, trackX1, trackY1);
+        pushFramePx(buffers.panelFrame, trackX0, trackY0, trackX1, trackY1, 1.0f);
+
+        const float visibleRatio = std::clamp(
+            static_cast<float>(visibleLines) / static_cast<float>(totalLines),
+            0.0f,
+            1.0f);
+        const float thumbH = std::max(18.0f * menuScale, (trackY1 - trackY0) * visibleRatio);
+        const float maxFirst = static_cast<float>(totalLines - visibleLines);
+        const float scrollT = maxFirst > 0.0f
+            ? static_cast<float>(firstLine) / maxFirst
+            : 0.0f;
+        const float thumbTravel = std::max(0.0f, (trackY1 - trackY0) - thumbH);
+        const float thumbY0 = trackY0 + thumbTravel * scrollT;
+        const float thumbY1 = thumbY0 + thumbH;
+        pushQuadPx(buffers.accentFill, trackX0 + 1.0f, thumbY0 + 1.0f, trackX1 - 1.0f, thumbY1 - 1.0f);
+    }
+
+    if (pauseMenu.showDisplayApplyAction) {
+        const std::string applyLabel = "APPLY CHANGES";
+        const float actionScalePx = baseScalePx * 0.98f;
+        const float actionPadX = 16.0f * menuScale;
+        const float actionPadY = 8.0f * menuScale;
+        const float actionW = measureMaxLinePx(applyLabel, actionScalePx) + actionPadX * 2.0f;
+        const float actionH = (static_cast<float>(kFontH) + 2.0f) * actionScalePx + actionPadY * 2.0f;
+        const float actionX1 = sectionX1 - 12.0f * menuScale;
+        const float actionX0 = actionX1 - actionW;
+        const float actionY1 = settingsY1 - 10.0f * menuScale;
+        const float actionY0 = actionY1 - actionH;
+
+        if (pauseMenu.hoverDisplayApplyAction) {
+            pushQuadPx(buffers.panelFill, actionX0, actionY0, actionX1, actionY1);
+        }
+        pushFramePx(buffers.textAccent, actionX0, actionY0, actionX1, actionY1, 1.5f);
+        appendTextPx(
+            buffers.textAccent,
+            actionX0 + actionPadX,
+            actionY0 + actionPadY,
+            actionScalePx,
+            applyLabel);
+    }
+    if (pauseMenu.showResetControlsAction) {
+        const std::string resetLabel = "RESET CONTROLS";
+        const float actionScalePx = baseScalePx * 0.98f;
+        const float actionPadX = 16.0f * menuScale;
+        const float actionPadY = 8.0f * menuScale;
+        const float actionW = measureMaxLinePx(resetLabel, actionScalePx) + actionPadX * 2.0f;
+        const float actionH = (static_cast<float>(kFontH) + 2.0f) * actionScalePx + actionPadY * 2.0f;
+        const float actionX1 = sectionX1 - 12.0f * menuScale;
+        const float actionX0 = actionX1 - actionW;
+        const float actionY1 = settingsY1 - 10.0f * menuScale;
+        const float actionY0 = actionY1 - actionH;
+
+        if (pauseMenu.hoverResetControlsAction) {
+            pushQuadPx(buffers.panelFill, actionX0, actionY0, actionX1, actionY1);
+        }
+        pushFramePx(buffers.textWarning, actionX0, actionY0, actionX1, actionY1, 1.5f);
+        appendTextPx(
+            buffers.textWarning,
+            actionX0 + actionPadX,
+            actionY0 + actionPadY,
+            actionScalePx,
+            resetLabel);
+    }
+    if (pauseMenu.showResetConfirm) {
+        const float popupW = 320.0f * menuScale;
+        const float popupH = 120.0f * menuScale;
+        const float popupX0 = cardX0 + (cardW - popupW) * 0.5f;
+        const float popupY0 = cardY0 + (cardH - popupH) * 0.5f;
+        const float popupX1 = popupX0 + popupW;
+        const float popupY1 = popupY0 + popupH;
+        const float popupScalePx = baseScalePx * 0.98f;
+        const float buttonScalePx = baseScalePx * 0.92f;
+        const float buttonPadX = 16.0f * menuScale;
+        const float buttonPadY = 8.0f * menuScale;
+        const std::string titleText = "ARE YOU SURE?";
+        const std::string bodyText = "RESET ALL SETTINGS";
+        const std::string yesLabel = "RESET";
+        const std::string noLabel = "CANCEL";
+        const float yesW = measureMaxLinePx(yesLabel, buttonScalePx) + buttonPadX * 2.0f;
+        const float noW = measureMaxLinePx(noLabel, buttonScalePx) + buttonPadX * 2.0f;
+        const float buttonH = (static_cast<float>(kFontH) + 2.0f) * buttonScalePx + buttonPadY * 2.0f;
+        const float buttonsY1 = popupY1 - 14.0f * menuScale;
+        const float buttonsY0 = buttonsY1 - buttonH;
+        const float noX1 = popupX1 - 18.0f * menuScale;
+        const float noX0 = noX1 - noW;
+        const float yesX1 = noX0 - 10.0f * menuScale;
+        const float yesX0 = yesX1 - yesW;
+
+        pushQuadPx(buffers.popupBg, popupX0, popupY0, popupX1, popupY1);
+        pushFramePx(buffers.popupFrame, popupX0, popupY0, popupX1, popupY1, 1.5f);
+        pushQuadPx(buffers.textWarning, popupX0, popupY0, popupX1, popupY0 + 3.0f);
+        appendTextPx(
+            buffers.popupText,
+            popupX0 + 16.0f * menuScale,
+            popupY0 + 14.0f * menuScale,
+            popupScalePx,
+            titleText);
+        appendTextPx(
+            buffers.popupText,
+            popupX0 + 16.0f * menuScale,
+            popupY0 + 36.0f * menuScale,
+            buttonScalePx,
+            bodyText);
+
+        if (pauseMenu.hoverResetConfirmYes) {
+            pushQuadPx(buffers.panelFill, yesX0, buttonsY0, yesX1, buttonsY1);
+        }
+        pushFramePx(buffers.textWarning, yesX0, buttonsY0, yesX1, buttonsY1, 1.5f);
+        appendTextPx(buffers.textWarning, yesX0 + buttonPadX, buttonsY0 + buttonPadY, buttonScalePx, yesLabel);
+
+        if (pauseMenu.hoverResetConfirmNo) {
+            pushQuadPx(buffers.panelFill, noX0, buttonsY0, noX1, buttonsY1);
+        }
+        pushFramePx(buffers.panelFrame, noX0, buttonsY0, noX1, buttonsY1, 1.5f);
+        appendTextPx(buffers.textPrimary, noX0 + buttonPadX, buttonsY0 + buttonPadY, buttonScalePx, noLabel);
+    }
+
     for (std::size_t i = 0; i < visibleLines; ++i) {
         const std::size_t lineIdx = firstLine + i;
         const bool selected = static_cast<int>(lineIdx) == pauseMenu.selectedSettingLineIndex;
-        const bool applied = static_cast<int>(lineIdx) == pauseMenu.appliedSettingLineIndex;
+        const bool hovered = static_cast<int>(lineIdx) == pauseMenu.hoveredSettingLineIndex;
         const bool header = pauseMenu.lines[lineIdx].header;
         const bool disabled = pauseMenu.lines[lineIdx].disabled;
         const float lineY = linesStartY + static_cast<float>(i) * rowStep;
         const float lineX0 = sectionX0 + 10.0f * menuScale;
         const float lineX1 = sectionX1 - 10.0f * menuScale;
 
-        if (header || (selected && disabled)) {
-            pushQuadPx(
-                buffers.panelFrame,
-                lineX0,
-                lineY - 2.0f * menuScale,
-                lineX1,
-                lineY + (static_cast<float>(kFontH) + 3.5f) * rowScalePx + 2.0f * menuScale);
-        } else if (selected) {
-            pushQuadPx(
-                buffers.accentFill,
-                lineX0,
-                lineY - 2.0f * menuScale,
-                lineX1,
-                lineY + (static_cast<float>(kFontH) + 3.5f) * rowScalePx + 2.0f * menuScale);
-        }
-        if (applied && !header) {
+        if (selected && !header) {
             pushFramePx(
-                buffers.textWarning,
+                buffers.textMuted,
                 lineX0,
                 lineY - 2.0f * menuScale,
                 lineX1,
                 lineY + (static_cast<float>(kFontH) + 3.5f) * rowScalePx + 2.0f * menuScale,
                 1.5f);
+        } else if (hovered && !header) {
+            pushFramePx(
+                buffers.panelFrame,
+                lineX0,
+                lineY - 2.0f * menuScale,
+                lineX1,
+                lineY + (static_cast<float>(kFontH) + 3.5f) * rowScalePx + 2.0f * menuScale,
+                1.0f);
         }
-
         const float lineScalePx = header
-            ? fitScaleForWidth(pauseMenu.lines[lineIdx].text, rowScalePx * 1.03f, rowAreaWidth)
+            ? fitScaleForWidth(pauseMenu.lines[lineIdx].text, rowScalePx * 1.03f, rowAreaWidth + maxControlReserve)
             : rowScalePx;
         appendTextPx(
-            header ? buffers.textAccent : (disabled ? buffers.panelFrame : (selected ? buffers.textPrimary : buffers.textMuted)),
+            header ? buffers.textAccent : (disabled ? buffers.textMuted : (selected ? buffers.textPrimary : buffers.textMuted)),
             sectionX0 + 14.0f * menuScale,
             lineY,
             lineScalePx,
             pauseMenu.lines[lineIdx].text);
+
+        if (header) {
+            continue;
+        }
+
+        const std::string valueText = pauseMenu.lines[lineIdx].valueText;
+        const float valueScalePx = rowScalePx * 0.88f;
+        const float buttonY0 = lineY - 2.0f * menuScale;
+        const float buttonY1 = lineY + (static_cast<float>(kFontH) + 3.5f) * rowScalePx + 2.0f * menuScale;
+        const auto drawButton = [&](const float x0, const float x1, const std::string& text, const bool active, const bool warning) {
+            if (active && !disabled && !selected) {
+                pushQuadPx(warning ? buffers.textWarning : buffers.accentFill, x0, buttonY0, x1, buttonY1);
+            }
+            if (active) {
+                pushFramePx(
+                    disabled ? buffers.panelFrame : (active ? buffers.textPrimary : buffers.panelFrame),
+                    x0,
+                    buttonY0,
+                    x1,
+                    buttonY1,
+                    1.0f);
+            }
+            const float tx = x0 + (x1 - x0 - measureMaxLinePx(text, valueScalePx)) * 0.5f;
+            appendTextPx(
+                disabled ? buffers.textMuted
+                         : (active ? buffers.textPrimary : (warning ? buffers.textWarning : buffers.textMuted)),
+                tx,
+                lineY + 0.3f * menuScale,
+                valueScalePx,
+                text);
+        };
+
+        switch (pauseMenu.lines[lineIdx].controlType) {
+            case DebugOverlay::PauseMenuControlType::Toggle: {
+                const float valueW = 220.0f * menuScale;
+                const float rightX1 = lineX1 - 10.0f * menuScale;
+                const float valueX1 = rightX1 - 24.0f * menuScale - 6.0f * menuScale;
+                const float x1 = valueX1;
+                const float x0 = x1 - valueW;
+                const float box = std::max(8.0f, (buttonY1 - buttonY0) - 8.0f * menuScale);
+                const std::string toggleText = pauseMenu.lines[lineIdx].boolValue ? "ON" : "OFF";
+                const float gap = 5.0f * menuScale;
+                const float bx0 = x0 + 18.0f * menuScale;
+                const float by0 = buttonY0 + (buttonY1 - buttonY0 - box) * 0.5f;
+                const float textX0 = bx0 + box + gap;
+                const float textW = measureMaxLinePx(toggleText, valueScalePx);
+                const float textX = textX0 + std::max(0.0f, ((x1 - 12.0f * menuScale) - textX0 - textW) * 0.5f);
+                drawButton(x0, x1, "", false, false);
+                pushFramePx(buffers.textMuted, bx0, by0, bx0 + box, by0 + box, 1.1f);
+                if (pauseMenu.lines[lineIdx].boolValue) {
+                    pushQuadPx(
+                        disabled ? buffers.panelFrame : buffers.accentFill,
+                        bx0 + 2.0f,
+                        by0 + 2.0f,
+                        bx0 + box - 2.0f,
+                        by0 + box - 2.0f);
+                }
+                appendTextPx(
+                    disabled ? buffers.textMuted : (selected ? buffers.textPrimary : buffers.textMuted),
+                    textX,
+                    lineY + 3.3f * menuScale,
+                    valueScalePx,
+                    toggleText);
+                break;
+            }
+            case DebugOverlay::PauseMenuControlType::Choice:
+            case DebugOverlay::PauseMenuControlType::Numeric: {
+                const float arrowW = 24.0f * menuScale;
+                const float gap = 6.0f * menuScale;
+                const float valueW = 220.0f * menuScale;
+                const bool numeric = pauseMenu.lines[lineIdx].controlType == DebugOverlay::PauseMenuControlType::Numeric;
+                const char* leftSymbol = numeric ? "-" : "<";
+                const char* rightSymbol = numeric ? "+" : ">";
+                const float rightX1 = lineX1 - 10.0f * menuScale;
+                const float rightArrowX0 = rightX1 - arrowW;
+                const float valueX1 = rightArrowX0 - gap;
+                const float valueX0 = valueX1 - valueW;
+                const float leftArrowX1 = valueX0 - gap;
+                const float leftArrowX0 = leftArrowX1 - arrowW;
+
+                if (disabled) {
+                    appendTextPx(
+                        buffers.textMuted,
+                        valueX0 + (valueW - measureMaxLinePx(valueText, valueScalePx)) * 0.5f,
+                        lineY + 0.3f * menuScale,
+                        valueScalePx,
+                        valueText);
+                } else {
+                    drawButton(leftArrowX0, leftArrowX1, leftSymbol, false, false);
+                    drawButton(rightArrowX0, rightX1, rightSymbol, false, false);
+                    drawButton(valueX0, valueX1, valueText, false, false);
+                }
+                if (!disabled && numeric && pauseMenu.lines[lineIdx].showSlider)
+                {
+                    const float sliderX0 = valueX0 + 6.0f * menuScale;
+                    const float sliderX1 = valueX1 - 6.0f * menuScale;
+                    const float sliderY1 = buttonY1 - 3.0f * menuScale;
+                    const float sliderY0 = sliderY1 - 6.0f * menuScale;
+                    pushQuadPx(buffers.panelFrame, sliderX0, sliderY0, sliderX1, sliderY1);
+                    const float fillX = sliderX0 +
+                        std::clamp(pauseMenu.lines[lineIdx].sliderT, 0.0f, 1.0f) * (sliderX1 - sliderX0);
+                    pushQuadPx(buffers.accentFill, sliderX0, sliderY0, fillX, sliderY1);
+                }
+                break;
+            }
+            case DebugOverlay::PauseMenuControlType::Rebind: {
+                const float valueW = std::clamp(
+                    measureMaxLinePx(valueText, valueScalePx) + 18.0f * menuScale,
+                    88.0f * menuScale,
+                    150.0f * menuScale);
+                const float valueX1 = lineX1 - 10.0f * menuScale;
+                const float valueX0 = valueX1 - valueW;
+                appendTextPx(
+                    buffers.textMuted,
+                    valueX0 + (valueW - measureMaxLinePx(valueText, valueScalePx)) * 0.5f,
+                    lineY + 0.3f * menuScale,
+                    valueScalePx,
+                    valueText);
+                break;
+            }
+            case DebugOverlay::PauseMenuControlType::Action: {
+                if (!valueText.empty()) {
+                    const float valueW = std::clamp(
+                        measureMaxLinePx(valueText, valueScalePx) + 18.0f * menuScale,
+                        88.0f * menuScale,
+                        150.0f * menuScale);
+                    const float valueX1 = lineX1 - 10.0f * menuScale;
+                    const float valueX0 = valueX1 - valueW;
+                    appendTextPx(
+                        selected ? buffers.textPrimary : buffers.textMuted,
+                        valueX0 + (valueW - measureMaxLinePx(valueText, valueScalePx)) * 0.5f,
+                        lineY + 0.3f * menuScale,
+                        valueScalePx,
+                        valueText);
+                }
+                break;
+            }
+            case DebugOverlay::PauseMenuControlType::None:
+            default:
+                if (!valueText.empty()) {
+                    const float valueW = measureMaxLinePx(valueText, valueScalePx);
+                    appendTextPx(
+                        buffers.textMuted,
+                        lineX1 - 12.0f * menuScale - valueW,
+                        lineY + 0.3f * menuScale,
+                        valueScalePx,
+                        valueText);
+                }
+                break;
+        }
+    }
+
+    if (!pauseMenu.footerHint.empty()) {
+        const float footerX0 = sectionX0;
+        const float footerX1 = sectionX1;
+        const float footerY0 = settingsY1 + 10.0f * menuScale;
+        const float footerY1 = cardY1 - 16.0f * menuScale;
+        pushQuadPx(buffers.panelFill, footerX0, footerY0, footerX1, footerY1);
+        pushFramePx(buffers.panelFrame, footerX0, footerY0, footerX1, footerY1, 1.2f);
+        const float footerScalePx = fitScaleForWidth(
+            pauseMenu.footerHint,
+            baseScalePx * 0.92f,
+            (footerX1 - footerX0) - 18.0f * menuScale);
+        appendTextPx(
+            buffers.textMuted,
+            footerX0 + 10.0f * menuScale,
+            footerY0 + 6.0f * menuScale,
+            footerScalePx,
+            pauseMenu.footerHint);
     }
 }
 
@@ -669,8 +1001,11 @@ void DebugOverlay::draw(
     const TargetHud& targetHud,
     const float uiScale,
     const bool showHud,
+    const bool showCrosshair,
     const std::vector<std::string>& hudDebugLines) const
 {
+    std::vector<float> screenDim;
+    screenDim.reserve(24);
     std::vector<float> panelFill;
     panelFill.reserve(600);
     std::vector<float> panelFrame;
@@ -697,6 +1032,7 @@ void DebugOverlay::draw(
     const float clampedUiScale = std::clamp(uiScale, 0.75f, 2.0f);
     const OverlayGeometry geometry(static_cast<float>(fbw), static_cast<float>(fbh), clampedUiScale);
     OverlayBuffers buffers(
+        screenDim,
         panelFill,
         panelFrame,
         accentFill,
@@ -716,12 +1052,16 @@ void DebugOverlay::draw(
         drawHud(geometry, simFrozen, simSpeed, fps, hudDebugLines, buffers);
     }
 
-    if (!pauseMenu.visible) {
+    if (!pauseMenu.visible && showCrosshair) {
         drawCrosshair(geometry, buffers);
+    }
+    if (!pauseMenu.visible) {
         drawTargetPopup(targetHud, geometry, buffers);
     }
 
     glDisable(GL_DEPTH_TEST);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     glUseProgram(program_);
     glUniform2f(uViewport_, static_cast<float>(fbw), static_cast<float>(fbh));
@@ -730,72 +1070,84 @@ void DebugOverlay::draw(
     glBindBuffer(GL_ARRAY_BUFFER, vbo_);
     glBufferData(GL_ARRAY_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
 
+    if (!screenDim.empty()) {
+        glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(screenDim.size() * sizeof(float)), screenDim.data(), GL_DYNAMIC_DRAW);
+        glUniform4f(uColor_, 0.01f, 0.03f, 0.05f, 0.62f);
+        glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(screenDim.size() / 2));
+    }
+
     if (!panelFill.empty()) {
         glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(panelFill.size() * sizeof(float)), panelFill.data(), GL_DYNAMIC_DRAW);
-        glUniform3f(uColor_, pauseMenu.visible ? 0.01f : 0.05f, pauseMenu.visible ? 0.01f : 0.07f, pauseMenu.visible ? 0.02f : 0.10f);
+        glUniform4f(
+            uColor_,
+            pauseMenu.visible ? 0.03f : 0.05f,
+            pauseMenu.visible ? 0.05f : 0.07f,
+            pauseMenu.visible ? 0.07f : 0.10f,
+            pauseMenu.visible ? 0.84f : 0.90f);
         glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(panelFill.size() / 2));
     }
     if (!panelFrame.empty()) {
         glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(panelFrame.size() * sizeof(float)), panelFrame.data(), GL_DYNAMIC_DRAW);
-        glUniform3f(uColor_, 0.18f, 0.24f, 0.30f);
+        glUniform4f(uColor_, 0.18f, 0.24f, 0.30f, 0.98f);
         glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(panelFrame.size() / 2));
     }
     if (!accentFill.empty()) {
         glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(accentFill.size() * sizeof(float)), accentFill.data(), GL_DYNAMIC_DRAW);
-        glUniform3f(uColor_, 0.23f, 0.70f, 0.92f);
+        glUniform4f(uColor_, 0.23f, 0.70f, 0.92f, 0.95f);
         glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(accentFill.size() / 2));
     }
 
     if (!popupBg.empty()) {
         glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(popupBg.size() * sizeof(float)), popupBg.data(), GL_DYNAMIC_DRAW);
-        glUniform3f(uColor_, 0.05f, 0.07f, 0.10f);
+        glUniform4f(uColor_, 0.05f, 0.07f, 0.10f, 0.94f);
         glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(popupBg.size() / 2));
     }
     if (!popupFrame.empty()) {
         glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(popupFrame.size() * sizeof(float)), popupFrame.data(), GL_DYNAMIC_DRAW);
-        glUniform3f(uColor_, 0.18f, 0.24f, 0.30f);
+        glUniform4f(uColor_, 0.18f, 0.24f, 0.30f, 0.98f);
         glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(popupFrame.size() / 2));
     }
 
     if (!textPrimary.empty()) {
         glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(textPrimary.size() * sizeof(float)), textPrimary.data(), GL_DYNAMIC_DRAW);
-        glUniform3f(uColor_, 1.0f, 1.0f, 1.0f);
+        glUniform4f(uColor_, 1.0f, 1.0f, 1.0f, 1.0f);
         glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(textPrimary.size() / 2));
     }
     if (!textMuted.empty()) {
         glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(textMuted.size() * sizeof(float)), textMuted.data(), GL_DYNAMIC_DRAW);
-        glUniform3f(uColor_, 0.74f, 0.80f, 0.86f);
+        glUniform4f(uColor_, 0.74f, 0.80f, 0.86f, 0.98f);
         glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(textMuted.size() / 2));
     }
     if (!textAccent.empty()) {
         glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(textAccent.size() * sizeof(float)), textAccent.data(), GL_DYNAMIC_DRAW);
-        glUniform3f(uColor_, 0.37f, 0.81f, 0.97f);
+        glUniform4f(uColor_, 0.37f, 0.81f, 0.97f, 1.0f);
         glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(textAccent.size() / 2));
     }
     if (!textWarning.empty()) {
         glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(textWarning.size() * sizeof(float)), textWarning.data(), GL_DYNAMIC_DRAW);
-        glUniform3f(uColor_, 1.0f, 0.62f, 0.31f);
+        glUniform4f(uColor_, 1.0f, 0.62f, 0.31f, 1.0f);
         glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(textWarning.size() / 2));
     }
     if (!popupText.empty()) {
         glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(popupText.size() * sizeof(float)), popupText.data(), GL_DYNAMIC_DRAW);
-        glUniform3f(uColor_, 0.95f, 0.97f, 1.0f);
+        glUniform4f(uColor_, 0.95f, 0.97f, 1.0f, 1.0f);
         glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(popupText.size() / 2));
     }
     if (!statusText.empty()) {
         glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(statusText.size() * sizeof(float)), statusText.data(), GL_DYNAMIC_DRAW);
-        glUniform3f(uColor_, simFrozen ? 1.0f : 0.48f, simFrozen ? 0.42f : 0.88f, simFrozen ? 0.42f : 0.54f);
+        glUniform4f(uColor_, simFrozen ? 1.0f : 0.48f, simFrozen ? 0.42f : 0.88f, simFrozen ? 0.42f : 0.54f, 1.0f);
         glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(statusText.size() / 2));
     }
 
     if (!crosshair.empty()) {
         glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(crosshair.size() * sizeof(float)), crosshair.data(), GL_DYNAMIC_DRAW);
-        glUniform3f(uColor_, 0.32f, 0.85f, 0.95f);
+        glUniform4f(uColor_, 0.32f, 0.85f, 0.95f, 1.0f);
         glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(crosshair.size() / 2));
     }
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
 
+    glDisable(GL_BLEND);
     glEnable(GL_DEPTH_TEST);
 }

@@ -12,10 +12,26 @@
 
 class DebugOverlay {
 public:
+    enum class PauseMenuControlType {
+        None = 0,
+        Toggle,
+        Choice,
+        Numeric,
+        Rebind,
+        Action,
+    };
+
     struct PauseMenuHudLine {
         std::string text;
+        std::string valueText;
+        std::string hintText;
         bool header = false;
         bool disabled = false;
+        PauseMenuControlType controlType = PauseMenuControlType::None;
+        bool boolValue = false;
+        bool showArrows = false;
+        bool showSlider = false;
+        float sliderT = 0.0f;
     };
 
     struct TargetHud {
@@ -29,11 +45,22 @@ public:
         bool visible = false;
         bool awaitingBind = false;
         bool selectedRowIsControl = false;
+        bool showDisplayApplyAction = false;
+        bool hoverDisplayApplyAction = false;
+        bool showResetControlsAction = false;
+        bool hoverResetControlsAction = false;
+        bool showResetIcon = false;
+        bool hoverResetIcon = false;
+        bool showResetConfirm = false;
+        bool hoverResetConfirmYes = false;
+        bool hoverResetConfirmNo = false;
         std::string pendingAction;
         std::string statusLine;
         int activePageIndex = 0;
         int selectedSettingLineIndex = -1;
+        int hoveredSettingLineIndex = -1;
         int appliedSettingLineIndex = -1;
+        std::string footerHint;
         std::vector<PauseMenuHudLine> lines;
     };
 
@@ -51,6 +78,7 @@ public:
         const TargetHud& targetHud,
         float uiScale,
         bool showHud,
+        bool showCrosshair,
         const std::vector<std::string>& hudDebugLines) const;
 
 private:

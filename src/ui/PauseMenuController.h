@@ -5,6 +5,7 @@
 #ifndef PHYSICS3D_PAUSEMENUCONTROLLER_H
 #define PHYSICS3D_PAUSEMENUCONTROLLER_H
 
+#include <array>
 #include <string>
 #include <vector>
 
@@ -23,14 +24,16 @@ namespace ui {
 
     struct DisplaySettings {
         WindowMode windowMode = WindowMode::Borderless;
-        bool vsync = false;
+        bool vsync = true;
         int resolutionIndex = 0; // 0 = default monitor resolution
     };
 
     struct SimulationSettings {
         double minSimSpeed = 1.0 / 128.0;
         double maxSimSpeed = 128.0;
-        int maxPhysicsStepsPerFrame = 10;
+        bool gravityEnabled = true;
+        double gravityStrength = 6.6743e-11;
+        int collisionIterations = 2;
     };
 
     struct CameraSettings {
@@ -43,6 +46,7 @@ namespace ui {
     struct InterfaceSettings {
         int uiScaleIndex = 1; // 1.00x
         bool showHud = true;
+        bool showCrosshair = true;
         bool objectInfo = true;
         bool objectInfoMaterial = true;
         bool objectInfoVelocity = true;
@@ -67,6 +71,7 @@ namespace ui {
         const InterfaceSettings& interfaceSettings() const { return appliedInterfaceSettings_; }
 
         float uiScale() const;
+        void loadSettings(const std::string& path);
         void applyCurrentDisplaySettings(GLFWwindow* window);
 
         void updateEscapeState(
@@ -82,7 +87,15 @@ namespace ui {
             int pressedKey,
             input::ControlBindings& controls,
             const std::string& controlsConfigPath);
-        void handlePointerInput(GLFWwindow* window, const input::ControlBindings& controls);
+        void handlePointerInput(
+            GLFWwindow* window,
+            input::ControlBindings& controls,
+            const std::string& controlsConfigPath,
+            float scrollDeltaY = 0.0f);
+        void updateContinuousInput(
+            GLFWwindow* window,
+            input::ControlBindings& controls,
+            const std::string& controlsConfigPath);
 
         DebugOverlay::PauseMenuHud buildHud(
             const input::ControlBindings& controls,
@@ -93,16 +106,39 @@ namespace ui {
         bool awaitingRebind_ = false;
         int awaitingRebindAction_ = -1;
         SettingsPage settingsPage_ = SettingsPage::Display;
-        int selectedSettingRow_ = 0;
+        int selectedSettingRow_ = -1;
         SettingsPage draftSettingsPage_ = SettingsPage::Display;
         int draftSelectionRow_ = -1;
         bool pendingSelectionEdit_ = false;
+        bool pendingDisplayChanges_ = false;
         std::string statusMessage_;
         mutable SettingsPage lastAppliedPage_ = SettingsPage::Display;
         mutable int lastAppliedRow_ = -1;
         mutable int applyIndicatorFrames_ = 0;
         bool escWasDown_ = false;
+        bool backWasDown_ = false;
+        bool resumeRequested_ = false;
         bool leftMouseWasDown_ = false;
+        bool ignoreNextRebindMousePress_ = false;
+        int hoveredSettingRow_ = -1;
+        bool hoveredDisplayApplyAction_ = false;
+        bool hoveredResetControlsAction_ = false;
+        bool hoveredResetIcon_ = false;
+        bool confirmingResetSettings_ = false;
+        bool hoveredResetConfirmYes_ = false;
+        bool hoveredResetConfirmNo_ = false;
+        SettingsPage lastClickedPage_ = SettingsPage::Display;
+        int lastClickedRow_ = -1;
+        double lastClickAt_ = -1.0;
+        std::array<bool, input::kMouseBindingMaxButtons> mouseButtonWasDown_{};
+        bool upHeld_ = false;
+        bool downHeld_ = false;
+        bool leftHeld_ = false;
+        bool rightHeld_ = false;
+        double upNextRepeatAt_ = 0.0;
+        double downNextRepeatAt_ = 0.0;
+        double leftNextRepeatAt_ = 0.0;
+        double rightNextRepeatAt_ = 0.0;
         int windowedX_ = 120;
         int windowedY_ = 120;
         int windowedWidth_ = 1920;
@@ -115,6 +151,7 @@ namespace ui {
         CameraSettings draftCameraSettings_{};
         InterfaceSettings appliedInterfaceSettings_{};
         InterfaceSettings draftInterfaceSettings_{};
+        std::string settingsConfigPath_;
 
         int settingCount() const;
         static int controlCount();
@@ -134,15 +171,30 @@ namespace ui {
         static std::string formatMenuValue(const std::string& value);
 
         bool isControlPage() const;
+        void setSelectedSettingRow(int row);
         void discardPendingEdit();
         void ensureDraftForSelectedRow();
         void switchPage(int delta);
         void switchToPage(SettingsPage page);
         void commitSelectedSetting(GLFWwindow* window);
+        bool beginRebindForRow(int row);
+        bool applyRebindCode(int code, input::ControlBindings& controls, const std::string& controlsConfigPath);
         void selectNext();
         void selectPrev();
-        void adjustSelectedSetting(int delta);
+        bool isSettingRowDisabled(int row) const;
+        std::string disabledReasonForRow(int row) const;
+        DebugOverlay::PauseMenuControlType controlTypeForRow(int row) const;
+        bool supportsContinuousAdjust(int row) const;
+        int optionCountForRow(int row) const;
+        int optionIndexForRow(int row) const;
+        bool setOptionIndexForRow(int row, int targetIndex, GLFWwindow* window);
+        void adjustSelectedSetting(int delta, GLFWwindow* window);
         void applyDisplaySettings(GLFWwindow* window, const DisplaySettings& settings);
+        void resetAllSettings(GLFWwindow* window);
+        static bool hasControlChanges(const input::ControlBindings& controls);
+        bool hasPendingDisplayChanges() const;
+        void normalizeAppliedSettings();
+        void saveSettings() const;
         void markAppliedSelection() const;
     };
 }

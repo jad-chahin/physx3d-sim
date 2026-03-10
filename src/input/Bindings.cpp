@@ -34,6 +34,12 @@ namespace input {
             bool canonical;
         };
 
+        struct MouseBindingEntry {
+            int button;
+            const char* name;
+            bool canonical;
+        };
+
         constexpr std::array<KeyNameEntry, 44> kKeyNames{{
             {GLFW_KEY_SPACE, "SPACE", true},
             {GLFW_KEY_MINUS, "MINUS", true},
@@ -81,6 +87,20 @@ namespace input {
             {GLFW_KEY_UNKNOWN, "UNKNOWN", false},
         }};
 
+        constexpr std::array<MouseBindingEntry, 11> kMouseBindingNames{{
+            {GLFW_MOUSE_BUTTON_LEFT, "MOUSE1", true},
+            {GLFW_MOUSE_BUTTON_RIGHT, "MOUSE2", true},
+            {GLFW_MOUSE_BUTTON_MIDDLE, "MOUSE3", true},
+            {3, "MOUSE4", true},
+            {4, "MOUSE5", true},
+            {5, "MOUSE6", true},
+            {6, "MOUSE7", true},
+            {7, "MOUSE8", true},
+            {GLFW_MOUSE_BUTTON_LEFT, "MOUSE_LEFT", false},
+            {GLFW_MOUSE_BUTTON_RIGHT, "MOUSE_RIGHT", false},
+            {GLFW_MOUSE_BUTTON_MIDDLE, "MOUSE_MIDDLE", false},
+        }};
+
         int g_lastPressedKey = GLFW_KEY_UNKNOWN;
 
         std::string trimCopy(const std::string& s) {
@@ -121,17 +141,71 @@ namespace input {
             return nullptr;
         }
 
+        int mouseBindingCodeFromButton(const int button) {
+            if (button < 0 || button >= kMouseBindingMaxButtons) {
+                return GLFW_KEY_UNKNOWN;
+            }
+            return kMouseBindingBase - button;
+        }
+
+        int mouseButtonFromBindingCodeInternal(const int bindingCode) {
+            if (bindingCode > kMouseBindingBase) {
+                return -1;
+            }
+            const int button = kMouseBindingBase - bindingCode;
+            if (button < 0 || button >= kMouseBindingMaxButtons) {
+                return -1;
+            }
+            return button;
+        }
+
+        bool isMouseBindingCodeInternal(const int bindingCode) {
+            return mouseButtonFromBindingCodeInternal(bindingCode) >= 0;
+        }
+
+        const MouseBindingEntry* findMouseBindingEntryByCode(const int bindingCode) {
+            const int button = mouseButtonFromBindingCodeInternal(bindingCode);
+            if (button < 0) {
+                return nullptr;
+            }
+            for (const auto& mouseEntry : kMouseBindingNames) {
+                if (!mouseEntry.canonical) {
+                    continue;
+                }
+                if (mouseEntry.button == button) {
+                    return &mouseEntry;
+                }
+            }
+            return nullptr;
+        }
+
+        const MouseBindingEntry* findMouseBindingEntryByName(const std::string_view bindingName) {
+            for (const auto& mouseEntry : kMouseBindingNames) {
+                if (bindingName == mouseEntry.name) {
+                    return &mouseEntry;
+                }
+            }
+            return nullptr;
+        }
+
         bool tryCodeForKeyName(const std::string& keyName, int& outKey) {
             const std::string needle = toUpperCopy(keyName);
             if (const KeyNameEntry* keyEntry = findKeyEntryByName(needle); keyEntry != nullptr) {
                 outKey = keyEntry->code;
                 return true;
             }
+            if (const MouseBindingEntry* mouseEntry = findMouseBindingEntryByName(needle); mouseEntry != nullptr) {
+                outKey = mouseBindingCodeFromButton(mouseEntry->button);
+                return true;
+            }
             return false;
         }
 
         bool isBindableKeyCode(const int key) {
-            if (key == GLFW_KEY_ESCAPE || key == GLFW_KEY_UNKNOWN) {
+            if (isMouseBindingCodeInternal(key)) {
+                return findMouseBindingEntryByCode(key) != nullptr;
+            }
+            if (key == GLFW_KEY_ESCAPE || key == GLFW_KEY_BACKSPACE || key == GLFW_KEY_UNKNOWN) {
                 return false;
             }
             return findKeyEntryByCode(key) != nullptr;
@@ -195,6 +269,9 @@ namespace input {
     }
 
     std::string keyNameForCode(const int key) {
+        if (const MouseBindingEntry* mouseEntry = findMouseBindingEntryByCode(key); mouseEntry != nullptr) {
+            return mouseEntry->name;
+        }
         if (const KeyNameEntry* keyEntry = findKeyEntryByCode(key); keyEntry != nullptr) {
             return keyEntry->name;
         }
@@ -203,6 +280,29 @@ namespace input {
 
     bool isBindableKey(const int key) {
         return isBindableKeyCode(key);
+    }
+
+    bool isMouseBindingCode(const int bindingCode) {
+        return isMouseBindingCodeInternal(bindingCode);
+    }
+
+    int bindingCodeFromMouseButton(const int button) {
+        return mouseBindingCodeFromButton(button);
+    }
+
+    int mouseButtonFromBindingCode(const int bindingCode) {
+        return mouseButtonFromBindingCodeInternal(bindingCode);
+    }
+
+    bool isBindingPressed(GLFWwindow* window, const int bindingCode) {
+        if (window == nullptr || !isBindableKeyCode(bindingCode)) {
+            return false;
+        }
+        if (isMouseBindingCodeInternal(bindingCode)) {
+            const int button = mouseButtonFromBindingCodeInternal(bindingCode);
+            return button >= 0 && glfwGetMouseButton(window, button) == GLFW_PRESS;
+        }
+        return glfwGetKey(window, bindingCode) == GLFW_PRESS;
     }
 
     void saveControlBindings(const ControlBindings& controls, const std::string& path) {
