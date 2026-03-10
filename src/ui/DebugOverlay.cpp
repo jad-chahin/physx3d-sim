@@ -1072,7 +1072,7 @@ void DebugOverlay::draw(
 
     if (!screenDim.empty()) {
         glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(screenDim.size() * sizeof(float)), screenDim.data(), GL_DYNAMIC_DRAW);
-        glUniform4f(uColor_, 0.01f, 0.03f, 0.05f, 0.62f);
+        glUniform4f(uColor_, 0.01f, 0.03f, 0.05f, pauseMenu.visible ? 0.42f : 0.62f);
         glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(screenDim.size() / 2));
     }
 
@@ -1083,17 +1083,17 @@ void DebugOverlay::draw(
             pauseMenu.visible ? 0.03f : 0.05f,
             pauseMenu.visible ? 0.05f : 0.07f,
             pauseMenu.visible ? 0.07f : 0.10f,
-            pauseMenu.visible ? 0.84f : 0.90f);
+            pauseMenu.visible ? 0.56f : 0.90f);
         glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(panelFill.size() / 2));
     }
     if (!panelFrame.empty()) {
         glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(panelFrame.size() * sizeof(float)), panelFrame.data(), GL_DYNAMIC_DRAW);
-        glUniform4f(uColor_, 0.18f, 0.24f, 0.30f, 0.98f);
+        glUniform4f(uColor_, 0.18f, 0.24f, 0.30f, pauseMenu.visible ? 0.78f : 0.98f);
         glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(panelFrame.size() / 2));
     }
     if (!accentFill.empty()) {
         glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(accentFill.size() * sizeof(float)), accentFill.data(), GL_DYNAMIC_DRAW);
-        glUniform4f(uColor_, 0.23f, 0.70f, 0.92f, 0.95f);
+        glUniform4f(uColor_, 0.23f, 0.70f, 0.92f, pauseMenu.visible ? 0.72f : 0.95f);
         glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(accentFill.size() / 2));
     }
 
