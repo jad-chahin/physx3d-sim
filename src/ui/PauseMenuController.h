@@ -121,6 +121,9 @@ namespace ui {
         bool confirmingResetSettings_ = false;
         bool hoveredResetConfirmYes_ = false;
         bool hoveredResetConfirmNo_ = false;
+        SettingsPage lastClickedPage_ = SettingsPage::Display;
+        int lastClickedRow_ = -1;
+        double lastClickAt_ = -1.0;
         std::array<bool, input::kMouseBindingMaxButtons> mouseButtonWasDown_{};
         bool upHeld_ = false;
         bool downHeld_ = false;

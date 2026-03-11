@@ -474,6 +474,9 @@ namespace ui {
             return;
         }
 
+        const double clickAt = glfwGetTime();
+        constexpr double kDoubleClickWindowSeconds = 0.35;
+
         const float buttonPadX = 12.0f * menuScale;
         const std::string exitLabel = "EXIT TO HOME";
         const float exitWidth = measureMaxLinePx(exitLabel, tabsScalePx) + buttonPadX * 2.0f;
@@ -597,6 +600,15 @@ namespace ui {
             return;
         }
 
+        const bool isDoubleClick =
+            lastClickedPage_ == settingsPage_ &&
+            lastClickedRow_ == hoveredRowIndex &&
+            lastClickAt_ >= 0.0 &&
+            (clickAt - lastClickAt_) <= kDoubleClickWindowSeconds;
+        lastClickedPage_ = settingsPage_;
+        lastClickedRow_ = hoveredRowIndex;
+        lastClickAt_ = clickAt;
+
         if (selectedSettingRow_ != hoveredRowIndex) {
             if (!(settingsPage_ == SettingsPage::Display && pendingDisplayChanges_)) {
                 discardPendingEdit();
@@ -606,6 +618,9 @@ namespace ui {
         }
 
         if (isControlPage()) {
+            if (isDoubleClick && hoveredRowIndex >= 0 && hoveredRowIndex < controlCount()) {
+                beginRebindForRow(hoveredRowIndex);
+            }
             return;
         }
 
