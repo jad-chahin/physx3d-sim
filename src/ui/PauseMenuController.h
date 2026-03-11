@@ -15,13 +15,11 @@ namespace ui {
     enum class WindowMode {
         Borderless = 0,
         Windowed = 1,
-        Fullscreen = 2,
     };
 
     struct DisplaySettings {
         WindowMode windowMode = WindowMode::Borderless;
         bool vsync = true;
-        int resolutionIndex = 0; // 0 = default monitor resolution
     };
 
     struct SimulationSettings {
@@ -123,9 +121,6 @@ namespace ui {
         bool confirmingResetSettings_ = false;
         bool hoveredResetConfirmYes_ = false;
         bool hoveredResetConfirmNo_ = false;
-        SettingsPage lastClickedPage_ = SettingsPage::Display;
-        int lastClickedRow_ = -1;
-        double lastClickAt_ = -1.0;
         std::array<bool, input::kMouseBindingMaxButtons> mouseButtonWasDown_{};
         bool upHeld_ = false;
         bool downHeld_ = false;
@@ -151,10 +146,6 @@ namespace ui {
 
         int settingCount() const;
         static int controlCount();
-        static const char* resolutionLabel(int idx);
-        static int resolutionWidth(int idx);
-        static int resolutionHeight(int idx);
-        static int resolutionChoiceCount();
         static int displaySettingRowCount();
         static int simulationSettingRowCount();
         static int cameraSettingRowCount();

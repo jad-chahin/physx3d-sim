@@ -36,24 +36,14 @@ namespace sim {
             static constexpr int kDefaultCollisionIterations = 1;
             static constexpr int kDefaultJointIterations = 8;
 
-            double G;
-            double restitution; // Global upper bound for contact restitution [0..1]
-            double penetrationSlop;
-            double positionCorrectionPercent;
-            int collisionIterations;
-            int jointIterations;
-            bool enableGravity;
-            bool enableCollisions;
-
-            Params()
-            : G(kDefaultG),
-              restitution(kDefaultRestitution),
-              penetrationSlop(kDefaultPenetrationSlop),
-              positionCorrectionPercent(kDefaultPositionCorrectionPercent),
-              collisionIterations(kDefaultCollisionIterations),
-              jointIterations(kDefaultJointIterations),
-              enableGravity(true),
-              enableCollisions(true) {}
+            double G = kDefaultG;
+            double restitution = kDefaultRestitution; // Global upper bound for contact restitution [0..1]
+            double penetrationSlop = kDefaultPenetrationSlop;
+            double positionCorrectionPercent = kDefaultPositionCorrectionPercent;
+            int collisionIterations = kDefaultCollisionIterations;
+            int jointIterations = kDefaultJointIterations;
+            bool enableGravity = true;
+            bool enableCollisions = true;
         };
 
         struct DistanceJoint {
@@ -108,8 +98,7 @@ namespace sim {
 
         std::vector<Vec3> forces_{};
     private:
-        void syncForces_();
-        void resetForces_();
+        void prepareForces_();
         void computeForces_();
         void integrate_(double dt);
         void solveDistanceJoints_(double dt);
@@ -124,6 +113,7 @@ namespace sim {
         [[nodiscard]] collision::SolveParams solveParamsForPair_(std::size_t i, std::size_t j) const;
         void rebuildJointCollisionFilter_();
         void assignBodyId_(Body& b);
+        void initBodies_();
         void beginContactFrame_();
         void warmStartPairs_(const std::vector<std::pair<std::size_t, std::size_t>>& pairs);
         void endContactFrame_();

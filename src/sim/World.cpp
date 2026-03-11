@@ -36,21 +36,12 @@ namespace sim {
         : params_(params) {}
 
     World::World(std::vector<Body> bodies)
-        : bodies_(std::move(bodies))
-    {
-        for (auto& b : bodies_) {
-            assignBodyId_(b);
-        }
-        rebuildJointCollisionFilter_();
-    }
+        : World(std::move(bodies), Params{}) {}
 
     World::World(std::vector<Body> bodies, const Params& params)
         : params_(params), bodies_(std::move(bodies))
     {
-        for (auto& b : bodies_) {
-            assignBodyId_(b);
-        }
-        rebuildJointCollisionFilter_();
+        initBodies_();
     }
 
     void World::step(const double dt)
@@ -58,8 +49,7 @@ namespace sim {
         metrics_ = {};
         beginContactFrame_();
         sanitizeBodies_();
-        syncForces_();
-        resetForces_();
+        prepareForces_();
         computeForces_();
         integrate_(dt);
         sanitizeBodies_();
@@ -118,15 +108,11 @@ namespace sim {
     const World::Metrics& World::metrics() const { return metrics_; }
     const std::vector<World::DistanceJoint>& World::joints() const { return joints_; }
 
-    void World::syncForces_()
+    void World::prepareForces_()
     {
         if (bodies_.size() != forces_.size()) {
             forces_.resize(bodies_.size());
         }
-    }
-
-    void World::resetForces_()
-    {
         std::ranges::fill(forces_, Vec3{});
     }
 
@@ -531,6 +517,14 @@ namespace sim {
     void World::assignBodyId_(Body& b)
     {
         b.id = nextBodyId_++;
+    }
+
+    void World::initBodies_()
+    {
+        for (auto& body : bodies_) {
+            assignBodyId_(body);
+        }
+        rebuildJointCollisionFilter_();
     }
 
     void World::beginContactFrame_()
