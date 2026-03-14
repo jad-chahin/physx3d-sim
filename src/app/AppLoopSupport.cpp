@@ -6,8 +6,104 @@
 #include <cmath>
 #include <cstdio>
 #include <limits>
+#include <string>
 
 namespace app_loop {
+namespace {
+    constexpr double kHudMetricsUpdateInterval = 0.5;
+    constexpr std::size_t kMaxPathPoints = 128;
+
+    void accumulateHudMetrics(RuntimeState& runtime, const sim::World::Metrics& metrics) {
+        auto& accum = runtime.hudMetrics.accumulated;
+        accum.broadphaseCandidatesDiscrete += metrics.broadphaseCandidatesDiscrete;
+        accum.broadphaseCandidatesSwept += metrics.broadphaseCandidatesSwept;
+        accum.pairsVisited += metrics.pairsVisited;
+        accum.pairsImpulseApplied += metrics.pairsImpulseApplied;
+        accum.jointConstraintsSolved += metrics.jointConstraintsSolved;
+        accum.ccdEvents += metrics.ccdEvents;
+        accum.ccdZeroTimePairsResolved += metrics.ccdZeroTimePairsResolved;
+        accum.warmStartedPairs += metrics.warmStartedPairs;
+        accum.manifoldActivePairs += metrics.manifoldActivePairs;
+        accum.sanitizedBodies += metrics.sanitizedBodies;
+        accum.sanitizedFields += metrics.sanitizedFields;
+        runtime.hudMetrics.elapsed += kFixedDt;
+        ++runtime.hudMetrics.samples;
+    }
+
+    std::size_t averageMetric(const std::size_t total, const std::size_t samples) {
+        if (samples == 0) {
+            return 0;
+        }
+        return (total + samples / 2) / samples;
+    }
+
+    void refreshDisplayedHudMetrics(RuntimeState& runtime) {
+        if (runtime.hudMetrics.samples == 0 || runtime.hudMetrics.elapsed < kHudMetricsUpdateInterval) {
+            return;
+        }
+
+        const auto& accum = runtime.hudMetrics.accumulated;
+        auto& displayed = runtime.hudMetrics.displayed;
+        const std::size_t samples = runtime.hudMetrics.samples;
+
+        displayed.broadphaseCandidatesDiscrete = averageMetric(accum.broadphaseCandidatesDiscrete, samples);
+        displayed.broadphaseCandidatesSwept = averageMetric(accum.broadphaseCandidatesSwept, samples);
+        displayed.pairsVisited = averageMetric(accum.pairsVisited, samples);
+        displayed.pairsImpulseApplied = averageMetric(accum.pairsImpulseApplied, samples);
+        displayed.jointConstraintsSolved = averageMetric(accum.jointConstraintsSolved, samples);
+        displayed.ccdEvents = averageMetric(accum.ccdEvents, samples);
+        displayed.ccdZeroTimePairsResolved = averageMetric(accum.ccdZeroTimePairsResolved, samples);
+        displayed.warmStartedPairs = averageMetric(accum.warmStartedPairs, samples);
+        displayed.manifoldActivePairs = averageMetric(accum.manifoldActivePairs, samples);
+        displayed.sanitizedBodies = averageMetric(accum.sanitizedBodies, samples);
+        displayed.sanitizedFields = averageMetric(accum.sanitizedFields, samples);
+
+        runtime.hudMetrics.accumulated = {};
+        runtime.hudMetrics.elapsed = 0.0;
+        runtime.hudMetrics.samples = 0;
+    }
+
+    void pushPathPoint(RuntimeState::PathTrail& trail, const sim::Vec3& position) {
+        if (trail.points.size() < kMaxPathPoints) {
+            trail.points.push_back(position);
+            trail.count = trail.points.size();
+            return;
+        }
+
+        const std::size_t writeIndex = (trail.start + trail.count) % trail.points.size();
+        trail.points[writeIndex] = position;
+        if (trail.count < trail.points.size()) {
+            ++trail.count;
+        } else {
+            trail.start = (trail.start + 1) % trail.points.size();
+        }
+    }
+
+    int findTargetBodyIndex(
+        const sim::World& world,
+        const input::Camera& cam,
+        const SceneView& sceneView,
+        const std::vector<glm::vec3>& renderPositions)
+    {
+        const auto& bodies = world.bodies();
+        const glm::vec3 rayOrigin = cam.pos;
+        const glm::vec3 rayDir = glm::normalize(sceneView.forward);
+
+        int bestIdx = -1;
+        float bestT = std::numeric_limits<float>::infinity();
+        for (std::size_t i = 0; i < renderPositions.size(); ++i) {
+            float t = 0.0f;
+            if (!raySphereHit(rayOrigin, rayDir, renderPositions[i], static_cast<float>(bodies[i].radius), t)) {
+                continue;
+            }
+            if (t < bestT) {
+                bestT = t;
+                bestIdx = static_cast<int>(i);
+            }
+        }
+        return bestIdx;
+    }
+}
 
 GlfwSession::~GlfwSession() {
     if (active_) {
@@ -109,7 +205,10 @@ int consumeLastPressedKey(AppLoopState& state) {
 void applySimulationSettings(sim::World& world, const ui::SimulationSettings& simSettings) {
     world.params().enableGravity = simSettings.gravityEnabled;
     world.params().G = simSettings.gravityStrength;
+    world.params().enableCollisions = simSettings.collisionsEnabled;
     world.params().collisionIterations = simSettings.collisionIterations;
+    world.params().jointIterations = simSettings.jointIterations;
+    world.params().restitution = simSettings.globalRestitution;
 }
 
 void updateFps(RuntimeState& runtime, const double frameTime) {
@@ -221,12 +320,34 @@ void stepSimulation(sim::World& world, const double frameTime, RuntimeState& run
     while (runtime.accumulator >= kFixedDt && simStepsThisFrame < kInternalMaxPhysicsStepsPerFrame) {
         syncPreviousPositions(world);
         world.step(kFixedDt);
+        accumulateHudMetrics(runtime, world.metrics());
         runtime.accumulator -= kFixedDt;
         ++simStepsThisFrame;
     }
 
     constexpr double maxCarryOver = static_cast<double>(kInternalMaxPhysicsStepsPerFrame) * kFixedDt;
     runtime.accumulator = std::min(runtime.accumulator, maxCarryOver);
+    refreshDisplayedHudMetrics(runtime);
+}
+
+void reloadDefaultWorld(
+    sim::World& world,
+    RuntimeState& runtime,
+    const ui::SimulationSettings& simSettings)
+{
+    world = sim::makeDefaultWorld();
+    applySimulationSettings(world, simSettings);
+    runtime.accumulator = 0.0;
+    runtime.lastTime = glfwGetTime();
+    runtime.fpsElapsed = 0.0;
+    runtime.fpsFrames = 0;
+    runtime.freezeWasDown = false;
+    runtime.speedDownWasDown = false;
+    runtime.speedUpWasDown = false;
+    runtime.speedResetWasDown = false;
+    runtime.hudMetrics = {};
+    runtime.pathHistory.clear();
+    syncPreviousPositions(world);
 }
 
 SceneView buildSceneView(
@@ -266,10 +387,18 @@ void buildRenderModels(
             static_cast<float>(interpolatedPosition.x),
             static_cast<float>(interpolatedPosition.y),
             static_cast<float>(interpolatedPosition.z));
-        const auto radius = static_cast<float>(bodies[i].radius);
+        const float radius = static_cast<float>(bodies[i].radius);
 
         renderPositions[i] = pos;
-        models[i] = glm::scale(glm::translate(glm::mat4(1.0f), pos), glm::vec3(radius, radius, radius));
+
+        glm::mat4 model(1.0f);
+        model[0][0] = radius;
+        model[1][1] = radius;
+        model[2][2] = radius;
+        model[3][0] = pos.x;
+        model[3][1] = pos.y;
+        model[3][2] = pos.z;
+        models[i] = model;
     }
 }
 
@@ -336,21 +465,7 @@ OverlayRenderer::TargetHud buildTargetHud(
     }
 
     const auto& bodies = world.bodies();
-    const glm::vec3 rayOrigin = cam.pos;
-    const glm::vec3 rayDir = glm::normalize(sceneView.forward);
-
-    int bestIdx = -1;
-    float bestT = std::numeric_limits<float>::infinity();
-    for (std::size_t i = 0; i < renderPositions.size(); ++i) {
-        float t = 0.0f;
-        if (!raySphereHit(rayOrigin, rayDir, renderPositions[i], static_cast<float>(bodies[i].radius), t)) {
-            continue;
-        }
-        if (t < bestT) {
-            bestT = t;
-            bestIdx = static_cast<int>(i);
-        }
-    }
+    const int bestIdx = findTargetBodyIndex(world, cam, sceneView, renderPositions);
 
     if (bestIdx < 0) {
         return targetHud;
@@ -368,19 +483,18 @@ OverlayRenderer::TargetHud buildTargetHud(
     targetHud.visible = true;
     targetHud.xPx = sx;
     targetHud.yPx = sy;
-    targetHud.lines.emplace_back("TARGET");
 
     char line[64];
     if (interfaceSettings.objectInfoMaterial) {
-        std::snprintf(line, sizeof(line), "E:%.2f", bodies[i].restitution);
-        targetHud.lines.emplace_back(line);
-        std::snprintf(line, sizeof(line), "S:%.2f", bodies[i].staticFriction);
-        targetHud.lines.emplace_back(line);
-        std::snprintf(line, sizeof(line), "D:%.2f", bodies[i].dynamicFriction);
+        std::snprintf(line, sizeof(line), "MAT:%s", bodies[i].materialName.c_str());
         targetHud.lines.emplace_back(line);
     }
     if (interfaceSettings.objectInfoVelocity) {
         std::snprintf(line, sizeof(line), "V:%.2f", bodies[i].velocity.magnitude());
+        targetHud.lines.emplace_back(line);
+    }
+    if (interfaceSettings.objectInfoAngularSpeed) {
+        std::snprintf(line, sizeof(line), "A:%.2f", bodies[i].angularVelocity.magnitude());
         targetHud.lines.emplace_back(line);
     }
     if (interfaceSettings.objectInfoRadius) {
@@ -395,8 +509,158 @@ OverlayRenderer::TargetHud buildTargetHud(
         }
         targetHud.lines.emplace_back(line);
     }
+    if (interfaceSettings.objectInfoBodyType) {
+        std::snprintf(line, sizeof(line), "T:%s", bodies[i].invMass > 0.0 ? "DYNAMIC" : "STATIC");
+        targetHud.lines.emplace_back(line);
+    }
+    if (interfaceSettings.objectInfoJointCount) {
+        std::size_t jointCount = 0;
+        for (const auto& joint : world.joints()) {
+            if (joint.bodyA == i || joint.bodyB == i) {
+                ++jointCount;
+            }
+        }
+        std::snprintf(line, sizeof(line), "J:%zu", jointCount);
+        targetHud.lines.emplace_back(line);
+    }
 
     return targetHud;
+}
+
+std::vector<std::string> buildHudDebugLines(
+    const RuntimeState& runtime,
+    const ui::InterfaceSettings& interfaceSettings)
+{
+    if (!interfaceSettings.showPhysicsStats) {
+        return {};
+    }
+
+    const sim::World::Metrics& metrics = runtime.hudMetrics.displayed;
+    std::vector<std::string> lines;
+    lines.reserve(8);
+
+    char line[96];
+    std::snprintf(
+        line,
+        sizeof(line),
+        "BP D:%zu S:%zu  VIS:%zu",
+        metrics.broadphaseCandidatesDiscrete,
+        metrics.broadphaseCandidatesSwept,
+        metrics.pairsVisited);
+    lines.emplace_back(line);
+
+    std::snprintf(
+        line,
+        sizeof(line),
+        "IMP:%zu  WARM:%zu  MAN:%zu",
+        metrics.pairsImpulseApplied,
+        metrics.warmStartedPairs,
+        metrics.manifoldActivePairs);
+    lines.emplace_back(line);
+
+    std::snprintf(
+        line,
+        sizeof(line),
+        "CCD:%zu  ZERO:%zu  JOINT:%zu",
+        metrics.ccdEvents,
+        metrics.ccdZeroTimePairsResolved,
+        metrics.jointConstraintsSolved);
+    lines.emplace_back(line);
+
+    std::snprintf(
+        line,
+        sizeof(line),
+        "SAN B:%zu  F:%zu",
+        metrics.sanitizedBodies,
+        metrics.sanitizedFields);
+    lines.emplace_back(line);
+
+    return lines;
+}
+
+void updatePathHistory(
+    const sim::World& world,
+    RuntimeState& runtime,
+    const ui::InterfaceSettings& interfaceSettings)
+{
+    if (!interfaceSettings.drawPath) {
+        runtime.pathHistory.clear();
+        return;
+    }
+
+    const auto& bodies = world.bodies();
+    runtime.pathHistory.resize(bodies.size());
+
+    for (std::size_t i = 0; i < bodies.size(); ++i) {
+        auto& history = runtime.pathHistory[i];
+        const sim::Vec3& position = bodies[i].position;
+        if (history.count == 0) {
+            pushPathPoint(history, position);
+            continue;
+        }
+        const std::size_t lastIndex = (history.start + history.count - 1) % history.points.size();
+        const sim::Vec3 delta = position - history.points[lastIndex];
+        if (delta.dot(delta) > 1e-8) {
+            pushPathPoint(history, position);
+        }
+    }
+}
+
+std::vector<OverlayRenderer::ScreenLine> buildPathLines(
+    const RuntimeState& runtime,
+    const SceneView& sceneView,
+    const FramebufferSize& framebufferSize,
+    const ui::InterfaceSettings& interfaceSettings)
+{
+    if (!interfaceSettings.drawPath) {
+        return {};
+    }
+
+    std::vector<OverlayRenderer::ScreenLine> pathLines;
+    pathLines.reserve(runtime.pathHistory.size() * (kMaxPathPoints - 1));
+    for (const auto& history : runtime.pathHistory) {
+        if (history.count < 2 || history.points.empty()) {
+            continue;
+        }
+        for (std::size_t segment = 1; segment < history.count; ++segment) {
+            const std::size_t idx0 = (history.start + segment - 1) % history.points.size();
+            const std::size_t idx1 = (history.start + segment) % history.points.size();
+            const sim::Vec3& p0 = history.points[idx0];
+            const sim::Vec3& p1 = history.points[idx1];
+
+            float x0 = 0.0f;
+            float y0 = 0.0f;
+            float x1 = 0.0f;
+            float y1 = 0.0f;
+            if (!worldToScreen(
+                    glm::vec3(
+                        static_cast<float>(p0.x),
+                        static_cast<float>(p0.y),
+                        static_cast<float>(p0.z)),
+                    sceneView.view,
+                    sceneView.proj,
+                    framebufferSize.w,
+                    framebufferSize.h,
+                    x0,
+                    y0) ||
+                !worldToScreen(
+                    glm::vec3(
+                        static_cast<float>(p1.x),
+                        static_cast<float>(p1.y),
+                        static_cast<float>(p1.z)),
+                    sceneView.view,
+                    sceneView.proj,
+                    framebufferSize.w,
+                    framebufferSize.h,
+                    x1,
+                    y1))
+            {
+                continue;
+            }
+            pathLines.push_back({x0, y0, x1, y1});
+        }
+    }
+    return pathLines;
 }
 
 void drawOverlay(
@@ -405,11 +669,11 @@ void drawOverlay(
     const RuntimeState& runtime,
     const OverlayRenderer::PauseMenuHud& pauseMenuHud,
     const OverlayRenderer::TargetHud& targetHud,
+    const std::vector<OverlayRenderer::ScreenLine>& pathLines,
     const float uiScale,
-    const ui::InterfaceSettings& interfaceSettings)
+    const ui::InterfaceSettings& interfaceSettings,
+    const std::vector<std::string>& hudDebugLines)
 {
-    static constexpr std::vector<std::string> kNoHudDebugLines;
-
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
     overlay.draw(
@@ -420,10 +684,11 @@ void drawOverlay(
         runtime.hudFps,
         pauseMenuHud,
         targetHud,
+        pathLines,
         uiScale,
         interfaceSettings.showHud,
         interfaceSettings.showCrosshair,
-        kNoHudDebugLines);
+        hudDebugLines);
     glEnable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);
 }

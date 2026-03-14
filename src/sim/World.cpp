@@ -1,6 +1,7 @@
 #include "World.h"
 #include "Broadphase.h"
 #include "Collision.h"
+#include "Material.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -9,6 +10,10 @@
 
 namespace sim {
     namespace {
+        [[nodiscard]] bool isDynamicBody(const Body& b) {
+            return std::isfinite(b.invMass) && b.invMass > 0.0;
+        }
+
         [[nodiscard]] double derivedInvInertiaSphere(const Body& b) {
             if (!std::isfinite(b.invMass) || b.invMass <= 0.0 || !std::isfinite(b.radius) || b.radius <= 0.0) {
                 return 0.0;
@@ -62,6 +67,7 @@ namespace sim {
     void World::addBody(const Body& b)
     {
         bodies_.push_back(b);
+        assignMaterial(bodies_.back(), bodies_.back().materialName);
         assignBodyId_(bodies_.back());
         rebuildJointCollisionFilter_();
     }
@@ -118,13 +124,28 @@ namespace sim {
 
     void World::computeForces_()
     {
-        if (!params_.enableGravity) {
+        if (!params_.enableGravity || bodies_.size() < 2) {
             return;
         }
 
+        thread_local std::vector<std::size_t> dynamicBodies;
+        dynamicBodies.clear();
+        dynamicBodies.reserve(bodies_.size());
+
         for (std::size_t i = 0; i < bodies_.size(); ++i) {
-            for (std::size_t j = i + 1; j < bodies_.size(); ++j) {
-                applyGravityPair_(i, j);
+            if (isDynamicBody(bodies_[i])) {
+                dynamicBodies.push_back(i);
+            }
+        }
+
+        if (dynamicBodies.size() < 2) {
+            return;
+        }
+
+        for (std::size_t a = 0; a + 1 < dynamicBodies.size(); ++a) {
+            const std::size_t i = dynamicBodies[a];
+            for (std::size_t b = a + 1; b < dynamicBodies.size(); ++b) {
+                applyGravityPair_(i, dynamicBodies[b]);
             }
         }
     }
@@ -265,12 +286,16 @@ namespace sim {
             if (!std::isfinite(b.invMass) || b.invMass < 0.0) { b.invMass = 0.0; mark(); }
             if (!std::isfinite(b.invInertia) || b.invInertia < 0.0) { b.invInertia = 0.0; mark(); }
             if (!std::isfinite(b.radius) || b.radius <= 0.0) { b.radius = 1.0; mark(); }
-            if (!std::isfinite(b.restitution)) { b.restitution = 0.5; mark(); }
+            if (b.materialName.empty()) {
+                assignMaterial(b, kDefaultMaterialName);
+                mark();
+            }
+            if (!std::isfinite(b.restitution)) { b.restitution = defaultMaterial().restitution; mark(); }
             const double oldRest = b.restitution;
             b.restitution = std::clamp(b.restitution, 0.0, 1.0);
             if (b.restitution != oldRest) mark();
-            if (!std::isfinite(b.staticFriction) || b.staticFriction < 0.0) { b.staticFriction = 0.6; mark(); }
-            if (!std::isfinite(b.dynamicFriction) || b.dynamicFriction < 0.0) { b.dynamicFriction = 0.4; mark(); }
+            if (!std::isfinite(b.staticFriction) || b.staticFriction < 0.0) { b.staticFriction = defaultMaterial().staticFriction; mark(); }
+            if (!std::isfinite(b.dynamicFriction) || b.dynamicFriction < 0.0) { b.dynamicFriction = defaultMaterial().dynamicFriction; mark(); }
             if (b.dynamicFriction > b.staticFriction) { b.dynamicFriction = b.staticFriction; mark(); }
             if (!std::isfinite(b.orientation.w) || !std::isfinite(b.orientation.x) || !std::isfinite(b.orientation.y) || !std::isfinite(b.orientation.z)) {
                 b.orientation = {}; mark();
@@ -359,7 +384,8 @@ namespace sim {
 
             const auto overlapPairs = broadphase::discretePairs(bodies_);
             metrics_.broadphaseCandidatesDiscrete += overlapPairs.size();
-            std::size_t zeroTimeOverlapPairs = 0;
+            std::vector<std::pair<std::size_t, std::size_t>> zeroTimeOverlapPairs;
+            zeroTimeOverlapPairs.reserve(overlapPairs.size());
             for (const auto& [i, j] : overlapPairs) {
                 if (!shouldCollidePair_(i, j)) {
                     continue;
@@ -370,15 +396,15 @@ namespace sim {
                     continue;
                 }
                 if (collision::isColliding(A, B)) {
-                    ++zeroTimeOverlapPairs;
+                    zeroTimeOverlapPairs.emplace_back(i, j);
                 }
             }
 
-            if (zeroTimeOverlapPairs > 0) {
-                collidePairs_(overlapPairs, params_.collisionIterations);
+            if (!zeroTimeOverlapPairs.empty()) {
+                collidePairs_(zeroTimeOverlapPairs, params_.collisionIterations);
                 ++metrics_.ccdEvents;
                 if (params_.collisionIterations > 0) {
-                    metrics_.ccdZeroTimePairsResolved += zeroTimeOverlapPairs;
+                    metrics_.ccdZeroTimePairsResolved += zeroTimeOverlapPairs.size();
                 }
             }
 
@@ -403,12 +429,18 @@ namespace sim {
             return;
         }
 
-        std::vector<std::pair<std::size_t, std::size_t>> activePairs;
+        std::vector<ActiveCollisionPair> activePairs;
         activePairs.reserve(pairs.size());
         for (const auto& [i, j] : pairs) {
-            if (shouldCollidePair_(i, j)) {
-                activePairs.emplace_back(i, j);
+            if (!shouldCollidePair_(i, j)) {
+                continue;
             }
+            activePairs.push_back(ActiveCollisionPair{
+                .i = i,
+                .j = j,
+                .key = contactKeyForPair_(i, j),
+                .params = solveParamsForPair_(i, j),
+            });
         }
         if (activePairs.empty()) {
             return;
@@ -416,50 +448,30 @@ namespace sim {
 
         warmStartPairs_(activePairs);
 
-        std::unordered_map<ContactKey, double, World::PairHash> accumulatedImpulse;
-        accumulatedImpulse.reserve(activePairs.size() * 2);
-        std::vector<collision::SolveParams> pairParams;
-        pairParams.reserve(activePairs.size());
-        for (const auto& [i, j] : activePairs) {
-            pairParams.push_back(solveParamsForPair_(i, j));
-        }
-
         for (int it = 0; it < iterations; ++it) {
-            for (std::size_t p = 0; p < activePairs.size(); ++p) {
-                const auto& [i, j] = activePairs[p];
-                const auto stats = collision::solveCollisionPair(bodies_[i], bodies_[j], pairParams[p], false);
+            for (auto& pair : activePairs) {
+                const auto stats = collision::solveCollisionPair(
+                    bodies_[pair.i], bodies_[pair.j], pair.params, false);
                 metrics_.pairsVisited += stats.visited ? 1 : 0;
                 metrics_.pairsImpulseApplied += stats.impulseApplied ? 1 : 0;
 
-                if (!stats.hasNormal) {
-                    continue;
-                }
-
-                const ContactKey key = contactKeyForPair_(i, j);
-                if (collision::isColliding(bodies_[i], bodies_[j])) {
-                    ContactManifold& manifold = contactCache_[key];
-                    manifold.touched = true;
-                    manifold.staleFrames = 0;
-                    if (stats.normalImpulse > 0.0) {
-                        accumulatedImpulse[key] += stats.normalImpulse;
-                    }
+                if (stats.hasNormal && stats.normalImpulse > 0.0) {
+                    pair.accumulatedImpulse += stats.normalImpulse;
                 }
             }
         }
 
-        for (const auto& [i, j] : activePairs) {
-            const ContactKey key = contactKeyForPair_(i, j);
-            if (!collision::isColliding(bodies_[i], bodies_[j])) {
+        for (const auto& pair : activePairs) {
+            if (!collision::isColliding(bodies_[pair.i], bodies_[pair.j])) {
                 continue;
             }
 
-            ContactManifold& manifold = contactCache_[key];
+            ContactManifold& manifold = contactCache_[pair.key];
             manifold.touched = true;
             manifold.staleFrames = 0;
 
-            const auto it = accumulatedImpulse.find(key);
-            if (it != accumulatedImpulse.end()) {
-                manifold.normalImpulse = it->second;
+            if (pair.accumulatedImpulse > 0.0) {
+                manifold.normalImpulse = pair.accumulatedImpulse;
             } else {
                 manifold.normalImpulse *= 0.9;
             }
@@ -522,6 +534,7 @@ namespace sim {
     void World::initBodies_()
     {
         for (auto& body : bodies_) {
+            assignMaterial(body, body.materialName);
             assignBodyId_(body);
         }
         rebuildJointCollisionFilter_();
@@ -534,27 +547,25 @@ namespace sim {
         }
     }
 
-    void World::warmStartPairs_(const std::vector<std::pair<std::size_t, std::size_t>>& pairs)
+    void World::warmStartPairs_(const std::span<const ActiveCollisionPair> pairs)
     {
-        for (const auto& [i, j] : pairs) {
+        for (const auto& pair : pairs) {
             constexpr double kWarmStartFactor = 0.85;
-            if (!shouldCollidePair_(i, j)) continue;
-            const ContactKey key = contactKeyForPair_(i, j);
-            auto it = contactCache_.find(key);
+            auto it = contactCache_.find(pair.key);
             if (it == contactCache_.end()) continue;
 
             ContactManifold& manifold = it->second;
             if (manifold.normalImpulse <= 0.0) continue;
-            if (!collision::isColliding(bodies_[i], bodies_[j])) continue;
+            if (!collision::isColliding(bodies_[pair.i], bodies_[pair.j])) continue;
 
             Vec3 n{};
-            if (!collision::contactNormal(bodies_[i], bodies_[j], n)) continue;
+            if (!collision::contactNormal(bodies_[pair.i], bodies_[pair.j], n)) continue;
 
-            const double vN = (bodies_[j].velocity - bodies_[i].velocity).dot(n);
+            const double vN = (bodies_[pair.j].velocity - bodies_[pair.i].velocity).dot(n);
             if (vN > 0.0) continue;
 
             collision::applyNormalImpulse(
-                bodies_[i], bodies_[j], n, manifold.normalImpulse * kWarmStartFactor);
+                bodies_[pair.i], bodies_[pair.j], n, manifold.normalImpulse * kWarmStartFactor);
             manifold.touched = true;
             manifold.staleFrames = 0;
             ++metrics_.warmStartedPairs;

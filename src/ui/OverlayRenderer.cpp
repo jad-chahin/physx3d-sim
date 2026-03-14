@@ -69,6 +69,16 @@ void drawLayer(const GLint uColor, const std::vector<float>& vertices, const std
     glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertices.size() / 2));
 }
 
+void drawLineLayer(const GLint uColor, const std::vector<float>& vertices, const std::array<float, 4>& color) {
+    if (vertices.empty()) {
+        return;
+    }
+
+    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(vertices.size() * sizeof(float)), vertices.data(), GL_DYNAMIC_DRAW);
+    glUniform4f(uColor, color[0], color[1], color[2], color[3]);
+    glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(vertices.size() / 2));
+}
+
 } // namespace
 
 void OverlayRenderer::init() {
@@ -116,6 +126,7 @@ void OverlayRenderer::draw(
     const double fps,
     const PauseMenuHud& pauseMenu,
     const TargetHud& targetHud,
+    const std::vector<ScreenLine>& pathLines,
     const float uiScale,
     const bool showHud,
     const bool showCrosshair,
@@ -141,8 +152,11 @@ void OverlayRenderer::draw(
     statusText.reserve(2000);
     std::vector<float> crosshair;
     crosshair.reserve(24);
+    std::vector<float> screenPathLines;
+    screenPathLines.reserve(pathLines.size() * 4);
     std::vector<float> popupBg;
     std::vector<float> popupFrame;
+    std::vector<float> popupAccent;
     std::vector<float> popupText;
     popupText.reserve(1200);
 
@@ -161,8 +175,10 @@ void OverlayRenderer::draw(
         textWarning,
         statusText,
         crosshair,
+        screenPathLines,
         popupBg,
         popupFrame,
+        popupAccent,
         popupText};
 
     if (pauseMenu.visible) {
@@ -173,6 +189,9 @@ void OverlayRenderer::draw(
 
     if (!pauseMenu.visible && showCrosshair) {
         overlay_renderer::drawCrosshair(geometry, buffers);
+    }
+    if (!pauseMenu.visible && !pathLines.empty()) {
+        overlay_renderer::drawPathLines(geometry, pathLines, buffers);
     }
     if (!pauseMenu.visible) {
         overlay_renderer::drawTargetPopup(targetHud, geometry, buffers);
@@ -198,8 +217,6 @@ void OverlayRenderer::draw(
          pauseMenu.visible ? 0.56f : 0.90f});
     drawLayer(uColor_, panelFrame, {0.18f, 0.24f, 0.30f, pauseMenu.visible ? 0.78f : 0.98f});
     drawLayer(uColor_, accentFill, {0.23f, 0.70f, 0.92f, pauseMenu.visible ? 0.72f : 0.95f});
-    drawLayer(uColor_, popupBg, {0.05f, 0.07f, 0.10f, 0.94f});
-    drawLayer(uColor_, popupFrame, {0.18f, 0.24f, 0.30f, 0.98f});
     drawLayer(uColor_, textPrimary, {1.0f, 1.0f, 1.0f, 1.0f});
     drawLayer(uColor_, textMuted, {0.74f, 0.80f, 0.86f, 0.98f});
     drawLayer(uColor_, textAccent, {0.37f, 0.81f, 0.97f, 1.0f});
@@ -212,7 +229,12 @@ void OverlayRenderer::draw(
          simFrozen ? 0.42f : 0.88f,
          simFrozen ? 0.42f : 0.54f,
          1.0f});
+    drawLineLayer(uColor_, screenPathLines, {0.37f, 0.81f, 0.97f, 0.45f});
     drawLayer(uColor_, crosshair, {0.32f, 0.85f, 0.95f, 1.0f});
+    drawLayer(uColor_, popupBg, {0.05f, 0.07f, 0.10f, 1.0f});
+    drawLayer(uColor_, popupFrame, {0.18f, 0.24f, 0.30f, 0.98f});
+    drawLayer(uColor_, popupAccent, {1.0f, 0.62f, 0.31f, 1.0f});
+    drawLayer(uColor_, popupText, {0.95f, 0.97f, 1.0f, 1.0f});
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);

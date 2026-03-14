@@ -1,46 +1,12 @@
 #include "ui/PauseMenuController.h"
+#include "ui/PauseMenuShared.h"
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <cstdio>
 
 namespace ui {
     namespace {
-        constexpr std::array<float, 7> kUiScaleChoices{{
-            0.80f, 0.90f, 1.00f, 1.10f, 1.20f, 1.30f, 1.40f,
-        }};
-
-        constexpr std::array<double, 9> kMinSpeedChoices{{
-            1.0 / 256.0, 1.0 / 128.0, 1.0 / 64.0, 1.0 / 32.0, 1.0 / 16.0, 1.0 / 8.0, 1.0 / 4.0, 1.0 / 2.0, 1.0,
-        }};
-
-        constexpr std::array<double, 9> kMaxSpeedChoices{{
-            1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0, 256.0,
-        }};
-
-        constexpr double kDefaultGravityStrength = 6.6743e-11;
-        constexpr std::array<double, 12> kGravityStrengthChoices{{
-            kDefaultGravityStrength * 0.25, kDefaultGravityStrength * 0.50, kDefaultGravityStrength * 0.75,
-            kDefaultGravityStrength * 1.00, kDefaultGravityStrength * 1.25, kDefaultGravityStrength * 1.50,
-            kDefaultGravityStrength * 1.75, kDefaultGravityStrength * 2.00, kDefaultGravityStrength * 2.25,
-            kDefaultGravityStrength * 2.50, kDefaultGravityStrength * 2.75, kDefaultGravityStrength * 3.00,
-        }};
-
-        constexpr std::array<int, 8> kCollisionIterationChoices{{1, 2, 3, 4, 5, 6, 8, 10}};
-
-        constexpr std::array<float, 9> kLookSensitivityChoices{{
-            0.0008f, 0.0012f, 0.0016f, 0.0020f, 0.0025f, 0.0030f, 0.0038f, 0.0048f, 0.0060f,
-        }};
-
-        constexpr std::array<float, 8> kBaseMoveSpeedChoices{{
-            10.0f, 20.0f, 30.0f, 40.0f, 60.0f, 80.0f, 100.0f, 140.0f,
-        }};
-
-        constexpr std::array<float, 8> kFovChoices{{
-            50.0f, 60.0f, 70.0f, 80.0f, 90.0f, 100.0f, 110.0f, 120.0f,
-        }};
-
         int wrapIndex(const int idx, const int count) {
             if (count <= 0) {
                 return 0;
@@ -48,21 +14,9 @@ namespace ui {
             const int mod = idx % count;
             return mod < 0 ? (mod + count) : mod;
         }
-
-        template <typename T, std::size_t N>
-        int closestChoiceIndex(const std::array<T, N>& choices, const T value) {
-            int bestIdx = 0;
-            double bestDiff = std::fabs(static_cast<double>(choices[0] - value));
-            for (std::size_t i = 1; i < N; ++i) {
-                const double diff = std::fabs(static_cast<double>(choices[i] - value));
-                if (diff < bestDiff) {
-                    bestDiff = diff;
-                    bestIdx = static_cast<int>(i);
-                }
-            }
-            return bestIdx;
-        }
     } // namespace
+
+    using namespace pause_menu_shared;
 
     float PauseMenuController::uiScale() const {
         return uiScaleValue(appliedInterfaceSettings_.uiScaleIndex);
@@ -93,7 +47,7 @@ namespace ui {
     }
 
     int PauseMenuController::simulationSettingRowCount() {
-        return 5;
+        return 8;
     }
 
     int PauseMenuController::cameraSettingRowCount() {
@@ -101,7 +55,7 @@ namespace ui {
     }
 
     int PauseMenuController::interfaceSettingRowCount() {
-        return 8;
+        return 13;
     }
 
     float PauseMenuController::uiScaleValue(int idx) {
@@ -168,6 +122,40 @@ namespace ui {
 
     void PauseMenuController::setSelectedSettingRow(const int row) {
         selectedSettingRow_ = row;
+        if (row >= 0) {
+            focusTarget_ = FocusTarget::SettingsRow;
+        }
+    }
+
+    void PauseMenuController::setFocusTarget(const FocusTarget target) {
+        focusTarget_ = target;
+    }
+
+    bool PauseMenuController::hasOpenPopup() const {
+        return popupType_ != PopupType::None;
+    }
+
+    bool PauseMenuController::popupUsesSingleAcknowledge() const {
+        return popupType_ == PopupType::EnableDrawPath;
+    }
+
+    void PauseMenuController::openPopup(
+        const PopupType type,
+        const FocusTarget returnTarget,
+        const bool selectDefaultAction)
+    {
+        popupType_ = type;
+        popupReturnTarget_ = returnTarget;
+        hoveredResetConfirmYes_ = false;
+        hoveredResetConfirmNo_ = false;
+        focusTarget_ = selectDefaultAction ? FocusTarget::PopupYes : returnTarget;
+    }
+
+    void PauseMenuController::closePopup(const bool restoreFocus) {
+        popupType_ = PopupType::None;
+        hoveredResetConfirmYes_ = false;
+        hoveredResetConfirmNo_ = false;
+        focusTarget_ = restoreFocus ? popupReturnTarget_ : FocusTarget::SettingsRow;
     }
 
     void PauseMenuController::discardPendingEdit() {
@@ -211,12 +199,16 @@ namespace ui {
         ignoreNextRebindMousePress_ = false;
         hoveredSettingRow_ = -1;
         hoveredDisplayApplyAction_ = false;
+        hoveredResetWorldAction_ = false;
         hoveredResetControlsAction_ = false;
         hoveredResetIcon_ = false;
         hoveredResetConfirmYes_ = false;
         hoveredResetConfirmNo_ = false;
+        popupType_ = PopupType::None;
+        popupReturnTarget_ = FocusTarget::SettingsRow;
 
         setSelectedSettingRow(-1);
+        scrollLineOffset_ = 0;
         statusMessage_.clear();
     }
 
@@ -322,28 +314,232 @@ namespace ui {
 
     void PauseMenuController::selectNext() {
         const int count = settingCount();
-        if (count <= 0) {
+        if (hasOpenPopup()) {
+            if (focusTarget_ != FocusTarget::PopupYes && focusTarget_ != FocusTarget::PopupNo) {
+                focusTarget_ = FocusTarget::PopupYes;
+            }
+            return;
+        }
+        if (count <= 0 && focusTarget_ == FocusTarget::SettingsRow) {
             return;
         }
 
-        if (!(settingsPage_ == SettingsPage::Display && pendingDisplayChanges_)) {
-            discardPendingEdit();
+        if (focusTarget_ == FocusTarget::ResetIcon ||
+            focusTarget_ == FocusTarget::CloseButton ||
+            focusTarget_ == FocusTarget::ExitButton)
+        {
+            if (focusTarget_ == FocusTarget::ResetIcon) {
+                focusTarget_ = FocusTarget::CloseButton;
+                return;
+            }
+            if (focusTarget_ == FocusTarget::CloseButton) {
+                focusTarget_ = FocusTarget::ExitButton;
+                return;
+            }
+            if (count > 0) {
+                setSelectedSettingRow(0);
+            }
+            return;
         }
-        setSelectedSettingRow(wrapSelectionRow(selectedSettingRow_ + 1, count));
+        if (focusTarget_ == FocusTarget::ApplyAction ||
+            focusTarget_ == FocusTarget::ResetWorldAction ||
+            focusTarget_ == FocusTarget::ResetControlsAction)
+        {
+            if (focusTarget_ == FocusTarget::ResetWorldAction && hasPendingSettingsChanges()) {
+                focusTarget_ = FocusTarget::ApplyAction;
+            }
+            return;
+        }
+
+        discardPendingEdit();
+        if (selectedSettingRow_ >= count - 1) {
+            if (settingsPage_ == SettingsPage::Simulation) {
+                focusTarget_ = FocusTarget::ResetWorldAction;
+            } else if (settingsPage_ == SettingsPage::Controls && controlsDirty_) {
+                focusTarget_ = FocusTarget::ResetControlsAction;
+            } else if (hasPendingSettingsChanges()) {
+                focusTarget_ = FocusTarget::ApplyAction;
+            }
+        } else {
+            setSelectedSettingRow(selectedSettingRow_ + 1);
+        }
         statusMessage_.clear();
     }
 
     void PauseMenuController::selectPrev() {
         const int count = settingCount();
-        if (count <= 0) {
+        if (hasOpenPopup()) {
+            if (focusTarget_ != FocusTarget::PopupYes && focusTarget_ != FocusTarget::PopupNo) {
+                focusTarget_ = FocusTarget::PopupYes;
+            }
+            return;
+        }
+        if (count <= 0 && focusTarget_ == FocusTarget::SettingsRow) {
             return;
         }
 
-        if (!(settingsPage_ == SettingsPage::Display && pendingDisplayChanges_)) {
-            discardPendingEdit();
+        if (focusTarget_ == FocusTarget::ApplyAction ||
+            focusTarget_ == FocusTarget::ResetWorldAction ||
+            focusTarget_ == FocusTarget::ResetControlsAction)
+        {
+            if (focusTarget_ == FocusTarget::ApplyAction && settingsPage_ == SettingsPage::Simulation) {
+                focusTarget_ = FocusTarget::ResetWorldAction;
+                return;
+            }
+            if (count > 0) {
+                setSelectedSettingRow(count - 1);
+            }
+            return;
         }
-        setSelectedSettingRow(wrapSelectionRow(selectedSettingRow_ - 1, count));
+        if (focusTarget_ == FocusTarget::CloseButton ||
+            focusTarget_ == FocusTarget::ExitButton ||
+            focusTarget_ == FocusTarget::ResetIcon)
+        {
+            if (focusTarget_ == FocusTarget::ExitButton) {
+                focusTarget_ = FocusTarget::CloseButton;
+                return;
+            }
+            if (focusTarget_ == FocusTarget::CloseButton) {
+                focusTarget_ = FocusTarget::ResetIcon;
+                return;
+            }
+            return;
+        }
+
+        discardPendingEdit();
+        if (selectedSettingRow_ <= 0) {
+            focusTarget_ = FocusTarget::ExitButton;
+        } else {
+            setSelectedSettingRow(selectedSettingRow_ - 1);
+        }
         statusMessage_.clear();
+    }
+
+    void PauseMenuController::selectLeft(
+        GLFWwindow* window,
+        input::ControlBindings& controls,
+        const std::string& controlsConfigPath)
+    {
+        (void)window;
+        (void)controls;
+        (void)controlsConfigPath;
+        if (hasOpenPopup()) {
+            focusTarget_ = FocusTarget::PopupYes;
+            return;
+        }
+        switch (focusTarget_) {
+            case FocusTarget::ResetControlsAction:
+                return;
+            case FocusTarget::SettingsRow:
+                if (selectedSettingRow_ >= 0 && !isControlPage()) {
+                    adjustSelectedSetting(-1);
+                }
+                return;
+            default:
+                return;
+        }
+    }
+
+    void PauseMenuController::selectRight(
+        GLFWwindow* window,
+        input::ControlBindings& controls,
+        const std::string& controlsConfigPath)
+    {
+        (void)window;
+        (void)controls;
+        (void)controlsConfigPath;
+        if (hasOpenPopup()) {
+            focusTarget_ = popupUsesSingleAcknowledge() ? FocusTarget::PopupYes : FocusTarget::PopupNo;
+            return;
+        }
+        switch (focusTarget_) {
+            case FocusTarget::ResetControlsAction:
+                return;
+            case FocusTarget::SettingsRow:
+                if (selectedSettingRow_ >= 0 && !isControlPage()) {
+                    adjustSelectedSetting(1);
+                }
+                return;
+            default:
+                return;
+        }
+    }
+
+    void PauseMenuController::activateFocusedControl(
+        GLFWwindow* window,
+        input::ControlBindings& controls,
+        const std::string& controlsConfigPath)
+    {
+        if (popupType_ == PopupType::EnableDrawPath && focusTarget_ == FocusTarget::PopupYes) {
+            ensureDraftForSelectedRow();
+            draftInterfaceSettings_.drawPath = true;
+            pendingSelectionEdit_ = hasPendingSelectionChanges();
+            if (!pendingSelectionEdit_) {
+                draftSelectionRow_ = -1;
+                draftSettingsPage_ = settingsPage_;
+            }
+            statusMessage_.clear();
+            closePopup();
+            return;
+        }
+        if (popupType_ == PopupType::ResetWorld && focusTarget_ == FocusTarget::PopupYes) {
+            resetWorldRequested_ = true;
+            statusMessage_ = "WORLD RESET";
+            closePopup(false);
+            return;
+        }
+        if (popupType_ == PopupType::ExitToHome && focusTarget_ == FocusTarget::PopupYes) {
+            glfwSetWindowShouldClose(window, GLFW_TRUE);
+            closePopup(false);
+            return;
+        }
+        if (popupType_ == PopupType::ResetSettings && focusTarget_ == FocusTarget::PopupYes) {
+            resetAllSettings(window);
+            closePopup(false);
+            return;
+        }
+        if (hasOpenPopup() && focusTarget_ == FocusTarget::PopupNo)
+        {
+            closePopup();
+            return;
+        }
+        switch (focusTarget_) {
+            case FocusTarget::ResetIcon:
+                openPopup(PopupType::ResetSettings, FocusTarget::ResetIcon, true);
+                return;
+            case FocusTarget::CloseButton:
+                resumeRequested_ = true;
+                return;
+            case FocusTarget::ExitButton:
+                openPopup(PopupType::ExitToHome, FocusTarget::ExitButton, true);
+                return;
+            case FocusTarget::ApplyAction:
+                commitSelectedSetting(window);
+                return;
+            case FocusTarget::ResetWorldAction:
+                openPopup(PopupType::ResetWorld, FocusTarget::ResetWorldAction, true);
+                return;
+            case FocusTarget::ResetControlsAction:
+                controls = input::ControlBindings{};
+                controlsDirty_ = false;
+                input::saveControlBindings(controls, controlsConfigPath);
+                markAppliedSelection();
+                statusMessage_.clear();
+                return;
+            case FocusTarget::SettingsRow:
+                if (selectedSettingRow_ < 0) {
+                    return;
+                }
+                if (isControlPage()) {
+                    beginRebindForRow(selectedSettingRow_);
+                } else {
+                    commitSelectedSetting(window);
+                }
+                return;
+            case FocusTarget::PopupYes:
+            case FocusTarget::PopupNo:
+                return;
+        }
     }
 
     bool PauseMenuController::isSettingRowDisabled(const int row) const {
@@ -354,13 +550,23 @@ namespace ui {
             return false;
         }
         if (settingsPage_ == SettingsPage::Interface) {
-            return row >= 4 && row <= 7 && !appliedInterfaceSettings_.objectInfo;
+            const InterfaceSettings& settings =
+                (pendingSelectionEdit_ && draftSettingsPage_ == SettingsPage::Interface)
+                    ? draftInterfaceSettings_
+                    : appliedInterfaceSettings_;
+            if (row == 3 && !settings.showHud) {
+                return true;
+            }
+            return row >= 6 && row <= 12 && !settings.objectInfo;
         }
         return false;
     }
 
     std::string PauseMenuController::disabledReasonForRow(const int row) const {
-        if (settingsPage_ == SettingsPage::Interface && row >= 4 && row <= 7) {
+        if (settingsPage_ == SettingsPage::Interface && row == 3) {
+            return "ENABLE SHOW HUD FIRST";
+        }
+        if (settingsPage_ == SettingsPage::Interface && row >= 6 && row <= 12) {
             return "ENABLE OBJECT INFO FIRST";
         }
         return "SETTING LOCKED";
@@ -377,10 +583,10 @@ namespace ui {
             return row == 1 ? OverlayRenderer::PauseMenuControlType::Toggle : OverlayRenderer::PauseMenuControlType::None;
         }
         if (settingsPage_ == SettingsPage::Simulation) {
-            if (row == 2) {
+            if (row == 2 || row == 4) {
                 return OverlayRenderer::PauseMenuControlType::Toggle;
             }
-            return row <= 4 ? OverlayRenderer::PauseMenuControlType::Numeric : OverlayRenderer::PauseMenuControlType::None;
+            return row <= 7 ? OverlayRenderer::PauseMenuControlType::Numeric : OverlayRenderer::PauseMenuControlType::None;
         }
         if (settingsPage_ == SettingsPage::Camera) {
             if (row == 2) {
@@ -392,7 +598,7 @@ namespace ui {
             if (row == 0) {
                 return OverlayRenderer::PauseMenuControlType::Numeric;
             }
-            if (row <= 7) {
+            if (row <= 12) {
                 return OverlayRenderer::PauseMenuControlType::Toggle;
             }
             return OverlayRenderer::PauseMenuControlType::None;
@@ -426,7 +632,10 @@ namespace ui {
                 case 1: return static_cast<int>(kMaxSpeedChoices.size());
                 case 2: return 2;
                 case 3: return static_cast<int>(kGravityStrengthChoices.size());
-                case 4: return static_cast<int>(kCollisionIterationChoices.size());
+                case 4: return 2;
+                case 5: return static_cast<int>(kCollisionIterationChoices.size());
+                case 6: return static_cast<int>(kJointIterationChoices.size());
+                case 7: return static_cast<int>(kGlobalRestitutionChoices.size());
                 default: return 0;
             }
         }
@@ -443,7 +652,7 @@ namespace ui {
             if (row == 0) {
                 return static_cast<int>(kUiScaleChoices.size());
             }
-            if (row >= 1 && row <= 7) {
+            if (row >= 1 && row <= 12) {
                 return 2;
             }
         }
@@ -464,35 +673,55 @@ namespace ui {
             }
         }
         if (settingsPage_ == SettingsPage::Simulation) {
+            const SimulationSettings& settings =
+                (pendingSelectionEdit_ && draftSettingsPage_ == SettingsPage::Simulation)
+                    ? draftSimulationSettings_
+                    : appliedSimulationSettings_;
             switch (row) {
-                case 0: return closestChoiceIndex(kMinSpeedChoices, appliedSimulationSettings_.minSimSpeed);
-                case 1: return closestChoiceIndex(kMaxSpeedChoices, appliedSimulationSettings_.maxSimSpeed);
-                case 2: return appliedSimulationSettings_.gravityEnabled ? 1 : 0;
-                case 3: return closestChoiceIndex(kGravityStrengthChoices, appliedSimulationSettings_.gravityStrength);
-                case 4: return closestChoiceIndex(kCollisionIterationChoices, appliedSimulationSettings_.collisionIterations);
+                case 0: return closestChoiceIndex(kMinSpeedChoices, settings.minSimSpeed);
+                case 1: return closestChoiceIndex(kMaxSpeedChoices, settings.maxSimSpeed);
+                case 2: return settings.gravityEnabled ? 1 : 0;
+                case 3: return closestChoiceIndex(kGravityStrengthChoices, settings.gravityStrength);
+                case 4: return settings.collisionsEnabled ? 1 : 0;
+                case 5: return closestChoiceIndex(kCollisionIterationChoices, settings.collisionIterations);
+                case 6: return closestChoiceIndex(kJointIterationChoices, settings.jointIterations);
+                case 7: return closestChoiceIndex(kGlobalRestitutionChoices, settings.globalRestitution);
                 default: return 0;
             }
         }
         if (settingsPage_ == SettingsPage::Camera) {
+            const CameraSettings& settings =
+                (pendingSelectionEdit_ && draftSettingsPage_ == SettingsPage::Camera)
+                    ? draftCameraSettings_
+                    : appliedCameraSettings_;
             switch (row) {
-                case 0: return closestChoiceIndex(kLookSensitivityChoices, appliedCameraSettings_.lookSensitivity);
-                case 1: return closestChoiceIndex(kBaseMoveSpeedChoices, appliedCameraSettings_.baseMoveSpeed);
-                case 2: return appliedCameraSettings_.invertY ? 1 : 0;
-                case 3: return closestChoiceIndex(kFovChoices, appliedCameraSettings_.fovDegrees);
+                case 0: return closestChoiceIndex(kLookSensitivityChoices, settings.lookSensitivity);
+                case 1: return closestChoiceIndex(kBaseMoveSpeedChoices, settings.baseMoveSpeed);
+                case 2: return settings.invertY ? 1 : 0;
+                case 3: return closestChoiceIndex(kFovChoices, settings.fovDegrees);
                 default: return 0;
             }
         }
         if (settingsPage_ == SettingsPage::Interface) {
+            const InterfaceSettings& settings =
+                (pendingSelectionEdit_ && draftSettingsPage_ == SettingsPage::Interface)
+                    ? draftInterfaceSettings_
+                    : appliedInterfaceSettings_;
             switch (row) {
                 case 0:
-                    return std::clamp(appliedInterfaceSettings_.uiScaleIndex, 0, static_cast<int>(kUiScaleChoices.size()) - 1);
-                case 1: return appliedInterfaceSettings_.showHud ? 1 : 0;
-                case 2: return appliedInterfaceSettings_.showCrosshair ? 1 : 0;
-                case 3: return appliedInterfaceSettings_.objectInfo ? 1 : 0;
-                case 4: return appliedInterfaceSettings_.objectInfoMaterial ? 1 : 0;
-                case 5: return appliedInterfaceSettings_.objectInfoVelocity ? 1 : 0;
-                case 6: return appliedInterfaceSettings_.objectInfoMass ? 1 : 0;
-                case 7: return appliedInterfaceSettings_.objectInfoRadius ? 1 : 0;
+                    return std::clamp(settings.uiScaleIndex, 0, static_cast<int>(kUiScaleChoices.size()) - 1);
+                case 1: return settings.showHud ? 1 : 0;
+                case 2: return settings.showCrosshair ? 1 : 0;
+                case 3: return settings.showPhysicsStats ? 1 : 0;
+                case 4: return settings.drawPath ? 1 : 0;
+                case 5: return settings.objectInfo ? 1 : 0;
+                case 6: return settings.objectInfoMaterial ? 1 : 0;
+                case 7: return settings.objectInfoVelocity ? 1 : 0;
+                case 8: return settings.objectInfoMass ? 1 : 0;
+                case 9: return settings.objectInfoRadius ? 1 : 0;
+                case 10: return settings.objectInfoAngularSpeed ? 1 : 0;
+                case 11: return settings.objectInfoBodyType ? 1 : 0;
+                case 12: return settings.objectInfoJointCount ? 1 : 0;
                 default: return 0;
             }
         }
@@ -586,8 +815,22 @@ namespace ui {
                     break;
                 }
                 case 4: {
+                    settings.collisionsEnabled = !settings.collisionsEnabled;
+                    break;
+                }
+                case 5: {
                     const int idx = std::clamp(closestChoiceIndex(kCollisionIterationChoices, settings.collisionIterations) + delta, 0, static_cast<int>(kCollisionIterationChoices.size()) - 1);
                     settings.collisionIterations = kCollisionIterationChoices[static_cast<std::size_t>(idx)];
+                    break;
+                }
+                case 6: {
+                    const int idx = std::clamp(closestChoiceIndex(kJointIterationChoices, settings.jointIterations) + delta, 0, static_cast<int>(kJointIterationChoices.size()) - 1);
+                    settings.jointIterations = kJointIterationChoices[static_cast<std::size_t>(idx)];
+                    break;
+                }
+                case 7: {
+                    const int idx = std::clamp(closestChoiceIndex(kGlobalRestitutionChoices, settings.globalRestitution) + delta, 0, static_cast<int>(kGlobalRestitutionChoices.size()) - 1);
+                    settings.globalRestitution = kGlobalRestitutionChoices[static_cast<std::size_t>(idx)];
                     break;
                 }
                 default:
@@ -630,55 +873,79 @@ namespace ui {
                     settings.showCrosshair = !settings.showCrosshair;
                     break;
                 case 3:
-                    settings.objectInfo = !settings.objectInfo;
+                    settings.showPhysicsStats = !settings.showPhysicsStats;
                     break;
                 case 4:
-                    if (!settings.objectInfo) {
-                        statusMessage_ = "ENABLE OBJECT INFO FIRST";
+                    if (!settings.drawPath) {
+                        openPopup(PopupType::EnableDrawPath, FocusTarget::SettingsRow, true);
+                        statusMessage_.clear();
                         return;
                     }
-                    settings.objectInfoMaterial = !settings.objectInfoMaterial;
+                    settings.drawPath = false;
                     break;
                 case 5:
-                    if (!settings.objectInfo) {
-                        statusMessage_ = "ENABLE OBJECT INFO FIRST";
-                        return;
-                    }
-                    settings.objectInfoVelocity = !settings.objectInfoVelocity;
+                    settings.objectInfo = !settings.objectInfo;
                     break;
                 case 6:
                     if (!settings.objectInfo) {
                         statusMessage_ = "ENABLE OBJECT INFO FIRST";
                         return;
                     }
-                    settings.objectInfoMass = !settings.objectInfoMass;
+                    settings.objectInfoMaterial = !settings.objectInfoMaterial;
                     break;
                 case 7:
                     if (!settings.objectInfo) {
                         statusMessage_ = "ENABLE OBJECT INFO FIRST";
                         return;
                     }
+                    settings.objectInfoVelocity = !settings.objectInfoVelocity;
+                    break;
+                case 8:
+                    if (!settings.objectInfo) {
+                        statusMessage_ = "ENABLE OBJECT INFO FIRST";
+                        return;
+                    }
+                    settings.objectInfoMass = !settings.objectInfoMass;
+                    break;
+                case 9:
+                    if (!settings.objectInfo) {
+                        statusMessage_ = "ENABLE OBJECT INFO FIRST";
+                        return;
+                    }
                     settings.objectInfoRadius = !settings.objectInfoRadius;
+                    break;
+                case 10:
+                    if (!settings.objectInfo) {
+                        statusMessage_ = "ENABLE OBJECT INFO FIRST";
+                        return;
+                    }
+                    settings.objectInfoAngularSpeed = !settings.objectInfoAngularSpeed;
+                    break;
+                case 11:
+                    if (!settings.objectInfo) {
+                        statusMessage_ = "ENABLE OBJECT INFO FIRST";
+                        return;
+                    }
+                    settings.objectInfoBodyType = !settings.objectInfoBodyType;
+                    break;
+                case 12:
+                    if (!settings.objectInfo) {
+                        statusMessage_ = "ENABLE OBJECT INFO FIRST";
+                        return;
+                    }
+                    settings.objectInfoJointCount = !settings.objectInfoJointCount;
                     break;
                 default:
                     break;
             }
         }
 
-        if (settingsPage_ == SettingsPage::Simulation) {
-            appliedSimulationSettings_ = draftSimulationSettings_;
-        } else if (settingsPage_ == SettingsPage::Camera) {
-            appliedCameraSettings_ = draftCameraSettings_;
-        } else if (settingsPage_ == SettingsPage::Interface) {
-            appliedInterfaceSettings_ = draftInterfaceSettings_;
-        }
-
-        markAppliedSelection();
-        pendingSelectionEdit_ = false;
-        draftSelectionRow_ = -1;
-        draftSettingsPage_ = settingsPage_;
         statusMessage_.clear();
-        saveSettings();
+        pendingSelectionEdit_ = hasPendingSelectionChanges();
+        if (!pendingSelectionEdit_) {
+            draftSelectionRow_ = -1;
+            draftSettingsPage_ = settingsPage_;
+        }
     }
 
     void PauseMenuController::resetAllSettings(GLFWwindow* window) {
@@ -694,9 +961,79 @@ namespace ui {
         saveSettings();
     }
 
+    bool PauseMenuController::consumeResetWorldRequest() {
+        const bool requested = resetWorldRequested_;
+        resetWorldRequested_ = false;
+        return requested;
+    }
+
     bool PauseMenuController::hasPendingDisplayChanges() const {
         return draftDisplaySettings_.windowMode != appliedDisplaySettings_.windowMode ||
                draftDisplaySettings_.vsync != appliedDisplaySettings_.vsync;
+    }
+
+    bool PauseMenuController::hasPendingSimulationChanges() const {
+        return draftSimulationSettings_.minSimSpeed != appliedSimulationSettings_.minSimSpeed ||
+               draftSimulationSettings_.maxSimSpeed != appliedSimulationSettings_.maxSimSpeed ||
+               draftSimulationSettings_.gravityEnabled != appliedSimulationSettings_.gravityEnabled ||
+               draftSimulationSettings_.gravityStrength != appliedSimulationSettings_.gravityStrength ||
+               draftSimulationSettings_.collisionsEnabled != appliedSimulationSettings_.collisionsEnabled ||
+               draftSimulationSettings_.collisionIterations != appliedSimulationSettings_.collisionIterations ||
+               draftSimulationSettings_.jointIterations != appliedSimulationSettings_.jointIterations ||
+               draftSimulationSettings_.globalRestitution != appliedSimulationSettings_.globalRestitution;
+    }
+
+    bool PauseMenuController::hasPendingCameraChanges() const {
+        return draftCameraSettings_.lookSensitivity != appliedCameraSettings_.lookSensitivity ||
+               draftCameraSettings_.baseMoveSpeed != appliedCameraSettings_.baseMoveSpeed ||
+               draftCameraSettings_.invertY != appliedCameraSettings_.invertY ||
+               draftCameraSettings_.fovDegrees != appliedCameraSettings_.fovDegrees;
+    }
+
+    bool PauseMenuController::hasPendingInterfaceChanges() const {
+        return draftInterfaceSettings_.uiScaleIndex != appliedInterfaceSettings_.uiScaleIndex ||
+               draftInterfaceSettings_.showHud != appliedInterfaceSettings_.showHud ||
+               draftInterfaceSettings_.showCrosshair != appliedInterfaceSettings_.showCrosshair ||
+               draftInterfaceSettings_.showPhysicsStats != appliedInterfaceSettings_.showPhysicsStats ||
+               draftInterfaceSettings_.drawPath != appliedInterfaceSettings_.drawPath ||
+               draftInterfaceSettings_.objectInfo != appliedInterfaceSettings_.objectInfo ||
+               draftInterfaceSettings_.objectInfoMaterial != appliedInterfaceSettings_.objectInfoMaterial ||
+               draftInterfaceSettings_.objectInfoVelocity != appliedInterfaceSettings_.objectInfoVelocity ||
+               draftInterfaceSettings_.objectInfoMass != appliedInterfaceSettings_.objectInfoMass ||
+               draftInterfaceSettings_.objectInfoRadius != appliedInterfaceSettings_.objectInfoRadius ||
+               draftInterfaceSettings_.objectInfoAngularSpeed != appliedInterfaceSettings_.objectInfoAngularSpeed ||
+               draftInterfaceSettings_.objectInfoBodyType != appliedInterfaceSettings_.objectInfoBodyType ||
+               draftInterfaceSettings_.objectInfoJointCount != appliedInterfaceSettings_.objectInfoJointCount;
+    }
+
+    bool PauseMenuController::hasPendingSelectionChanges() const {
+        if (!pendingSelectionEdit_) {
+            return false;
+        }
+
+        switch (draftSettingsPage_) {
+            case SettingsPage::Simulation:
+                return hasPendingSimulationChanges();
+            case SettingsPage::Camera:
+                return hasPendingCameraChanges();
+            case SettingsPage::Interface:
+                return hasPendingInterfaceChanges();
+            default:
+                return false;
+        }
+    }
+
+    bool PauseMenuController::hasPendingSettingsChanges() const {
+        if (isControlPage()) {
+            return false;
+        }
+        if (settingsPage_ == SettingsPage::Display) {
+            return pendingDisplayChanges_;
+        }
+        return pendingSelectionEdit_ &&
+               draftSettingsPage_ == settingsPage_ &&
+               draftSelectionRow_ == selectedSettingRow_ &&
+               hasPendingSelectionChanges();
     }
 
     void PauseMenuController::normalizeAppliedSettings() {
@@ -708,6 +1045,10 @@ namespace ui {
             kGravityStrengthChoices[static_cast<std::size_t>(closestChoiceIndex(kGravityStrengthChoices, appliedSimulationSettings_.gravityStrength))];
         appliedSimulationSettings_.collisionIterations =
             kCollisionIterationChoices[static_cast<std::size_t>(closestChoiceIndex(kCollisionIterationChoices, appliedSimulationSettings_.collisionIterations))];
+        appliedSimulationSettings_.jointIterations =
+            kJointIterationChoices[static_cast<std::size_t>(closestChoiceIndex(kJointIterationChoices, appliedSimulationSettings_.jointIterations))];
+        appliedSimulationSettings_.globalRestitution =
+            kGlobalRestitutionChoices[static_cast<std::size_t>(closestChoiceIndex(kGlobalRestitutionChoices, appliedSimulationSettings_.globalRestitution))];
         if (appliedSimulationSettings_.maxSimSpeed < appliedSimulationSettings_.minSimSpeed) {
             appliedSimulationSettings_.maxSimSpeed = appliedSimulationSettings_.minSimSpeed;
         }

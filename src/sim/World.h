@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <span>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -15,6 +16,7 @@ namespace sim {
     class World {
     public:
         struct Metrics {
+            // Lightweight per-step counters surfaced through the optional HUD diagnostics.
             std::size_t broadphaseCandidatesDiscrete = 0;
             std::size_t broadphaseCandidatesSwept = 0;
             std::size_t pairsVisited = 0;
@@ -38,8 +40,8 @@ namespace sim {
 
             double G = kDefaultG;
             double restitution = kDefaultRestitution; // Global upper bound for contact restitution [0..1]
-            double penetrationSlop = kDefaultPenetrationSlop;
-            double positionCorrectionPercent = kDefaultPositionCorrectionPercent;
+            double penetrationSlop = kDefaultPenetrationSlop; // Advanced collision tuning
+            double positionCorrectionPercent = kDefaultPositionCorrectionPercent; // Advanced collision tuning
             int collisionIterations = kDefaultCollisionIterations;
             int jointIterations = kDefaultJointIterations;
             bool enableGravity = true;
@@ -88,6 +90,14 @@ namespace sim {
             std::size_t staleFrames = 0;
         };
 
+        struct ActiveCollisionPair {
+            std::size_t i = 0;
+            std::size_t j = 0;
+            ContactKey key{};
+            collision::SolveParams params{};
+            double accumulatedImpulse = 0.0;
+        };
+
         Params params_;
         Metrics metrics_{};
         std::vector<Body> bodies_{};
@@ -115,7 +125,7 @@ namespace sim {
         void assignBodyId_(Body& b);
         void initBodies_();
         void beginContactFrame_();
-        void warmStartPairs_(const std::vector<std::pair<std::size_t, std::size_t>>& pairs);
+        void warmStartPairs_(std::span<const ActiveCollisionPair> pairs);
         void endContactFrame_();
     };
 

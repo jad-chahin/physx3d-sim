@@ -2,6 +2,7 @@
 #define PHYSICS3D_BODY_H
 
 #include <cstdint>
+#include <string>
 #include "Quaternion.h"
 #include "Vec3.h"
 
@@ -17,9 +18,10 @@ namespace sim {
         double invMass{}; // [1/kg]  (0 means "infinite mass" / static body)
         double invInertia{0.0}; // [1/(kg*m^2)] if <=0, sphere inertia is derived from mass/radius
         double radius{1.0}; // [m]
-        double restitution{0.5}; // [0..1] bounciness
-        double staticFriction{0.6}; // Coulomb static friction coefficient
-        double dynamicFriction{0.4}; // Coulomb dynamic friction coefficient
+        double restitution{0.5}; // [0..1] cached from the assigned material
+        double staticFriction{0.6}; // cached from the assigned material
+        double dynamicFriction{0.4}; // cached from the assigned material
+        std::string materialName{"DEFAULT"}; // Material id/name used at assignment/load time
         Quaternion orientation; // world orientation
         Vec3 prevPosition;
         std::uint64_t id = 0; // Stable identity assigned by World

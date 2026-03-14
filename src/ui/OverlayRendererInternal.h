@@ -25,8 +25,10 @@ struct Buffers {
     std::vector<float>& textWarning;
     std::vector<float>& statusText;
     std::vector<float>& crosshair;
+    std::vector<float>& pathLines;
     std::vector<float>& popupBg;
     std::vector<float>& popupFrame;
+    std::vector<float>& popupAccent;
     std::vector<float>& popupText;
 };
 
@@ -44,6 +46,10 @@ void drawHud(
     const Buffers& buffers);
 
 void drawCrosshair(const Geometry& geometry, const Buffers& buffers);
+void drawPathLines(
+    const Geometry& geometry,
+    const std::vector<OverlayRenderer::ScreenLine>& pathLines,
+    const Buffers& buffers);
 
 void drawTargetPopup(
     const OverlayRenderer::TargetHud& targetHud,

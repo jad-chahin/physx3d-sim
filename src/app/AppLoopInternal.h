@@ -11,6 +11,7 @@
 
 #include "input/Bindings.h"
 #include "input/Camera.h"
+#include "sim/DefaultWorld.h"
 #include "sim/World.h"
 #include "ui/OverlayRenderer.h"
 #include "ui/PauseMenuController.h"
@@ -34,6 +35,19 @@ struct AppLoopState {
 };
 
 struct RuntimeState {
+    struct SmoothedHudMetrics {
+        sim::World::Metrics accumulated{};
+        sim::World::Metrics displayed{};
+        double elapsed = 0.0;
+        std::size_t samples = 0;
+    };
+
+    struct PathTrail {
+        std::vector<sim::Vec3> points{};
+        std::size_t start = 0;
+        std::size_t count = 0;
+    };
+
     double lastMouseX = 0.0;
     double lastMouseY = 0.0;
     bool firstMouse = true;
@@ -49,6 +63,8 @@ struct RuntimeState {
     double fpsElapsed = 0.0;
     double hudFps = 0.0;
     int fpsFrames = 0;
+    SmoothedHudMetrics hudMetrics{};
+    std::vector<PathTrail> pathHistory{};
 };
 
 struct SceneView {
@@ -129,6 +145,10 @@ void updateCamera(
     input::Camera& cam);
 
 void stepSimulation(sim::World& world, double frameTime, RuntimeState& runtime, bool pauseMenuOpen);
+void reloadDefaultWorld(
+    sim::World& world,
+    RuntimeState& runtime,
+    const ui::SimulationSettings& simSettings);
 
 SceneView buildSceneView(
     const input::Camera& cam,
@@ -163,14 +183,31 @@ OverlayRenderer::TargetHud buildTargetHud(
     const FramebufferSize& framebufferSize,
     const std::vector<glm::vec3>& renderPositions);
 
+std::vector<std::string> buildHudDebugLines(
+    const RuntimeState& runtime,
+    const ui::InterfaceSettings& interfaceSettings);
+
+void updatePathHistory(
+    const sim::World& world,
+    RuntimeState& runtime,
+    const ui::InterfaceSettings& interfaceSettings);
+
+std::vector<OverlayRenderer::ScreenLine> buildPathLines(
+    const RuntimeState& runtime,
+    const SceneView& sceneView,
+    const FramebufferSize& framebufferSize,
+    const ui::InterfaceSettings& interfaceSettings);
+
 void drawOverlay(
     const OverlayRenderer& overlay,
     const FramebufferSize& framebufferSize,
     const RuntimeState& runtime,
     const OverlayRenderer::PauseMenuHud& pauseMenuHud,
     const OverlayRenderer::TargetHud& targetHud,
+    const std::vector<OverlayRenderer::ScreenLine>& pathLines,
     float uiScale,
-    const ui::InterfaceSettings& interfaceSettings);
+    const ui::InterfaceSettings& interfaceSettings,
+    const std::vector<std::string>& hudDebugLines);
 
 } // namespace app_loop
 

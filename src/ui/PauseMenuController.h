@@ -7,6 +7,7 @@
 
 #include "input/Bindings.h"
 #include "sim/Body.h"
+#include "sim/World.h"
 #include "ui/OverlayRenderer.h"
 
 struct GLFWwindow;
@@ -26,8 +27,11 @@ namespace ui {
         double minSimSpeed = 1.0 / 64.0;
         double maxSimSpeed = 64.0;
         bool gravityEnabled = true;
-        double gravityStrength = 6.6743e-11;
+        double gravityStrength = sim::World::Params::kDefaultG;
+        bool collisionsEnabled = true;
         int collisionIterations = 2;
+        int jointIterations = sim::World::Params::kDefaultJointIterations;
+        double globalRestitution = sim::World::Params::kDefaultRestitution;
     };
 
     struct CameraSettings {
@@ -38,14 +42,19 @@ namespace ui {
     };
 
     struct InterfaceSettings {
-        int uiScaleIndex = 1; // 1.00x
+        int uiScaleIndex = 2; // 1.00x
         bool showHud = true;
         bool showCrosshair = true;
+        bool showPhysicsStats = false;
+        bool drawPath = false;
         bool objectInfo = true;
-        bool objectInfoMaterial = true;
+        bool objectInfoMaterial = false;
         bool objectInfoVelocity = true;
         bool objectInfoMass = true;
         bool objectInfoRadius = true;
+        bool objectInfoAngularSpeed = false;
+        bool objectInfoBodyType = false;
+        bool objectInfoJointCount = false;
     };
 
     enum class SettingsPage {
@@ -94,8 +103,29 @@ namespace ui {
         OverlayRenderer::PauseMenuHud buildHud(
             const input::ControlBindings& controls,
             bool advanceApplyIndicator = true) const;
+        bool consumeResetWorldRequest();
 
     private:
+        enum class FocusTarget {
+            SettingsRow = 0,
+            ResetIcon,
+            CloseButton,
+            ExitButton,
+            ApplyAction,
+            ResetWorldAction,
+            ResetControlsAction,
+            PopupYes,
+            PopupNo,
+        };
+
+        enum class PopupType {
+            None = 0,
+            ResetSettings,
+            ResetWorld,
+            ExitToHome,
+            EnableDrawPath,
+        };
+
         bool open_ = false;
         bool awaitingRebind_ = false;
         int awaitingRebindAction_ = -1;
@@ -105,20 +135,25 @@ namespace ui {
         int draftSelectionRow_ = -1;
         bool pendingSelectionEdit_ = false;
         bool pendingDisplayChanges_ = false;
+        bool controlsDirty_ = false;
         std::string statusMessage_;
+        FocusTarget focusTarget_ = FocusTarget::SettingsRow;
+        FocusTarget popupReturnTarget_ = FocusTarget::SettingsRow;
         mutable SettingsPage lastAppliedPage_ = SettingsPage::Display;
         mutable int lastAppliedRow_ = -1;
         mutable int applyIndicatorFrames_ = 0;
         bool escWasDown_ = false;
         bool backWasDown_ = false;
         bool resumeRequested_ = false;
+        bool resetWorldRequested_ = false;
         bool leftMouseWasDown_ = false;
         bool ignoreNextRebindMousePress_ = false;
         int hoveredSettingRow_ = -1;
         bool hoveredDisplayApplyAction_ = false;
+        bool hoveredResetWorldAction_ = false;
         bool hoveredResetControlsAction_ = false;
         bool hoveredResetIcon_ = false;
-        bool confirmingResetSettings_ = false;
+        PopupType popupType_ = PopupType::None;
         bool hoveredResetConfirmYes_ = false;
         bool hoveredResetConfirmNo_ = false;
         SettingsPage lastClickedPage_ = SettingsPage::Display;
@@ -133,6 +168,7 @@ namespace ui {
         double downNextRepeatAt_ = 0.0;
         double leftNextRepeatAt_ = 0.0;
         double rightNextRepeatAt_ = 0.0;
+        int scrollLineOffset_ = 0;
         int windowedX_ = 120;
         int windowedY_ = 120;
         int windowedWidth_ = 1920;
@@ -162,6 +198,7 @@ namespace ui {
 
         bool isControlPage() const;
         void setSelectedSettingRow(int row);
+        void setFocusTarget(FocusTarget target);
         void discardPendingEdit();
         void ensureDraftForSelectedRow();
         void switchPage(int delta);
@@ -171,6 +208,9 @@ namespace ui {
         bool applyRebindCode(int code, input::ControlBindings& controls, const std::string& controlsConfigPath);
         void selectNext();
         void selectPrev();
+        void selectLeft(GLFWwindow* window, input::ControlBindings& controls, const std::string& controlsConfigPath);
+        void selectRight(GLFWwindow* window, input::ControlBindings& controls, const std::string& controlsConfigPath);
+        void activateFocusedControl(GLFWwindow* window, input::ControlBindings& controls, const std::string& controlsConfigPath);
         bool isSettingRowDisabled(int row) const;
         std::string disabledReasonForRow(int row) const;
         OverlayRenderer::PauseMenuControlType controlTypeForRow(int row) const;
@@ -181,8 +221,17 @@ namespace ui {
         void adjustSelectedSetting(int delta);
         void applyDisplaySettings(GLFWwindow* window, const DisplaySettings& settings);
         void resetAllSettings(GLFWwindow* window);
+        bool hasOpenPopup() const;
+        bool popupUsesSingleAcknowledge() const;
+        void openPopup(PopupType type, FocusTarget returnTarget, bool selectDefaultAction);
+        void closePopup(bool restoreFocus = true);
         static bool hasControlChanges(const input::ControlBindings& controls);
         bool hasPendingDisplayChanges() const;
+        bool hasPendingSimulationChanges() const;
+        bool hasPendingCameraChanges() const;
+        bool hasPendingInterfaceChanges() const;
+        bool hasPendingSelectionChanges() const;
+        bool hasPendingSettingsChanges() const;
         void normalizeAppliedSettings();
         void saveSettings() const;
         void markAppliedSelection() const;

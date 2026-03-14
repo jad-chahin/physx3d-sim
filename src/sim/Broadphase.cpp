@@ -1,19 +1,9 @@
 #include "Broadphase.h"
 #include <algorithm>
 #include <cmath>
-#include <unordered_set>
 
 namespace sim::broadphase {
     namespace {
-        struct PairHash {
-            std::size_t operator()(const Pair& p) const {
-                std::size_t h = 0xcbf29ce484222325ULL;
-                h ^= std::hash<std::size_t>{}(p.first) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
-                h ^= std::hash<std::size_t>{}(p.second) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
-                return h;
-            }
-        };
-
         struct AxisInterval {
             std::size_t idx = 0;
             double minX = 0.0;
@@ -29,7 +19,8 @@ namespace sim::broadphase {
                    a.maxZ >= b.minZ && b.maxZ >= a.minZ;
         }
 
-        std::vector<Pair> discreteSapPairs(const std::vector<Body>& bodies)
+        template <typename Builder>
+        std::vector<Pair> sapPairs(const std::vector<Body>& bodies, Builder&& builder)
         {
             std::vector<Pair> pairs;
             if (bodies.size() < 2) {
@@ -37,134 +28,98 @@ namespace sim::broadphase {
             }
 
             thread_local std::vector<AxisInterval> intervals;
-            thread_local std::vector<std::size_t> active;
             intervals.clear();
-            active.clear();
             intervals.reserve(bodies.size());
-            active.reserve(bodies.size());
 
             for (std::size_t i = 0; i < bodies.size(); ++i) {
-                const Body& b = bodies[i];
-                if (!std::isfinite(b.position.x) || !std::isfinite(b.position.y) || !std::isfinite(b.position.z) ||
-                    !std::isfinite(b.radius) || b.radius < 0.0) {
-                    continue;
-                }
-
                 AxisInterval in;
-                in.idx = i;
-                in.minX = b.position.x - b.radius;
-                in.maxX = b.position.x + b.radius;
-                in.minY = b.position.y - b.radius;
-                in.maxY = b.position.y + b.radius;
-                in.minZ = b.position.z - b.radius;
-                in.maxZ = b.position.z + b.radius;
-                if (!std::isfinite(in.minX) || !std::isfinite(in.maxX) ||
-                    !std::isfinite(in.minY) || !std::isfinite(in.maxY) ||
-                    !std::isfinite(in.minZ) || !std::isfinite(in.maxZ)) {
-                    continue;
+                if (builder(bodies[i], i, in)) {
+                    intervals.push_back(in);
                 }
-                intervals.push_back(in);
+            }
+
+            if (intervals.size() < 2) {
+                return pairs;
             }
 
             std::ranges::sort(intervals, [](const AxisInterval& a, const AxisInterval& b) {
                 return a.minX < b.minX;
             });
 
-            for (std::size_t cur = 0; cur < intervals.size(); ++cur) {
-                const AxisInterval& c = intervals[cur];
-                active.erase(std::ranges::remove_if(active, [&](const std::size_t idx) {
-                    return intervals[idx].maxX < c.minX;
-                }).begin(), active.end());
-
-                for (const std::size_t idx : active) {
-                    if (overlapsYZ(c, intervals[idx])) {
-                        pairs.emplace_back(std::min(c.idx, intervals[idx].idx), std::max(c.idx, intervals[idx].idx));
+            for (std::size_t i = 0; i + 1 < intervals.size(); ++i) {
+                const AxisInterval& a = intervals[i];
+                for (std::size_t j = i + 1; j < intervals.size(); ++j) {
+                    const AxisInterval& b = intervals[j];
+                    if (b.minX > a.maxX) {
+                        break;
+                    }
+                    if (overlapsYZ(a, b)) {
+                        pairs.emplace_back(std::min(a.idx, b.idx), std::max(a.idx, b.idx));
                     }
                 }
-                active.push_back(cur);
             }
 
             return pairs;
         }
 
-        std::vector<Pair> sweptSapPairs(const std::vector<Body>& bodies, const double maxTime)
+        [[nodiscard]] bool buildDiscreteInterval(const Body& b, const std::size_t index, AxisInterval& out)
         {
-            std::vector<Pair> pairs;
-            if (bodies.size() < 2) {
-                return pairs;
+            if (!std::isfinite(b.position.x) || !std::isfinite(b.position.y) || !std::isfinite(b.position.z) ||
+                !std::isfinite(b.radius) || b.radius < 0.0) {
+                return false;
             }
 
-            const double clampedTime = std::max(0.0, maxTime);
-            thread_local std::vector<AxisInterval> intervals;
-            thread_local std::vector<std::size_t> active;
-            thread_local std::unordered_set<Pair, PairHash> seen;
-            intervals.clear();
-            active.clear();
-            seen.clear();
-            intervals.reserve(bodies.size());
-            active.reserve(bodies.size());
-            seen.reserve(bodies.size() * 4);
+            out.idx = index;
+            out.minX = b.position.x - b.radius;
+            out.maxX = b.position.x + b.radius;
+            out.minY = b.position.y - b.radius;
+            out.maxY = b.position.y + b.radius;
+            out.minZ = b.position.z - b.radius;
+            out.maxZ = b.position.z + b.radius;
+            return std::isfinite(out.minX) && std::isfinite(out.maxX) &&
+                   std::isfinite(out.minY) && std::isfinite(out.maxY) &&
+                   std::isfinite(out.minZ) && std::isfinite(out.maxZ);
+        }
 
-            for (std::size_t i = 0; i < bodies.size(); ++i) {
-                const Body& b = bodies[i];
-                if (!std::isfinite(b.position.x) || !std::isfinite(b.position.y) || !std::isfinite(b.position.z) ||
-                    !std::isfinite(b.velocity.x) || !std::isfinite(b.velocity.y) || !std::isfinite(b.velocity.z) ||
-                    !std::isfinite(b.radius) || b.radius < 0.0) {
-                    continue;
-                }
-                const Vec3 endPos = b.position + b.velocity * clampedTime;
-                if (!std::isfinite(endPos.x) || !std::isfinite(endPos.y) || !std::isfinite(endPos.z)) {
-                    continue;
-                }
-
-                AxisInterval in;
-                in.idx = i;
-                in.minX = std::min(b.position.x, endPos.x) - b.radius;
-                in.maxX = std::max(b.position.x, endPos.x) + b.radius;
-                in.minY = std::min(b.position.y, endPos.y) - b.radius;
-                in.maxY = std::max(b.position.y, endPos.y) + b.radius;
-                in.minZ = std::min(b.position.z, endPos.z) - b.radius;
-                in.maxZ = std::max(b.position.z, endPos.z) + b.radius;
-                if (!std::isfinite(in.minX) || !std::isfinite(in.maxX) ||
-                    !std::isfinite(in.minY) || !std::isfinite(in.maxY) ||
-                    !std::isfinite(in.minZ) || !std::isfinite(in.maxZ)) {
-                    continue;
-                }
-                intervals.push_back(in);
+        [[nodiscard]] bool buildSweptInterval(
+            const Body& b,
+            const std::size_t index,
+            const double maxTime,
+            AxisInterval& out)
+        {
+            if (!std::isfinite(b.position.x) || !std::isfinite(b.position.y) || !std::isfinite(b.position.z) ||
+                !std::isfinite(b.velocity.x) || !std::isfinite(b.velocity.y) || !std::isfinite(b.velocity.z) ||
+                !std::isfinite(b.radius) || b.radius < 0.0) {
+                return false;
             }
 
-            std::ranges::sort(intervals, [](const AxisInterval& a, const AxisInterval& b) {
-                return a.minX < b.minX;
-            });
-
-            for (std::size_t cur = 0; cur < intervals.size(); ++cur) {
-                const AxisInterval& c = intervals[cur];
-                active.erase(std::ranges::remove_if(active, [&](const std::size_t idx) {
-                    return intervals[idx].maxX < c.minX;
-                }).begin(), active.end());
-
-                for (const std::size_t idx : active) {
-                    if (overlapsYZ(c, intervals[idx])) {
-                        const Pair key{std::min(c.idx, intervals[idx].idx), std::max(c.idx, intervals[idx].idx)};
-                        if (seen.insert(key).second) {
-                            pairs.push_back(key);
-                        }
-                    }
-                }
-                active.push_back(cur);
+            const Vec3 endPos = b.position + b.velocity * std::max(0.0, maxTime);
+            if (!std::isfinite(endPos.x) || !std::isfinite(endPos.y) || !std::isfinite(endPos.z)) {
+                return false;
             }
 
-            return pairs;
+            out.idx = index;
+            out.minX = std::min(b.position.x, endPos.x) - b.radius;
+            out.maxX = std::max(b.position.x, endPos.x) + b.radius;
+            out.minY = std::min(b.position.y, endPos.y) - b.radius;
+            out.maxY = std::max(b.position.y, endPos.y) + b.radius;
+            out.minZ = std::min(b.position.z, endPos.z) - b.radius;
+            out.maxZ = std::max(b.position.z, endPos.z) + b.radius;
+            return std::isfinite(out.minX) && std::isfinite(out.maxX) &&
+                   std::isfinite(out.minY) && std::isfinite(out.maxY) &&
+                   std::isfinite(out.minZ) && std::isfinite(out.maxZ);
         }
     } // namespace
 
     std::vector<Pair> discretePairs(const std::vector<Body>& bodies)
     {
-        return discreteSapPairs(bodies);
+        return sapPairs(bodies, buildDiscreteInterval);
     }
 
     std::vector<Pair> sweptPairs(const std::vector<Body>& bodies, const double maxTime)
     {
-        return sweptSapPairs(bodies, maxTime);
+        return sapPairs(bodies, [maxTime](const Body& b, const std::size_t index, AxisInterval& out) {
+            return buildSweptInterval(b, index, maxTime, out);
+        });
     }
 } // namespace sim::broadphase

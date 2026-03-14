@@ -37,22 +37,41 @@ public:
         std::vector<std::string> lines;
     };
 
+    struct ScreenLine {
+        float x0 = 0.0f;
+        float y0 = 0.0f;
+        float x1 = 0.0f;
+        float y1 = 0.0f;
+    };
+
     struct PauseMenuHud {
         bool visible = false;
         bool awaitingBind = false;
         bool selectedRowIsControl = false;
-        bool showDisplayApplyAction = false;
-        bool hoverDisplayApplyAction = false;
+        bool showApplyAction = false;
+        bool hoverApplyAction = false;
+        bool selectedApplyAction = false;
+        bool showResetWorldAction = false;
+        bool hoverResetWorldAction = false;
+        bool selectedResetWorldAction = false;
         bool showResetControlsAction = false;
         bool hoverResetControlsAction = false;
+        bool selectedResetControlsAction = false;
         bool showResetIcon = false;
         bool hoverResetIcon = false;
+        bool selectedResetIcon = false;
+        bool selectedCloseAction = false;
+        bool selectedExitAction = false;
         bool showResetConfirm = false;
         bool hoverResetConfirmYes = false;
         bool hoverResetConfirmNo = false;
+        bool selectedResetConfirmYes = false;
+        bool selectedResetConfirmNo = false;
+        std::string resetConfirmBodyText;
         std::string pendingAction;
         std::string statusLine;
         int activePageIndex = 0;
+        int firstVisibleLineIndex = 0;
         int selectedSettingLineIndex = -1;
         int hoveredSettingLineIndex = -1;
         int appliedSettingLineIndex = -1;
@@ -72,6 +91,7 @@ public:
         double fps,
         const PauseMenuHud& pauseMenu,
         const TargetHud& targetHud,
+        const std::vector<ScreenLine>& pathLines,
         float uiScale,
         bool showHud,
         bool showCrosshair,

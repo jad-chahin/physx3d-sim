@@ -49,6 +49,7 @@ add_executable(physics3d
         src/app/AppLoop.cpp
         src/app/AppLoopSupport.cpp
         src/sim/DefaultWorld.cpp
+        src/sim/Material.cpp
         src/sim/World.cpp
         src/sim/Broadphase.cpp
         src/sim/Collision.cpp
@@ -58,6 +59,7 @@ add_executable(physics3d
         src/ui/PauseMenuDisplay.cpp
         src/ui/PauseMenuHud.cpp
         src/ui/PauseMenuInput.cpp
+        src/ui/PauseMenuShared.cpp
         src/ui/PauseMenuSettingsIO.cpp
         src/ui/PauseMenuState.cpp
         src/render/ShaderUtil.cpp

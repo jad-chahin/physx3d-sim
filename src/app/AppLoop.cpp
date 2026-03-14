@@ -12,6 +12,7 @@
 #include "input/Camera.h"
 #include "render/ShaderUtil.h"
 #include "render/SphereMesh.h"
+#include "sim/DefaultWorld.h"
 #include "ui/OverlayRenderer.h"
 #include "ui/PauseMenuController.h"
 
@@ -299,6 +300,8 @@ int runApp(sim::World world) {
 
     std::vector<glm::mat4> models;
     std::vector<glm::vec3> renderPositions;
+    std::vector<OverlayRenderer::ScreenLine> pathLines;
+    std::vector<std::string> hudDebugLines;
     app_loop::InstanceBufferState instanceBufferState{};
 
     while (!glfwWindowShouldClose(window)) {
@@ -306,11 +309,17 @@ int runApp(sim::World world) {
         glViewport(0, 0, appState.framebufferSize.w, appState.framebufferSize.h);
 
         updatePauseMenu(window, appState, runtime, controls, pauseMenu, world, controlsConfigPath);
+        if (pauseMenu.consumeResetWorldRequest()) {
+            app_loop::reloadDefaultWorld(world, runtime, pauseMenu.simulationSettings());
+        }
         updateFrameState(window, world, controls, pauseMenu, runtime, cam);
         clearFrame(runtime, pauseMenu);
 
         const OverlayRenderer::PauseMenuHud pauseMenuHud = pauseMenu.buildHud(controls);
         OverlayRenderer::TargetHud targetHud{};
+        pathLines.clear();
+        hudDebugLines = app_loop::buildHudDebugLines(runtime, pauseMenu.interfaceSettings());
+        app_loop::updatePathHistory(world, runtime, pauseMenu.interfaceSettings());
         if (!world.bodies().empty()) {
             const app_loop::SceneView sceneView =
                 app_loop::buildSceneView(cam, pauseMenu.cameraSettings(), appState.framebufferSize);
@@ -336,6 +345,11 @@ int runApp(sim::World world) {
                 sceneView,
                 appState.framebufferSize,
                 renderPositions);
+            pathLines = app_loop::buildPathLines(
+                runtime,
+                sceneView,
+                appState.framebufferSize,
+                pauseMenu.interfaceSettings());
         }
 
         app_loop::drawOverlay(
@@ -344,8 +358,10 @@ int runApp(sim::World world) {
             runtime,
             pauseMenuHud,
             targetHud,
+            pathLines,
             pauseMenu.uiScale(),
-            pauseMenu.interfaceSettings());
+            pauseMenu.interfaceSettings(),
+            hudDebugLines);
 
         glfwSwapBuffers(window);
     }

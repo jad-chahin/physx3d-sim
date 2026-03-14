@@ -1,84 +1,12 @@
 #include "ui/PauseMenuController.h"
+#include "ui/PauseMenuShared.h"
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <cstdio>
 
 namespace ui {
-    namespace {
-        constexpr std::array<float, 7> kUiScaleChoices{{
-            0.80f, 0.90f, 1.00f, 1.10f, 1.20f, 1.30f, 1.40f,
-        }};
-
-        constexpr std::array<double, 9> kMinSpeedChoices{{
-            1.0 / 256.0, 1.0 / 128.0, 1.0 / 64.0, 1.0 / 32.0, 1.0 / 16.0, 1.0 / 8.0, 1.0 / 4.0, 1.0 / 2.0, 1.0,
-        }};
-
-        constexpr std::array<double, 9> kMaxSpeedChoices{{
-            1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0, 256.0,
-        }};
-
-        constexpr double kDefaultGravityStrength = 6.6743e-11;
-        constexpr std::array<double, 12> kGravityStrengthChoices{{
-            kDefaultGravityStrength * 0.25, kDefaultGravityStrength * 0.50, kDefaultGravityStrength * 0.75,
-            kDefaultGravityStrength * 1.00, kDefaultGravityStrength * 1.25, kDefaultGravityStrength * 1.50,
-            kDefaultGravityStrength * 1.75, kDefaultGravityStrength * 2.00, kDefaultGravityStrength * 2.25,
-            kDefaultGravityStrength * 2.50, kDefaultGravityStrength * 2.75, kDefaultGravityStrength * 3.00,
-        }};
-
-        constexpr std::array<int, 8> kCollisionIterationChoices{{1, 2, 3, 4, 5, 6, 8, 10}};
-
-        constexpr std::array<float, 9> kLookSensitivityChoices{{
-            0.0008f, 0.0012f, 0.0016f, 0.0020f, 0.0025f, 0.0030f, 0.0038f, 0.0048f, 0.0060f,
-        }};
-
-        constexpr std::array<float, 8> kBaseMoveSpeedChoices{{
-            10.0f, 20.0f, 30.0f, 40.0f, 60.0f, 80.0f, 100.0f, 140.0f,
-        }};
-
-        constexpr std::array<float, 8> kFovChoices{{
-            50.0f, 60.0f, 70.0f, 80.0f, 90.0f, 100.0f, 110.0f, 120.0f,
-        }};
-
-        template <typename T, std::size_t N>
-        int closestChoiceIndex(const std::array<T, N>& choices, const T value) {
-            int bestIdx = 0;
-            double bestDiff = std::fabs(static_cast<double>(choices[0] - value));
-            for (std::size_t i = 1; i < N; ++i) {
-                const double diff = std::fabs(static_cast<double>(choices[i] - value));
-                if (diff < bestDiff) {
-                    bestDiff = diff;
-                    bestIdx = static_cast<int>(i);
-                }
-            }
-            return bestIdx;
-        }
-
-        std::string formatSpeedMultiplier(const double value) {
-            char buffer[32];
-            if (value >= 100.0) {
-                std::snprintf(buffer, sizeof(buffer), "%.0fX", value);
-            } else if (value >= 10.0) {
-                std::snprintf(buffer, sizeof(buffer), "%.1fX", value);
-            } else if (value >= 1.0) {
-                std::snprintf(buffer, sizeof(buffer), "%.2fX", value);
-            } else {
-                std::snprintf(buffer, sizeof(buffer), "%.4fX", value);
-            }
-            return buffer;
-        }
-
-        std::string formatGravityMultiplier(const double value) {
-            char buffer[32];
-            if (const double multiplier = value / kDefaultGravityStrength; multiplier >= 10.0) {
-                std::snprintf(buffer, sizeof(buffer), "%.0fX", multiplier);
-            } else {
-                std::snprintf(buffer, sizeof(buffer), "%.2fX", multiplier);
-            }
-            return buffer;
-        }
-    } // namespace
+    using namespace pause_menu_shared;
 
     OverlayRenderer::PauseMenuHud PauseMenuController::buildHud(
         const input::ControlBindings& controls,
@@ -92,17 +20,45 @@ namespace ui {
 
         hud.awaitingBind = awaitingRebind_;
         hud.selectedRowIsControl = isControlPage();
-        hud.showDisplayApplyAction = settingsPage_ == SettingsPage::Display && pendingDisplayChanges_;
-        hud.hoverDisplayApplyAction = hoveredDisplayApplyAction_;
+        hud.firstVisibleLineIndex = std::max(0, scrollLineOffset_);
+        hud.showApplyAction = hasPendingSettingsChanges();
+        hud.hoverApplyAction = hoveredDisplayApplyAction_;
+        hud.selectedApplyAction = focusTarget_ == FocusTarget::ApplyAction;
+        hud.showResetWorldAction = settingsPage_ == SettingsPage::Simulation;
+        hud.hoverResetWorldAction = hoveredResetWorldAction_;
+        hud.selectedResetWorldAction = focusTarget_ == FocusTarget::ResetWorldAction;
         hud.showResetControlsAction = settingsPage_ == SettingsPage::Controls && hasControlChanges(controls);
         hud.hoverResetControlsAction = hoveredResetControlsAction_;
+        hud.selectedResetControlsAction = focusTarget_ == FocusTarget::ResetControlsAction;
         hud.showResetIcon = true;
         hud.hoverResetIcon = hoveredResetIcon_;
-        hud.showResetConfirm = confirmingResetSettings_;
+        hud.selectedResetIcon = focusTarget_ == FocusTarget::ResetIcon;
+        hud.selectedCloseAction = focusTarget_ == FocusTarget::CloseButton;
+        hud.selectedExitAction = focusTarget_ == FocusTarget::ExitButton;
+        hud.showResetConfirm = hasOpenPopup();
         hud.hoverResetConfirmYes = hoveredResetConfirmYes_;
         hud.hoverResetConfirmNo = hoveredResetConfirmNo_;
+        hud.selectedResetConfirmYes = focusTarget_ == FocusTarget::PopupYes;
+        hud.selectedResetConfirmNo = focusTarget_ == FocusTarget::PopupNo;
+        switch (popupType_) {
+            case PopupType::EnableDrawPath:
+                hud.resetConfirmBodyText = "MAY IMPACT PERFORMANCE";
+                break;
+            case PopupType::ResetWorld:
+                hud.resetConfirmBodyText = "RESET WORLD";
+                break;
+            case PopupType::ExitToHome:
+                hud.resetConfirmBodyText = "EXIT TO HOME";
+                break;
+            case PopupType::ResetSettings:
+                hud.resetConfirmBodyText = "RESET ALL SETTINGS";
+                break;
+            case PopupType::None:
+                hud.resetConfirmBodyText.clear();
+                break;
+        }
         hud.footerHint =
-            "UP/DOWN: SELECT   LEFT/RIGHT: CHANGE   ENTER: APPLY OR REBIND   TAB: CHANGE PAGE   ESC: CLOSE";
+            "UP/DOWN: SELECT   LEFT/RIGHT: CHANGE VALUE   ENTER: APPLY OR REBIND   TAB: CHANGE PAGE   ESC: CLOSE";
 
         if (awaitingRebind_ && awaitingRebindAction_ >= 0 && awaitingRebindAction_ < controlCount()) {
             hud.pendingAction = input::rebindActions()[awaitingRebindAction_].label;
@@ -185,7 +141,7 @@ namespace ui {
                    true,
                    false,
                    displayRef.windowMode == WindowMode::Windowed ? 1.0f : 0.0f,
-                   "CYCLE WITH LEFT/RIGHT");
+                   "LEFT/RIGHT TO CYCLE");
             addRow("VSYNC",
                    displayRef.vsync ? "ON" : "OFF",
                    false,
@@ -196,7 +152,9 @@ namespace ui {
                    displayRef.vsync ? 1.0f : 0.0f,
                    "TOGGLE");
 
-            if (selectedSettingRow_ >= 0) {
+            if ((focusTarget_ == FocusTarget::SettingsRow ||
+                 popupType_ == PopupType::ResetWorld ||
+                 popupType_ == PopupType::EnableDrawPath) && selectedSettingRow_ >= 0) {
                 hud.selectedSettingLineIndex = 1 + std::clamp(selectedSettingRow_, 0, displaySettingRowCount() - 1);
             }
             if (appliedRowOnCurrentPage >= 0) {
@@ -206,15 +164,22 @@ namespace ui {
             addHeader("SIMULATION SETTINGS");
             const int minSpeedIdx = closestChoiceIndex(kMinSpeedChoices, simRef.minSimSpeed);
             const int maxSpeedIdx = closestChoiceIndex(kMaxSpeedChoices, simRef.maxSimSpeed);
-            addRow("MIN SPEED", formatSpeedMultiplier(simRef.minSimSpeed), false, OverlayRenderer::PauseMenuControlType::Numeric, false, true, true, normalized(minSpeedIdx, static_cast<int>(kMinSpeedChoices.size())), "ARROWS / WHEEL / SLIDER");
-            addRow("MAX SPEED", formatSpeedMultiplier(simRef.maxSimSpeed), false, OverlayRenderer::PauseMenuControlType::Numeric, false, true, true, normalized(maxSpeedIdx, static_cast<int>(kMaxSpeedChoices.size())), "ARROWS / WHEEL / SLIDER");
+            addRow("MIN SPEED", formatSpeedMultiplier(simRef.minSimSpeed), false, OverlayRenderer::PauseMenuControlType::Numeric, false, true, true, normalized(minSpeedIdx, static_cast<int>(kMinSpeedChoices.size())), "LEFT/RIGHT OR SLIDER");
+            addRow("MAX SPEED", formatSpeedMultiplier(simRef.maxSimSpeed), false, OverlayRenderer::PauseMenuControlType::Numeric, false, true, true, normalized(maxSpeedIdx, static_cast<int>(kMaxSpeedChoices.size())), "LEFT/RIGHT OR SLIDER");
             const int gravityStrengthIdx = closestChoiceIndex(kGravityStrengthChoices, simRef.gravityStrength);
             addRow("GRAVITY", simRef.gravityEnabled ? "ON" : "OFF", false, OverlayRenderer::PauseMenuControlType::Toggle, simRef.gravityEnabled, false, false, simRef.gravityEnabled ? 1.0f : 0.0f, "TOGGLE");
-            addRow("GRAVITY STRENGTH", formatGravityMultiplier(simRef.gravityStrength), false, OverlayRenderer::PauseMenuControlType::Numeric, false, true, true, normalized(gravityStrengthIdx, static_cast<int>(kGravityStrengthChoices.size())), "ARROWS / WHEEL / SLIDER");
+            addRow("GRAVITY STRENGTH", formatGravityMultiplier(simRef.gravityStrength), false, OverlayRenderer::PauseMenuControlType::Numeric, false, true, true, normalized(gravityStrengthIdx, static_cast<int>(kGravityStrengthChoices.size())), "LEFT/RIGHT OR SLIDER");
+            addRow("COLLISIONS", simRef.collisionsEnabled ? "ON" : "OFF", false, OverlayRenderer::PauseMenuControlType::Toggle, simRef.collisionsEnabled, false, false, simRef.collisionsEnabled ? 1.0f : 0.0f, "TOGGLE");
             const int collisionIterationsIdx = closestChoiceIndex(kCollisionIterationChoices, simRef.collisionIterations);
-            addRow("COLLISION ITERATIONS", std::to_string(simRef.collisionIterations), false, OverlayRenderer::PauseMenuControlType::Numeric, false, true, true, normalized(collisionIterationsIdx, static_cast<int>(kCollisionIterationChoices.size())), "ARROWS / WHEEL / SLIDER");
+            addRow("COLLISION ITERATIONS", std::to_string(simRef.collisionIterations), false, OverlayRenderer::PauseMenuControlType::Numeric, false, true, true, normalized(collisionIterationsIdx, static_cast<int>(kCollisionIterationChoices.size())), "LEFT/RIGHT OR SLIDER");
+            const int jointIterationsIdx = closestChoiceIndex(kJointIterationChoices, simRef.jointIterations);
+            addRow("JOINT ITERATIONS", std::to_string(simRef.jointIterations), false, OverlayRenderer::PauseMenuControlType::Numeric, false, true, true, normalized(jointIterationsIdx, static_cast<int>(kJointIterationChoices.size())), "LEFT/RIGHT OR SLIDER");
+            const int restitutionIdx = closestChoiceIndex(kGlobalRestitutionChoices, simRef.globalRestitution);
+            addRow("GLOBAL BOUNCE", formatRestitutionPercent(simRef.globalRestitution), false, OverlayRenderer::PauseMenuControlType::Numeric, false, true, true, normalized(restitutionIdx, static_cast<int>(kGlobalRestitutionChoices.size())), "LEFT/RIGHT OR SLIDER");
 
-            if (selectedSettingRow_ >= 0) {
+            if ((focusTarget_ == FocusTarget::SettingsRow ||
+                 popupType_ == PopupType::ResetWorld ||
+                 popupType_ == PopupType::EnableDrawPath) && selectedSettingRow_ >= 0) {
                 hud.selectedSettingLineIndex = 1 + std::clamp(selectedSettingRow_, 0, simulationSettingRowCount() - 1);
             }
             if (appliedRowOnCurrentPage >= 0) {
@@ -225,21 +190,23 @@ namespace ui {
             char sensitivityBuffer[32];
             std::snprintf(sensitivityBuffer, sizeof(sensitivityBuffer), "%.4f", cameraRef.lookSensitivity);
             const int sensitivityIdx = closestChoiceIndex(kLookSensitivityChoices, cameraRef.lookSensitivity);
-            addRow("LOOK SENSITIVITY", sensitivityBuffer, false, OverlayRenderer::PauseMenuControlType::Numeric, false, true, true, normalized(sensitivityIdx, static_cast<int>(kLookSensitivityChoices.size())), "ARROWS / WHEEL / SLIDER");
+            addRow("LOOK SENSITIVITY", sensitivityBuffer, false, OverlayRenderer::PauseMenuControlType::Numeric, false, true, true, normalized(sensitivityIdx, static_cast<int>(kLookSensitivityChoices.size())), "LEFT/RIGHT OR SLIDER");
 
             char moveSpeedBuffer[32];
             std::snprintf(moveSpeedBuffer, sizeof(moveSpeedBuffer), "%.0f", cameraRef.baseMoveSpeed);
             const int moveSpeedIdx = closestChoiceIndex(kBaseMoveSpeedChoices, cameraRef.baseMoveSpeed);
-            addRow("BASE MOVE SPEED", moveSpeedBuffer, false, OverlayRenderer::PauseMenuControlType::Numeric, false, true, true, normalized(moveSpeedIdx, static_cast<int>(kBaseMoveSpeedChoices.size())), "ARROWS / WHEEL / SLIDER");
+            addRow("BASE MOVE SPEED", moveSpeedBuffer, false, OverlayRenderer::PauseMenuControlType::Numeric, false, true, true, normalized(moveSpeedIdx, static_cast<int>(kBaseMoveSpeedChoices.size())), "LEFT/RIGHT OR SLIDER");
 
             addRow("INVERT Y", cameraRef.invertY ? "ON" : "OFF", false, OverlayRenderer::PauseMenuControlType::Toggle, cameraRef.invertY, false, false, cameraRef.invertY ? 1.0f : 0.0f, "TOGGLE");
 
             char fovBuffer[32];
             std::snprintf(fovBuffer, sizeof(fovBuffer), "%.0f DEG", cameraRef.fovDegrees);
             const int fovIdx = closestChoiceIndex(kFovChoices, cameraRef.fovDegrees);
-            addRow("FOV", fovBuffer, false, OverlayRenderer::PauseMenuControlType::Numeric, false, true, true, normalized(fovIdx, static_cast<int>(kFovChoices.size())), "ARROWS / WHEEL / SLIDER");
+            addRow("FOV", fovBuffer, false, OverlayRenderer::PauseMenuControlType::Numeric, false, true, true, normalized(fovIdx, static_cast<int>(kFovChoices.size())), "LEFT/RIGHT OR SLIDER");
 
-            if (selectedSettingRow_ >= 0) {
+            if ((focusTarget_ == FocusTarget::SettingsRow ||
+                 popupType_ == PopupType::ResetWorld ||
+                 popupType_ == PopupType::EnableDrawPath) && selectedSettingRow_ >= 0) {
                 hud.selectedSettingLineIndex = 1 + std::clamp(selectedSettingRow_, 0, cameraSettingRowCount() - 1);
             }
             if (appliedRowOnCurrentPage >= 0) {
@@ -250,15 +217,22 @@ namespace ui {
 
             char scaleBuffer[32];
             std::snprintf(scaleBuffer, sizeof(scaleBuffer), "%.2fX", uiScaleValue(interfaceRef.uiScaleIndex));
-            addRow("UI SCALE", scaleBuffer, false, OverlayRenderer::PauseMenuControlType::Numeric, false, true, true, normalized(interfaceRef.uiScaleIndex, static_cast<int>(kUiScaleChoices.size())), "ARROWS / WHEEL / SLIDER");
+            addRow("UI SCALE", scaleBuffer, false, OverlayRenderer::PauseMenuControlType::Numeric, false, true, true, normalized(interfaceRef.uiScaleIndex, static_cast<int>(kUiScaleChoices.size())), "LEFT/RIGHT OR SLIDER");
             addRow("SHOW HUD", interfaceRef.showHud ? "ON" : "OFF", false, OverlayRenderer::PauseMenuControlType::Toggle, interfaceRef.showHud, false, false, interfaceRef.showHud ? 1.0f : 0.0f, "TOGGLE");
             addRow("CROSSHAIR", interfaceRef.showCrosshair ? "ON" : "OFF", false, OverlayRenderer::PauseMenuControlType::Toggle, interfaceRef.showCrosshair, false, false, interfaceRef.showCrosshair ? 1.0f : 0.0f, "TOGGLE");
+            addRow("DEBUG STATS", interfaceRef.showPhysicsStats ? "ON" : "OFF", !interfaceRef.showHud, OverlayRenderer::PauseMenuControlType::Toggle, interfaceRef.showPhysicsStats, false, false, interfaceRef.showPhysicsStats ? 1.0f : 0.0f, !interfaceRef.showHud ? "ENABLE SHOW HUD FIRST" : "TOGGLE");
+            addRow("DRAW PATH", interfaceRef.drawPath ? "ON" : "OFF", false, OverlayRenderer::PauseMenuControlType::Toggle, interfaceRef.drawPath, false, false, interfaceRef.drawPath ? 1.0f : 0.0f, "TOGGLE - MAY IMPACT PERFORMANCE");
             addRow("OBJECT INFO", interfaceRef.objectInfo ? "ON" : "OFF", false, OverlayRenderer::PauseMenuControlType::Toggle, interfaceRef.objectInfo, false, false, interfaceRef.objectInfo ? 1.0f : 0.0f, "TOGGLE");
             addRow("OBJECT INFO MATERIAL", interfaceRef.objectInfoMaterial ? "ON" : "OFF", !interfaceRef.objectInfo, OverlayRenderer::PauseMenuControlType::Toggle, interfaceRef.objectInfoMaterial, false, false, interfaceRef.objectInfoMaterial ? 1.0f : 0.0f, !interfaceRef.objectInfo ? "ENABLE OBJECT INFO FIRST" : "TOGGLE");
             addRow("OBJECT INFO VELOCITY", interfaceRef.objectInfoVelocity ? "ON" : "OFF", !interfaceRef.objectInfo, OverlayRenderer::PauseMenuControlType::Toggle, interfaceRef.objectInfoVelocity, false, false, interfaceRef.objectInfoVelocity ? 1.0f : 0.0f, !interfaceRef.objectInfo ? "ENABLE OBJECT INFO FIRST" : "TOGGLE");
             addRow("OBJECT INFO MASS", interfaceRef.objectInfoMass ? "ON" : "OFF", !interfaceRef.objectInfo, OverlayRenderer::PauseMenuControlType::Toggle, interfaceRef.objectInfoMass, false, false, interfaceRef.objectInfoMass ? 1.0f : 0.0f, !interfaceRef.objectInfo ? "ENABLE OBJECT INFO FIRST" : "TOGGLE");
             addRow("OBJECT INFO RADIUS", interfaceRef.objectInfoRadius ? "ON" : "OFF", !interfaceRef.objectInfo, OverlayRenderer::PauseMenuControlType::Toggle, interfaceRef.objectInfoRadius, false, false, interfaceRef.objectInfoRadius ? 1.0f : 0.0f, !interfaceRef.objectInfo ? "ENABLE OBJECT INFO FIRST" : "TOGGLE");
-            if (selectedSettingRow_ >= 0) {
+            addRow("OBJECT INFO ANGULAR SPEED", interfaceRef.objectInfoAngularSpeed ? "ON" : "OFF", !interfaceRef.objectInfo, OverlayRenderer::PauseMenuControlType::Toggle, interfaceRef.objectInfoAngularSpeed, false, false, interfaceRef.objectInfoAngularSpeed ? 1.0f : 0.0f, !interfaceRef.objectInfo ? "ENABLE OBJECT INFO FIRST" : "TOGGLE");
+            addRow("OBJECT INFO BODY TYPE", interfaceRef.objectInfoBodyType ? "ON" : "OFF", !interfaceRef.objectInfo, OverlayRenderer::PauseMenuControlType::Toggle, interfaceRef.objectInfoBodyType, false, false, interfaceRef.objectInfoBodyType ? 1.0f : 0.0f, !interfaceRef.objectInfo ? "ENABLE OBJECT INFO FIRST" : "TOGGLE");
+            addRow("OBJECT INFO JOINTS", interfaceRef.objectInfoJointCount ? "ON" : "OFF", !interfaceRef.objectInfo, OverlayRenderer::PauseMenuControlType::Toggle, interfaceRef.objectInfoJointCount, false, false, interfaceRef.objectInfoJointCount ? 1.0f : 0.0f, !interfaceRef.objectInfo ? "ENABLE OBJECT INFO FIRST" : "TOGGLE");
+            if ((focusTarget_ == FocusTarget::SettingsRow ||
+                 popupType_ == PopupType::ResetWorld ||
+                 popupType_ == PopupType::EnableDrawPath) && selectedSettingRow_ >= 0) {
                 hud.selectedSettingLineIndex = 1 + std::clamp(selectedSettingRow_, 0, interfaceSettingRowCount() - 1);
             }
             if (appliedRowOnCurrentPage >= 0) {
@@ -275,7 +249,9 @@ namespace ui {
                 addRow(action.label, input::keyNameForCode(keyCode), false, OverlayRenderer::PauseMenuControlType::Rebind, false, false, false, 0.0f, "ENTER/SPACE OR CLICK TO REBIND");
             }
 
-            if (selectedSettingRow_ >= 0) {
+            if ((focusTarget_ == FocusTarget::SettingsRow ||
+                 popupType_ == PopupType::ResetWorld ||
+                 popupType_ == PopupType::EnableDrawPath) && selectedSettingRow_ >= 0) {
                 hud.selectedSettingLineIndex = firstSelectableLine + std::clamp(selectedSettingRow_, 0, actionCount - 1);
             }
             if (appliedRowOnCurrentPage >= 0) {
