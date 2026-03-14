@@ -68,6 +68,8 @@ namespace sim {
     {
         bodies_.push_back(b);
         assignMaterial(bodies_.back(), bodies_.back().materialName);
+        bodies_.back().prevPosition = bodies_.back().position;
+        bodies_.back().prevOrientation = bodies_.back().orientation;
         assignBodyId_(bodies_.back());
         rebuildJointCollisionFilter_();
     }
@@ -302,6 +304,13 @@ namespace sim {
             } else {
                 normalizeQuat(b.orientation);
             }
+            if (!std::isfinite(b.prevOrientation.w) || !std::isfinite(b.prevOrientation.x) ||
+                !std::isfinite(b.prevOrientation.y) || !std::isfinite(b.prevOrientation.z))
+            {
+                b.prevOrientation = b.orientation; mark();
+            } else {
+                normalizeQuat(b.prevOrientation);
+            }
 
             if (bodySanitized) {
                 ++metrics_.sanitizedBodies;
@@ -535,6 +544,8 @@ namespace sim {
     {
         for (auto& body : bodies_) {
             assignMaterial(body, body.materialName);
+            body.prevPosition = body.position;
+            body.prevOrientation = body.orientation;
             assignBodyId_(body);
         }
         rebuildJointCollisionFilter_();

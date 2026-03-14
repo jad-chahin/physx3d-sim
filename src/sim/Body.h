@@ -23,6 +23,7 @@ namespace sim {
         double dynamicFriction{0.4}; // cached from the assigned material
         std::string materialName{"DEFAULT"}; // Material id/name used at assignment/load time
         Quaternion orientation; // world orientation
+        Quaternion prevOrientation; // previous world orientation for render interpolation
         Vec3 prevPosition;
         std::uint64_t id = 0; // Stable identity assigned by World
     };

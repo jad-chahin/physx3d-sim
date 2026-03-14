@@ -63,7 +63,7 @@ namespace ui {
         saveSettings();
     }
 
-    void PauseMenuController::applyDisplaySettings(GLFWwindow* window, const DisplaySettings& settings) {
+    void PauseMenuController::applyDisplaySettings(GLFWwindow* window, DisplaySettings& settings) {
         if (window == nullptr) {
             return;
         }
@@ -71,8 +71,8 @@ namespace ui {
         if (glfwGetWindowMonitor(window) == nullptr &&
             glfwGetWindowAttrib(window, GLFW_DECORATED) == GLFW_TRUE)
         {
-            glfwGetWindowPos(window, &windowedX_, &windowedY_);
-            glfwGetWindowSize(window, &windowedWidth_, &windowedHeight_);
+            glfwGetWindowPos(window, &settings.windowedX, &settings.windowedY);
+            glfwGetWindowSize(window, &settings.windowedWidth, &settings.windowedHeight);
         }
 
         GLFWmonitor* monitor = monitorForWindow(window);
@@ -100,8 +100,8 @@ namespace ui {
 
             int workX = monitorX;
             int workY = monitorY;
-            int workW = monitorMode != nullptr ? monitorMode->width : windowedWidth_;
-            int workH = monitorMode != nullptr ? monitorMode->height : windowedHeight_;
+            int workW = monitorMode != nullptr ? monitorMode->width : settings.windowedWidth;
+            int workH = monitorMode != nullptr ? monitorMode->height : settings.windowedHeight;
             if (monitor != nullptr) {
                 glfwGetMonitorWorkarea(monitor, &workX, &workY, &workW, &workH);
             }
@@ -118,22 +118,22 @@ namespace ui {
 
             const int maxClientW = std::max(kMinWindowWidth, workW - frameL - frameR);
             const int maxClientH = std::max(kMinWindowHeight, workH - frameT - frameB);
-            const int useW = std::clamp(windowedWidth_, kMinWindowWidth, maxClientW);
-            const int useH = std::clamp(windowedHeight_, kMinWindowHeight, maxClientH);
+            const int useW = std::clamp(settings.windowedWidth, kMinWindowWidth, maxClientW);
+            const int useH = std::clamp(settings.windowedHeight, kMinWindowHeight, maxClientH);
             const int posX = std::clamp(
-                windowedX_,
+                settings.windowedX,
                 workX + frameL,
                 std::max(workX + frameL, workX + workW - frameR - useW));
             const int posY = std::clamp(
-                windowedY_,
+                settings.windowedY,
                 workY + frameT,
                 std::max(workY + frameT, workY + workH - frameB - useH));
 
             glfwSetWindowMonitor(window, nullptr, posX, posY, useW, useH, GLFW_DONT_CARE);
-            windowedX_ = posX;
-            windowedY_ = posY;
-            windowedWidth_ = useW;
-            windowedHeight_ = useH;
+            settings.windowedX = posX;
+            settings.windowedY = posY;
+            settings.windowedWidth = useW;
+            settings.windowedHeight = useH;
         }
 
         glfwSwapInterval(settings.vsync ? 1 : 0);

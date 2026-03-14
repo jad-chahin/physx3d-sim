@@ -126,7 +126,7 @@ int consumeLastPressedKey(AppLoopState& state);
 
 void applySimulationSettings(sim::World& world, const ui::SimulationSettings& simSettings);
 void updateFps(RuntimeState& runtime, double frameTime);
-void syncPreviousPositions(sim::World& world);
+void syncPreviousState(sim::World& world);
 
 void handleSimulationHotkeys(
     GLFWwindow* window,

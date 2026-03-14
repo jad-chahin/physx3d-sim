@@ -117,6 +117,26 @@ namespace ui {
                     if (tryParseWindowMode(value, parsed)) {
                         appliedDisplaySettings_.windowMode = parsed;
                     }
+                } else if (key == "WINDOWED_X") {
+                    int parsed = 0;
+                    if (tryParseInt(value, parsed)) {
+                        appliedDisplaySettings_.windowedX = parsed;
+                    }
+                } else if (key == "WINDOWED_Y") {
+                    int parsed = 0;
+                    if (tryParseInt(value, parsed)) {
+                        appliedDisplaySettings_.windowedY = parsed;
+                    }
+                } else if (key == "WINDOWED_WIDTH") {
+                    int parsed = 0;
+                    if (tryParseInt(value, parsed)) {
+                        appliedDisplaySettings_.windowedWidth = parsed;
+                    }
+                } else if (key == "WINDOWED_HEIGHT") {
+                    int parsed = 0;
+                    if (tryParseInt(value, parsed)) {
+                        appliedDisplaySettings_.windowedHeight = parsed;
+                    }
                 } else if (key == "VSYNC") {
                     bool parsed = false;
                     if (tryParseBool(value, parsed)) {
@@ -267,6 +287,10 @@ namespace ui {
         }
 
         out << "WINDOW_MODE=" << windowModeLabel(appliedDisplaySettings_.windowMode) << "\n";
+        out << "WINDOWED_X=" << appliedDisplaySettings_.windowedX << "\n";
+        out << "WINDOWED_Y=" << appliedDisplaySettings_.windowedY << "\n";
+        out << "WINDOWED_WIDTH=" << appliedDisplaySettings_.windowedWidth << "\n";
+        out << "WINDOWED_HEIGHT=" << appliedDisplaySettings_.windowedHeight << "\n";
         out << "VSYNC=" << (appliedDisplaySettings_.vsync ? "ON" : "OFF") << "\n";
         out << "MIN_SIM_SPEED=" << appliedSimulationSettings_.minSimSpeed << "\n";
         out << "MAX_SIM_SPEED=" << appliedSimulationSettings_.maxSimSpeed << "\n";

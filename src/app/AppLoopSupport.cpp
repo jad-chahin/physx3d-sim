@@ -221,9 +221,34 @@ void updateFps(RuntimeState& runtime, const double frameTime) {
     }
 }
 
-void syncPreviousPositions(sim::World& world) {
+namespace {
+    [[nodiscard]] glm::mat3 quatToMat3(const sim::Quaternion& q) {
+        const float w = static_cast<float>(q.w);
+        const float x = static_cast<float>(q.x);
+        const float y = static_cast<float>(q.y);
+        const float z = static_cast<float>(q.z);
+
+        const float xx = x * x;
+        const float yy = y * y;
+        const float zz = z * z;
+        const float xy = x * y;
+        const float xz = x * z;
+        const float yz = y * z;
+        const float wx = w * x;
+        const float wy = w * y;
+        const float wz = w * z;
+
+        return glm::mat3(
+            1.0f - 2.0f * (yy + zz), 2.0f * (xy + wz), 2.0f * (xz - wy),
+            2.0f * (xy - wz), 1.0f - 2.0f * (xx + zz), 2.0f * (yz + wx),
+            2.0f * (xz + wy), 2.0f * (yz - wx), 1.0f - 2.0f * (xx + yy));
+    }
+}
+
+void syncPreviousState(sim::World& world) {
     for (auto& body : world.bodies()) {
         body.prevPosition = body.position;
+        body.prevOrientation = body.orientation;
     }
 }
 
@@ -240,7 +265,7 @@ void handleSimulationHotkeys(
         runtime.simFrozen = !runtime.simFrozen;
         runtime.lastTime = glfwGetTime();
         runtime.accumulator = 0.0;
-        syncPreviousPositions(world);
+        syncPreviousState(world);
     }
     runtime.freezeWasDown = freezeDown;
 
@@ -318,7 +343,7 @@ void stepSimulation(sim::World& world, const double frameTime, RuntimeState& run
 
     int simStepsThisFrame = 0;
     while (runtime.accumulator >= kFixedDt && simStepsThisFrame < kInternalMaxPhysicsStepsPerFrame) {
-        syncPreviousPositions(world);
+        syncPreviousState(world);
         world.step(kFixedDt);
         accumulateHudMetrics(runtime, world.metrics());
         runtime.accumulator -= kFixedDt;
@@ -347,7 +372,7 @@ void reloadDefaultWorld(
     runtime.speedResetWasDown = false;
     runtime.hudMetrics = {};
     runtime.pathHistory.clear();
-    syncPreviousPositions(world);
+    syncPreviousState(world);
 }
 
 SceneView buildSceneView(
@@ -383,6 +408,8 @@ void buildRenderModels(
     for (std::size_t i = 0; i < bodies.size(); ++i) {
         const sim::Vec3 interpolatedPosition =
             bodies[i].prevPosition + (bodies[i].position - bodies[i].prevPosition) * alpha;
+        const sim::Quaternion interpolatedOrientation =
+            sim::nlerpQuat(bodies[i].prevOrientation, bodies[i].orientation, alpha);
         const glm::vec3 pos(
             static_cast<float>(interpolatedPosition.x),
             static_cast<float>(interpolatedPosition.y),
@@ -392,9 +419,10 @@ void buildRenderModels(
         renderPositions[i] = pos;
 
         glm::mat4 model(1.0f);
-        model[0][0] = radius;
-        model[1][1] = radius;
-        model[2][2] = radius;
+        const glm::mat3 rotation = quatToMat3(interpolatedOrientation);
+        model[0] = glm::vec4(rotation[0] * radius, 0.0f);
+        model[1] = glm::vec4(rotation[1] * radius, 0.0f);
+        model[2] = glm::vec4(rotation[2] * radius, 0.0f);
         model[3][0] = pos.x;
         model[3][1] = pos.y;
         model[3][2] = pos.z;

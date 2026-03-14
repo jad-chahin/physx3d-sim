@@ -74,14 +74,14 @@ layout (location = 5) in vec4 iM3;
 uniform mat4 uView;
 uniform mat4 uProj;
 
-out vec3 vWorldPos;
 out vec3 vWorldNormal;
+out vec3 vLocalNormal;
 
 void main() {
     mat4 model = mat4(iM0, iM1, iM2, iM3);
 
     vec4 worldPos4 = model * vec4(aPos, 1.0);
-    vWorldPos = worldPos4.xyz;
+    vLocalNormal = normalize(aNormal);
 
     mat3 normalMat = transpose(inverse(mat3(model)));
     vWorldNormal = normalize(normalMat * aNormal);
@@ -92,8 +92,8 @@ void main() {
 
 const char* kFragSrc = R"GLSL(#version 330 core
 
-in vec3 vWorldPos;
 in vec3 vWorldNormal;
+in vec3 vLocalNormal;
 
 uniform vec3 uLightDir;   // world space (direction *towards* the light)
 uniform vec3 uBaseColor;
@@ -103,10 +103,22 @@ out vec4 FragColor;
 
 void main() {
     vec3 n = normalize(vWorldNormal);
+    vec3 localN = normalize(vLocalNormal);
     vec3 l = normalize(uLightDir);
 
     float diff = max(0.0, dot(n, l));
-    vec3 col = uBaseColor * (uAmbient + (1.0 - uAmbient) * diff);
+    vec3 albedo = uBaseColor * vec3(0.96, 0.92, 0.74);
+
+    float hemisphere = 0.5 + 0.5 * dot(localN, normalize(vec3(0.22, 0.96, 0.18)));
+    albedo *= mix(0.78, 1.12, hemisphere);
+
+    float majorMarker = smoothstep(0.22, 0.92, dot(localN, normalize(vec3(0.84, 0.18, -0.50))));
+    albedo = mix(albedo, uBaseColor * vec3(1.18, 1.06, 0.72), majorMarker * 0.48);
+
+    float minorMarker = smoothstep(0.38, 0.96, dot(localN, normalize(vec3(-0.36, -0.14, 0.92))));
+    albedo = mix(albedo, albedo * vec3(0.78, 0.82, 0.92), minorMarker * 0.32);
+
+    vec3 col = albedo * (uAmbient + (1.0 - uAmbient) * diff);
 
     FragColor = vec4(col, 1.0);
 }

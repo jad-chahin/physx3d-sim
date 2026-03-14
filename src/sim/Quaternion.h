@@ -43,6 +43,28 @@ namespace sim {
         q.z += 0.5 * dt * dq.z;
         normalizeQuat(q);
     }
+
+    [[nodiscard]] inline double quatDot(const Quaternion& a, const Quaternion& b) {
+        return a.w * b.w + a.x * b.x + a.y * b.y + a.z * b.z;
+    }
+
+    [[nodiscard]] inline Quaternion nlerpQuat(Quaternion a, Quaternion b, const double t) {
+        if (quatDot(a, b) < 0.0) {
+            b.w = -b.w;
+            b.x = -b.x;
+            b.y = -b.y;
+            b.z = -b.z;
+        }
+
+        Quaternion result{
+            a.w + (b.w - a.w) * t,
+            a.x + (b.x - a.x) * t,
+            a.y + (b.y - a.y) * t,
+            a.z + (b.z - a.z) * t,
+        };
+        normalizeQuat(result);
+        return result;
+    }
 } // namespace sim
 
 #endif // PHYSICS3D_QUATERNION_H

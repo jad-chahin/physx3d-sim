@@ -21,6 +21,10 @@ namespace ui {
     struct DisplaySettings {
         WindowMode windowMode = WindowMode::Borderless;
         bool vsync = true;
+        int windowedX = 120;
+        int windowedY = 120;
+        int windowedWidth = 1920;
+        int windowedHeight = 1080;
     };
 
     struct SimulationSettings {
@@ -169,10 +173,6 @@ namespace ui {
         double leftNextRepeatAt_ = 0.0;
         double rightNextRepeatAt_ = 0.0;
         int scrollLineOffset_ = 0;
-        int windowedX_ = 120;
-        int windowedY_ = 120;
-        int windowedWidth_ = 1920;
-        int windowedHeight_ = 1080;
         DisplaySettings appliedDisplaySettings_{};
         DisplaySettings draftDisplaySettings_{};
         SimulationSettings appliedSimulationSettings_{};
@@ -219,7 +219,7 @@ namespace ui {
         int optionIndexForRow(int row) const;
         bool setOptionIndexForRow(int row, int targetIndex);
         void adjustSelectedSetting(int delta);
-        void applyDisplaySettings(GLFWwindow* window, const DisplaySettings& settings);
+        void applyDisplaySettings(GLFWwindow* window, DisplaySettings& settings);
         void resetAllSettings(GLFWwindow* window);
         bool hasOpenPopup() const;
         bool popupUsesSingleAcknowledge() const;
