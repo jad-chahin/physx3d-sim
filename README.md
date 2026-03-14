@@ -50,7 +50,7 @@ If you get a DLL error on Windows when launching from terminal, make sure runtim
 
 ## Project Layout
 
-- `src/sim` physics simulation core (world stepping, broadphase, collision, joints)
+- `src/sim` physics simulation core (world stepping, broadphase, collision)
 - `src/render` rendering helpers and shaders
 - `src/ui` HUD, pause menu, and target overlays
 - `src/input` camera/input utilities

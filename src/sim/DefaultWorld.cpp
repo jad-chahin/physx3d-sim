@@ -66,7 +66,6 @@ namespace sim {
         void applyDefaultWorldParams(World& world) {
             world.params().enableGravity = true;
             world.params().enableCollisions = true;
-            world.params().jointIterations = 12;
             world.params().collisionIterations = 2;
             world.params().G = kGravityStrength;
             world.params().restitution = World::Params::kDefaultRestitution;

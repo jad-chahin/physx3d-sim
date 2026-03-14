@@ -71,42 +71,15 @@ namespace sim {
         bodies_.back().prevPosition = bodies_.back().position;
         bodies_.back().prevOrientation = bodies_.back().orientation;
         assignBodyId_(bodies_.back());
-        rebuildJointCollisionFilter_();
-    }
-
-    void World::addDistanceJoint(const DistanceJoint& joint)
-    {
-        if (joint.bodyA == joint.bodyB) {
-            return;
-        }
-        if (joint.bodyA >= bodies_.size() || joint.bodyB >= bodies_.size()) {
-            return;
-        }
-
-        DistanceJoint j = joint;
-        if (!std::isfinite(j.restLength) || j.restLength < 0.0) {
-            const Vec3 d = bodies_[j.bodyB].position - bodies_[j.bodyA].position;
-            j.restLength = d.magnitude();
-        }
-        j.stiffness = std::clamp(j.stiffness, 0.0, 1.0);
-        j.damping = std::clamp(j.damping, 0.0, 1.0);
-        joints_.push_back(j);
-        rebuildJointCollisionFilter_();
-    }
-
-    void World::clearJoints()
-    {
-        joints_.clear();
-        rebuildJointCollisionFilter_();
     }
 
     void World::clear()
     {
+        metrics_ = {};
         bodies_.clear();
-        joints_.clear();
         forces_.clear();
         contactCache_.clear();
-        nonCollidingConnectedPairs_.clear();
+        nextBodyId_ = 1;
     }
 
     std::vector<Body>& World::bodies() { return bodies_; }
@@ -114,7 +87,6 @@ namespace sim {
     World::Params& World::params() { return params_; }
     const World::Params& World::params() const { return params_; }
     const World::Metrics& World::metrics() const { return metrics_; }
-    const std::vector<World::DistanceJoint>& World::joints() const { return joints_; }
 
     void World::prepareForces_()
     {
@@ -196,63 +168,6 @@ namespace sim {
         }
     }
 
-    void World::solveDistanceJoints_(const double dt)
-    {
-        if (joints_.empty() || dt <= 0.0 || params_.jointIterations <= 0) {
-            return;
-        }
-
-        constexpr double eps = std::numeric_limits<double>::epsilon();
-
-        for (int it = 0; it < params_.jointIterations; ++it) {
-            for (const DistanceJoint& joint : joints_) {
-                if (joint.bodyA >= bodies_.size() || joint.bodyB >= bodies_.size()) {
-                    continue;
-                }
-
-                Body& a = bodies_[joint.bodyA];
-                Body& b = bodies_[joint.bodyB];
-                if (a.invMass == 0.0 && b.invMass == 0.0) {
-                    continue;
-                }
-
-                const Vec3 delta = b.position - a.position;
-                const double dist = delta.magnitude();
-                if (!std::isfinite(dist) || dist <= eps) {
-                    continue;
-                }
-
-                const Vec3 n = delta / dist;
-                const double invMassSum = a.invMass + b.invMass;
-                if (!std::isfinite(invMassSum) || invMassSum <= 0.0) {
-                    continue;
-                }
-
-                const double stretch = dist - joint.restLength;
-                const double correctionMag = joint.stiffness * stretch;
-                // Position solve: correct distance error directly to avoid explosive bias impulses.
-                if (std::isfinite(correctionMag) && correctionMag != 0.0) {
-                    const Vec3 correction = n * correctionMag;
-                    a.position += correction * (a.invMass / invMassSum);
-                    b.position -= correction * (b.invMass / invMassSum);
-                }
-
-                // Velocity solve: damping only (no restorative energy injection).
-                const double relSpeed = (b.velocity - a.velocity).dot(n);
-                const double lambdaDamp = -(joint.damping * relSpeed) / invMassSum;
-                if (std::isfinite(lambdaDamp) && lambdaDamp != 0.0) {
-                    a.velocity -= n * (lambdaDamp * a.invMass);
-                    b.velocity += n * (lambdaDamp * b.invMass);
-                }
-
-                // Keep previous position aligned with corrected pose to avoid interpolation slingshots.
-                a.prevPosition = a.position;
-                b.prevPosition = b.position;
-                ++metrics_.jointConstraintsSolved;
-            }
-        }
-    }
-
     void World::advancePositions_(const double dt)
     {
         for (auto& b : bodies_) {
@@ -263,6 +178,8 @@ namespace sim {
 
     void World::sanitizeBodies_()
     {
+        const Material& fallbackMaterial = defaultMaterial();
+
         for (auto& b : bodies_) {
             bool bodySanitized = false;
             const auto mark = [&]() {
@@ -292,12 +209,12 @@ namespace sim {
                 assignMaterial(b, kDefaultMaterialName);
                 mark();
             }
-            if (!std::isfinite(b.restitution)) { b.restitution = defaultMaterial().restitution; mark(); }
+            if (!std::isfinite(b.restitution)) { b.restitution = fallbackMaterial.restitution; mark(); }
             const double oldRest = b.restitution;
             b.restitution = std::clamp(b.restitution, 0.0, 1.0);
             if (b.restitution != oldRest) mark();
-            if (!std::isfinite(b.staticFriction) || b.staticFriction < 0.0) { b.staticFriction = defaultMaterial().staticFriction; mark(); }
-            if (!std::isfinite(b.dynamicFriction) || b.dynamicFriction < 0.0) { b.dynamicFriction = defaultMaterial().dynamicFriction; mark(); }
+            if (!std::isfinite(b.staticFriction) || b.staticFriction < 0.0) { b.staticFriction = fallbackMaterial.staticFriction; mark(); }
+            if (!std::isfinite(b.dynamicFriction) || b.dynamicFriction < 0.0) { b.dynamicFriction = fallbackMaterial.dynamicFriction; mark(); }
             if (b.dynamicFriction > b.staticFriction) { b.dynamicFriction = b.staticFriction; mark(); }
             if (!std::isfinite(b.orientation.w) || !std::isfinite(b.orientation.x) || !std::isfinite(b.orientation.y) || !std::isfinite(b.orientation.z)) {
                 b.orientation = {}; mark();
@@ -321,7 +238,6 @@ namespace sim {
     void World::moveBodiesWithCCD_(const double dt)
     {
         if (!params_.enableCollisions) {
-            solveDistanceJoints_(dt);
             advancePositions_(dt);
             return;
         }
@@ -345,7 +261,6 @@ namespace sim {
                 const Body& A = bodies_[i];
                 const Body& B = bodies_[j];
                 if (A.invMass == 0.0 && B.invMass == 0.0) continue;
-                if (!shouldCollidePair_(i, j)) continue;
 
                 double t = 0.0;
                 if (!collision::sweptCollisionTime(A, B, remaining, t)) continue;
@@ -358,7 +273,6 @@ namespace sim {
             }
 
             if (!found) {
-                solveDistanceJoints_(remaining);
                 advancePositions_(remaining);
                 break;
             }
@@ -367,7 +281,6 @@ namespace sim {
             if (tHit > timeTol) {
                 const double consumeToToi = std::min(tHit, remaining);
                 if (consumeToToi > timeTol) {
-                    solveDistanceJoints_(consumeToToi);
                     advancePositions_(consumeToToi);
                     remaining = std::max(0.0, remaining - consumeToToi);
                     advancedToToi = true;
@@ -396,9 +309,6 @@ namespace sim {
             std::vector<std::pair<std::size_t, std::size_t>> zeroTimeOverlapPairs;
             zeroTimeOverlapPairs.reserve(overlapPairs.size());
             for (const auto& [i, j] : overlapPairs) {
-                if (!shouldCollidePair_(i, j)) {
-                    continue;
-                }
                 const Body& A = bodies_[i];
                 const Body& B = bodies_[j];
                 if (A.invMass == 0.0 && B.invMass == 0.0) {
@@ -422,7 +332,6 @@ namespace sim {
                 const double minConsume = std::max(timeTol * 32.0, std::max(0.0, dt) / 128.0);
                 const double consume = std::min(remaining, minConsume);
                 if (consume > 0.0) {
-                    solveDistanceJoints_(consume);
                     advancePositions_(consume);
                     remaining = std::max(0.0, remaining - consume);
                 } else {
@@ -441,9 +350,6 @@ namespace sim {
         std::vector<ActiveCollisionPair> activePairs;
         activePairs.reserve(pairs.size());
         for (const auto& [i, j] : pairs) {
-            if (!shouldCollidePair_(i, j)) {
-                continue;
-            }
             activePairs.push_back(ActiveCollisionPair{
                 .i = i,
                 .j = j,
@@ -487,15 +393,6 @@ namespace sim {
         }
     }
 
-    bool World::shouldCollidePair_(const std::size_t i, const std::size_t j) const
-    {
-        if (i == j || i >= bodies_.size() || j >= bodies_.size()) {
-            return false;
-        }
-        const ContactKey key = contactKeyForPair_(i, j);
-        return !nonCollidingConnectedPairs_.contains(key);
-    }
-
     World::ContactKey World::contactKeyForPair_(const std::size_t i, const std::size_t j) const
     {
         const std::uint64_t a = bodies_[i].id;
@@ -524,17 +421,6 @@ namespace sim {
         return params;
     }
 
-    void World::rebuildJointCollisionFilter_()
-    {
-        nonCollidingConnectedPairs_.clear();
-        nonCollidingConnectedPairs_.reserve(joints_.size() * 2);
-        for (const auto& joint : joints_) {
-            if (joint.collideConnected) continue;
-            if (joint.bodyA >= bodies_.size() || joint.bodyB >= bodies_.size()) continue;
-            nonCollidingConnectedPairs_.insert(contactKeyForPair_(joint.bodyA, joint.bodyB));
-        }
-    }
-
     void World::assignBodyId_(Body& b)
     {
         b.id = nextBodyId_++;
@@ -548,7 +434,6 @@ namespace sim {
             body.prevOrientation = body.orientation;
             assignBodyId_(body);
         }
-        rebuildJointCollisionFilter_();
     }
 
     void World::beginContactFrame_()

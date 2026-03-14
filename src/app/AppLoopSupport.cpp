@@ -19,7 +19,6 @@ namespace {
         accum.broadphaseCandidatesSwept += metrics.broadphaseCandidatesSwept;
         accum.pairsVisited += metrics.pairsVisited;
         accum.pairsImpulseApplied += metrics.pairsImpulseApplied;
-        accum.jointConstraintsSolved += metrics.jointConstraintsSolved;
         accum.ccdEvents += metrics.ccdEvents;
         accum.ccdZeroTimePairsResolved += metrics.ccdZeroTimePairsResolved;
         accum.warmStartedPairs += metrics.warmStartedPairs;
@@ -50,7 +49,6 @@ namespace {
         displayed.broadphaseCandidatesSwept = averageMetric(accum.broadphaseCandidatesSwept, samples);
         displayed.pairsVisited = averageMetric(accum.pairsVisited, samples);
         displayed.pairsImpulseApplied = averageMetric(accum.pairsImpulseApplied, samples);
-        displayed.jointConstraintsSolved = averageMetric(accum.jointConstraintsSolved, samples);
         displayed.ccdEvents = averageMetric(accum.ccdEvents, samples);
         displayed.ccdZeroTimePairsResolved = averageMetric(accum.ccdZeroTimePairsResolved, samples);
         displayed.warmStartedPairs = averageMetric(accum.warmStartedPairs, samples);
@@ -207,7 +205,6 @@ void applySimulationSettings(sim::World& world, const ui::SimulationSettings& si
     world.params().G = simSettings.gravityStrength;
     world.params().enableCollisions = simSettings.collisionsEnabled;
     world.params().collisionIterations = simSettings.collisionIterations;
-    world.params().jointIterations = simSettings.jointIterations;
     world.params().restitution = simSettings.globalRestitution;
 }
 
@@ -511,6 +508,7 @@ OverlayRenderer::TargetHud buildTargetHud(
     targetHud.visible = true;
     targetHud.xPx = sx;
     targetHud.yPx = sy;
+    targetHud.lines.reserve(6);
 
     char line[64];
     if (interfaceSettings.objectInfoMaterial) {
@@ -541,17 +539,6 @@ OverlayRenderer::TargetHud buildTargetHud(
         std::snprintf(line, sizeof(line), "T:%s", bodies[i].invMass > 0.0 ? "DYNAMIC" : "STATIC");
         targetHud.lines.emplace_back(line);
     }
-    if (interfaceSettings.objectInfoJointCount) {
-        std::size_t jointCount = 0;
-        for (const auto& joint : world.joints()) {
-            if (joint.bodyA == i || joint.bodyB == i) {
-                ++jointCount;
-            }
-        }
-        std::snprintf(line, sizeof(line), "J:%zu", jointCount);
-        targetHud.lines.emplace_back(line);
-    }
-
     return targetHud;
 }
 
@@ -565,7 +552,7 @@ std::vector<std::string> buildHudDebugLines(
 
     const sim::World::Metrics& metrics = runtime.hudMetrics.displayed;
     std::vector<std::string> lines;
-    lines.reserve(8);
+    lines.reserve(4);
 
     char line[96];
     std::snprintf(
@@ -589,10 +576,9 @@ std::vector<std::string> buildHudDebugLines(
     std::snprintf(
         line,
         sizeof(line),
-        "CCD:%zu  ZERO:%zu  JOINT:%zu",
+        "CCD:%zu  ZERO:%zu",
         metrics.ccdEvents,
-        metrics.ccdZeroTimePairsResolved,
-        metrics.jointConstraintsSolved);
+        metrics.ccdZeroTimePairsResolved);
     lines.emplace_back(line);
 
     std::snprintf(

@@ -172,8 +172,6 @@ namespace ui {
             addRow("COLLISIONS", simRef.collisionsEnabled ? "ON" : "OFF", false, OverlayRenderer::PauseMenuControlType::Toggle, simRef.collisionsEnabled, false, false, simRef.collisionsEnabled ? 1.0f : 0.0f, "TOGGLE");
             const int collisionIterationsIdx = closestChoiceIndex(kCollisionIterationChoices, simRef.collisionIterations);
             addRow("COLLISION ITERATIONS", std::to_string(simRef.collisionIterations), false, OverlayRenderer::PauseMenuControlType::Numeric, false, true, true, normalized(collisionIterationsIdx, static_cast<int>(kCollisionIterationChoices.size())), "LEFT/RIGHT OR SLIDER");
-            const int jointIterationsIdx = closestChoiceIndex(kJointIterationChoices, simRef.jointIterations);
-            addRow("JOINT ITERATIONS", std::to_string(simRef.jointIterations), false, OverlayRenderer::PauseMenuControlType::Numeric, false, true, true, normalized(jointIterationsIdx, static_cast<int>(kJointIterationChoices.size())), "LEFT/RIGHT OR SLIDER");
             const int restitutionIdx = closestChoiceIndex(kGlobalRestitutionChoices, simRef.globalRestitution);
             addRow("GLOBAL BOUNCE", formatRestitutionPercent(simRef.globalRestitution), false, OverlayRenderer::PauseMenuControlType::Numeric, false, true, true, normalized(restitutionIdx, static_cast<int>(kGlobalRestitutionChoices.size())), "LEFT/RIGHT OR SLIDER");
 
@@ -229,7 +227,6 @@ namespace ui {
             addRow("OBJECT INFO RADIUS", interfaceRef.objectInfoRadius ? "ON" : "OFF", !interfaceRef.objectInfo, OverlayRenderer::PauseMenuControlType::Toggle, interfaceRef.objectInfoRadius, false, false, interfaceRef.objectInfoRadius ? 1.0f : 0.0f, !interfaceRef.objectInfo ? "ENABLE OBJECT INFO FIRST" : "TOGGLE");
             addRow("OBJECT INFO ANGULAR SPEED", interfaceRef.objectInfoAngularSpeed ? "ON" : "OFF", !interfaceRef.objectInfo, OverlayRenderer::PauseMenuControlType::Toggle, interfaceRef.objectInfoAngularSpeed, false, false, interfaceRef.objectInfoAngularSpeed ? 1.0f : 0.0f, !interfaceRef.objectInfo ? "ENABLE OBJECT INFO FIRST" : "TOGGLE");
             addRow("OBJECT INFO BODY TYPE", interfaceRef.objectInfoBodyType ? "ON" : "OFF", !interfaceRef.objectInfo, OverlayRenderer::PauseMenuControlType::Toggle, interfaceRef.objectInfoBodyType, false, false, interfaceRef.objectInfoBodyType ? 1.0f : 0.0f, !interfaceRef.objectInfo ? "ENABLE OBJECT INFO FIRST" : "TOGGLE");
-            addRow("OBJECT INFO JOINTS", interfaceRef.objectInfoJointCount ? "ON" : "OFF", !interfaceRef.objectInfo, OverlayRenderer::PauseMenuControlType::Toggle, interfaceRef.objectInfoJointCount, false, false, interfaceRef.objectInfoJointCount ? 1.0f : 0.0f, !interfaceRef.objectInfo ? "ENABLE OBJECT INFO FIRST" : "TOGGLE");
             if ((focusTarget_ == FocusTarget::SettingsRow ||
                  popupType_ == PopupType::ResetWorld ||
                  popupType_ == PopupType::EnableDrawPath) && selectedSettingRow_ >= 0) {

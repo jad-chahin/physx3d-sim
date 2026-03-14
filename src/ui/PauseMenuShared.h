@@ -34,7 +34,6 @@ namespace ui::pause_menu_shared {
     }};
 
     inline constexpr std::array<int, 8> kCollisionIterationChoices{{1, 2, 3, 4, 5, 6, 8, 10}};
-    inline constexpr std::array<int, 8> kJointIterationChoices{{1, 2, 4, 6, 8, 10, 12, 16}};
     inline constexpr std::array<double, 11> kGlobalRestitutionChoices{{
         0.00, 0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90, 1.00,
     }};

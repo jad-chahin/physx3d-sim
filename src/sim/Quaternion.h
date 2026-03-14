@@ -65,6 +65,7 @@ namespace sim {
         normalizeQuat(result);
         return result;
     }
+
 } // namespace sim
 
 #endif // PHYSICS3D_QUATERNION_H

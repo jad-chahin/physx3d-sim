@@ -47,7 +47,7 @@ namespace ui {
     }
 
     int PauseMenuController::simulationSettingRowCount() {
-        return 8;
+        return 7;
     }
 
     int PauseMenuController::cameraSettingRowCount() {
@@ -55,7 +55,7 @@ namespace ui {
     }
 
     int PauseMenuController::interfaceSettingRowCount() {
-        return 13;
+        return 12;
     }
 
     float PauseMenuController::uiScaleValue(int idx) {
@@ -634,8 +634,7 @@ namespace ui {
                 case 3: return static_cast<int>(kGravityStrengthChoices.size());
                 case 4: return 2;
                 case 5: return static_cast<int>(kCollisionIterationChoices.size());
-                case 6: return static_cast<int>(kJointIterationChoices.size());
-                case 7: return static_cast<int>(kGlobalRestitutionChoices.size());
+                case 6: return static_cast<int>(kGlobalRestitutionChoices.size());
                 default: return 0;
             }
         }
@@ -652,7 +651,7 @@ namespace ui {
             if (row == 0) {
                 return static_cast<int>(kUiScaleChoices.size());
             }
-            if (row >= 1 && row <= 12) {
+            if (row >= 1 && row <= 11) {
                 return 2;
             }
         }
@@ -684,8 +683,7 @@ namespace ui {
                 case 3: return closestChoiceIndex(kGravityStrengthChoices, settings.gravityStrength);
                 case 4: return settings.collisionsEnabled ? 1 : 0;
                 case 5: return closestChoiceIndex(kCollisionIterationChoices, settings.collisionIterations);
-                case 6: return closestChoiceIndex(kJointIterationChoices, settings.jointIterations);
-                case 7: return closestChoiceIndex(kGlobalRestitutionChoices, settings.globalRestitution);
+                case 6: return closestChoiceIndex(kGlobalRestitutionChoices, settings.globalRestitution);
                 default: return 0;
             }
         }
@@ -721,7 +719,6 @@ namespace ui {
                 case 9: return settings.objectInfoRadius ? 1 : 0;
                 case 10: return settings.objectInfoAngularSpeed ? 1 : 0;
                 case 11: return settings.objectInfoBodyType ? 1 : 0;
-                case 12: return settings.objectInfoJointCount ? 1 : 0;
                 default: return 0;
             }
         }
@@ -824,11 +821,6 @@ namespace ui {
                     break;
                 }
                 case 6: {
-                    const int idx = std::clamp(closestChoiceIndex(kJointIterationChoices, settings.jointIterations) + delta, 0, static_cast<int>(kJointIterationChoices.size()) - 1);
-                    settings.jointIterations = kJointIterationChoices[static_cast<std::size_t>(idx)];
-                    break;
-                }
-                case 7: {
                     const int idx = std::clamp(closestChoiceIndex(kGlobalRestitutionChoices, settings.globalRestitution) + delta, 0, static_cast<int>(kGlobalRestitutionChoices.size()) - 1);
                     settings.globalRestitution = kGlobalRestitutionChoices[static_cast<std::size_t>(idx)];
                     break;
@@ -928,13 +920,6 @@ namespace ui {
                     }
                     settings.objectInfoBodyType = !settings.objectInfoBodyType;
                     break;
-                case 12:
-                    if (!settings.objectInfo) {
-                        statusMessage_ = "ENABLE OBJECT INFO FIRST";
-                        return;
-                    }
-                    settings.objectInfoJointCount = !settings.objectInfoJointCount;
-                    break;
                 default:
                     break;
             }
@@ -979,7 +964,6 @@ namespace ui {
                draftSimulationSettings_.gravityStrength != appliedSimulationSettings_.gravityStrength ||
                draftSimulationSettings_.collisionsEnabled != appliedSimulationSettings_.collisionsEnabled ||
                draftSimulationSettings_.collisionIterations != appliedSimulationSettings_.collisionIterations ||
-               draftSimulationSettings_.jointIterations != appliedSimulationSettings_.jointIterations ||
                draftSimulationSettings_.globalRestitution != appliedSimulationSettings_.globalRestitution;
     }
 
@@ -1002,8 +986,7 @@ namespace ui {
                draftInterfaceSettings_.objectInfoMass != appliedInterfaceSettings_.objectInfoMass ||
                draftInterfaceSettings_.objectInfoRadius != appliedInterfaceSettings_.objectInfoRadius ||
                draftInterfaceSettings_.objectInfoAngularSpeed != appliedInterfaceSettings_.objectInfoAngularSpeed ||
-               draftInterfaceSettings_.objectInfoBodyType != appliedInterfaceSettings_.objectInfoBodyType ||
-               draftInterfaceSettings_.objectInfoJointCount != appliedInterfaceSettings_.objectInfoJointCount;
+               draftInterfaceSettings_.objectInfoBodyType != appliedInterfaceSettings_.objectInfoBodyType;
     }
 
     bool PauseMenuController::hasPendingSelectionChanges() const {
@@ -1045,8 +1028,6 @@ namespace ui {
             kGravityStrengthChoices[static_cast<std::size_t>(closestChoiceIndex(kGravityStrengthChoices, appliedSimulationSettings_.gravityStrength))];
         appliedSimulationSettings_.collisionIterations =
             kCollisionIterationChoices[static_cast<std::size_t>(closestChoiceIndex(kCollisionIterationChoices, appliedSimulationSettings_.collisionIterations))];
-        appliedSimulationSettings_.jointIterations =
-            kJointIterationChoices[static_cast<std::size_t>(closestChoiceIndex(kJointIterationChoices, appliedSimulationSettings_.jointIterations))];
         appliedSimulationSettings_.globalRestitution =
             kGlobalRestitutionChoices[static_cast<std::size_t>(closestChoiceIndex(kGlobalRestitutionChoices, appliedSimulationSettings_.globalRestitution))];
         if (appliedSimulationSettings_.maxSimSpeed < appliedSimulationSettings_.minSimSpeed) {

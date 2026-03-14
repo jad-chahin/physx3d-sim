@@ -172,11 +172,6 @@ namespace ui {
                     if (tryParseInt(value, parsed)) {
                         appliedSimulationSettings_.collisionIterations = parsed;
                     }
-                } else if (key == "JOINT_ITERATIONS") {
-                    int parsed = 0;
-                    if (tryParseInt(value, parsed)) {
-                        appliedSimulationSettings_.jointIterations = parsed;
-                    }
                 } else if (key == "GLOBAL_RESTITUTION") {
                     double parsed = 0.0;
                     if (tryParseDouble(value, parsed)) {
@@ -262,11 +257,6 @@ namespace ui {
                     if (tryParseBool(value, parsed)) {
                         appliedInterfaceSettings_.objectInfoBodyType = parsed;
                     }
-                } else if (key == "OBJECT_INFO_JOINT_COUNT") {
-                    bool parsed = false;
-                    if (tryParseBool(value, parsed)) {
-                        appliedInterfaceSettings_.objectInfoJointCount = parsed;
-                    }
                 }
             }
         }
@@ -298,7 +288,6 @@ namespace ui {
         out << "GRAVITY_STRENGTH=" << appliedSimulationSettings_.gravityStrength << "\n";
         out << "COLLISIONS_ENABLED=" << (appliedSimulationSettings_.collisionsEnabled ? "ON" : "OFF") << "\n";
         out << "COLLISION_ITERATIONS=" << appliedSimulationSettings_.collisionIterations << "\n";
-        out << "JOINT_ITERATIONS=" << appliedSimulationSettings_.jointIterations << "\n";
         out << "GLOBAL_RESTITUTION=" << appliedSimulationSettings_.globalRestitution << "\n";
         out << "LOOK_SENSITIVITY=" << appliedCameraSettings_.lookSensitivity << "\n";
         out << "BASE_MOVE_SPEED=" << appliedCameraSettings_.baseMoveSpeed << "\n";
@@ -316,6 +305,5 @@ namespace ui {
         out << "OBJECT_INFO_RADIUS=" << (appliedInterfaceSettings_.objectInfoRadius ? "ON" : "OFF") << "\n";
         out << "OBJECT_INFO_ANGULAR_SPEED=" << (appliedInterfaceSettings_.objectInfoAngularSpeed ? "ON" : "OFF") << "\n";
         out << "OBJECT_INFO_BODY_TYPE=" << (appliedInterfaceSettings_.objectInfoBodyType ? "ON" : "OFF") << "\n";
-        out << "OBJECT_INFO_JOINT_COUNT=" << (appliedInterfaceSettings_.objectInfoJointCount ? "ON" : "OFF") << "\n";
     }
 } // namespace ui

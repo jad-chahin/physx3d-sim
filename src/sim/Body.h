@@ -10,7 +10,7 @@
 namespace sim {
 
     class Body {
-        public:
+    public:
         Vec3 position; // [m]
         Vec3 velocity; // [m/s]
         Vec3 angularVelocity; // [rad/s]
@@ -24,7 +24,7 @@ namespace sim {
         std::string materialName{"DEFAULT"}; // Material id/name used at assignment/load time
         Quaternion orientation; // world orientation
         Quaternion prevOrientation; // previous world orientation for render interpolation
-        Vec3 prevPosition;
+        Vec3 prevPosition; // previous world position for render interpolation
         std::uint64_t id = 0; // Stable identity assigned by World
     };
 } // sim

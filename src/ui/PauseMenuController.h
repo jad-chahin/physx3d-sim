@@ -34,7 +34,6 @@ namespace ui {
         double gravityStrength = sim::World::Params::kDefaultG;
         bool collisionsEnabled = true;
         int collisionIterations = 2;
-        int jointIterations = sim::World::Params::kDefaultJointIterations;
         double globalRestitution = sim::World::Params::kDefaultRestitution;
     };
 
@@ -58,7 +57,6 @@ namespace ui {
         bool objectInfoRadius = true;
         bool objectInfoAngularSpeed = false;
         bool objectInfoBodyType = false;
-        bool objectInfoJointCount = false;
     };
 
     enum class SettingsPage {
