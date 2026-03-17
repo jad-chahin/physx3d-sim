@@ -14,7 +14,7 @@
 #include "render/SphereMesh.h"
 #include "sim/DefaultWorld.h"
 #include "ui/OverlayRenderer.h"
-#include "ui/PauseMenuController.h"
+#include "ui/PauseMenu.h"
 
 namespace {
 
@@ -191,7 +191,7 @@ void updatePauseMenu(
     app_loop::AppLoopState& appState,
     app_loop::RuntimeState& runtime,
     input::ControlBindings& controls,
-    ui::PauseMenuController& pauseMenu,
+    ui::PauseMenu& pauseMenu,
     sim::World& world,
     const std::string& controlsConfigPath)
 {
@@ -215,7 +215,7 @@ void updateFrameState(
     GLFWwindow* window,
     sim::World& world,
     const input::ControlBindings& controls,
-    const ui::PauseMenuController& pauseMenu,
+    const ui::PauseMenu& pauseMenu,
     app_loop::RuntimeState& runtime,
     input::Camera& cam)
 {
@@ -236,9 +236,9 @@ void updateFrameState(
     app_loop::stepSimulation(world, runtime, pauseMenu.isOpen(), frameTime);
 }
 
-void clearFrame(const app_loop::RuntimeState& runtime, const ui::PauseMenuController& pauseMenu) {
+void clearFrame(const app_loop::RuntimeState& runtime, const ui::PauseMenu& pauseMenu) {
     if (runtime.simulation.simFrozen && !pauseMenu.isOpen()) {
-        glClearColor(0.20f, 0.02f, 0.02f, 1.0f);
+        glClearColor(0.035f, 0.055f, 0.075f, 1.0f);
     } else {
         glClearColor(0.05f, 0.05f, 0.08f, 1.0f);
     }
@@ -278,7 +278,7 @@ int runApp(sim::World world) {
     const std::string controlsConfigPath = "controls.cfg";
     input::loadControlBindings(controls, controlsConfigPath);
 
-    ui::PauseMenuController pauseMenu;
+    ui::PauseMenu pauseMenu;
     pauseMenu.loadSettings("settings.cfg");
     pauseMenu.applyCurrentDisplaySettings(window);
 
@@ -317,7 +317,8 @@ int runApp(sim::World world) {
         updateFrameState(window, world, controls, pauseMenu, runtime, cam);
         clearFrame(runtime, pauseMenu);
 
-        const OverlayRenderer::PauseMenuHud pauseMenuHud = pauseMenu.buildHud(controls);
+        const OverlayRenderer::PauseMenuHud pauseMenuHud =
+            ui::toOverlayPauseMenuHud(pauseMenu.buildView(controls));
         OverlayRenderer::TargetHud targetHud{};
         pathLines.clear();
         hudDebugLines = app_loop::buildHudDebugLines(runtime, pauseMenu.interfaceSettings());
@@ -371,3 +372,4 @@ int runApp(sim::World world) {
 }
 
 } // namespace app
+

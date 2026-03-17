@@ -12,7 +12,7 @@
 #include "sim/Material.h"
 #include "sim/World.h"
 
-void appendPauseMenuControllerTests(std::vector<std::pair<std::string, std::function<void()>>>& tests);
+void appendUiPauseMenuTests(std::vector<std::pair<std::string, std::function<void()>>>& tests);
 
 namespace {
     using sim::Body;
@@ -155,7 +155,7 @@ int main()
         {"sleeping_and_warm_start", testSleepingAndWarmStart},
         {"sanitization_removes_invalid_state", testSanitizationRemovesInvalidState},
     };
-    appendPauseMenuControllerTests(tests);
+    appendUiPauseMenuTests(tests);
 
     int failures = 0;
     for (const auto& [name, test] : tests) {
@@ -176,3 +176,4 @@ int main()
     std::cout << tests.size() << " test(s) passed\n";
     return 0;
 }
+

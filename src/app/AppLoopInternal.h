@@ -14,7 +14,7 @@
 #include "sim/DefaultWorld.h"
 #include "sim/World.h"
 #include "ui/OverlayRenderer.h"
-#include "ui/PauseMenuController.h"
+#include "ui/PauseMenu.h"
 
 namespace app_loop {
 
@@ -229,3 +229,4 @@ void drawOverlay(
 } // namespace app_loop
 
 #endif // PHYSICS3D_APPLOOPINTERNAL_H
+

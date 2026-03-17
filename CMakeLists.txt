@@ -65,10 +65,8 @@ add_executable(physics3d
         src/app/SceneUi.cpp
         src/third_party/glad/src/glad.c
         src/ui/OverlayRenderer.cpp
-        src/ui/OverlayRendererDraw.cpp
-        src/ui/OverlayRendererPauseMenu.cpp
-        src/ui/PauseMenuController.cpp
-        src/ui/PauseMenuInput.cpp
+        src/ui/PauseMenu.cpp
+        src/ui/PauseMenuLayout.cpp
         src/render/ShaderUtil.cpp
         src/render/SphereMesh.cpp
         src/input/Camera.cpp
@@ -101,10 +99,10 @@ enable_testing()
 
 add_executable(physics3d_tests
         tests/PhysicsRegressionTests.cpp
-        tests/PauseMenuControllerTests.cpp
+        tests/UiPauseMenuTests.cpp
         src/input/Bindings.cpp
-        src/ui/PauseMenuController.cpp
-        src/ui/PauseMenuInput.cpp
+        src/ui/PauseMenu.cpp
+        src/ui/PauseMenuLayout.cpp
 )
 target_include_directories(physics3d_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -124,3 +122,4 @@ if (WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND EXISTS "${PHYSICS3D_GNU_B
 else()
     add_test(NAME physics3d_tests COMMAND $<TARGET_FILE:physics3d_tests>)
 endif()
+
