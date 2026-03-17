@@ -101,7 +101,7 @@ namespace ui {
 
     void PauseMenuController::handlePressedKey(
         GLFWwindow* window,
-        int pressedKey,
+        const int pressedKey,
         input::ControlBindings& controls,
         const std::string& controlsConfigPath)
     {
@@ -199,10 +199,10 @@ namespace ui {
 
         const auto w = static_cast<float>(fbw);
         const auto h = static_cast<float>(fbh);
-        constexpr std::array<SettingsPage, 5> kPageOrder{
+        constexpr std::array kPageOrder{
             SettingsPage::Display, SettingsPage::Simulation, SettingsPage::Camera, SettingsPage::Interface, SettingsPage::Controls,
         };
-        constexpr std::array<PauseAction, 6> kHoverActions{
+        constexpr std::array kHoverActions{
             PauseAction::ResetIcon,
             PauseAction::Close,
             PauseAction::Exit,
@@ -263,10 +263,10 @@ namespace ui {
             }
             return hit;
         };
-        const HoverHit hover = findHoveredLine();
+        const auto [line, visible, row] = findHoveredLine();
 
         clearHoverState();
-        hoveredSettingRow_ = hover.row;
+        hoveredSettingRow_ = row;
 
         for (std::size_t i = 0; i < kPageOrder.size(); ++i) {
             if (layout.tabRects[i].contains(xPx, yPx)) {
@@ -287,7 +287,7 @@ namespace ui {
                 ignoreNextRebindMousePress_ = false;
                 return;
             }
-            if (hover.row != selectedSettingRow_) {
+            if (row != selectedSettingRow_) {
                 awaitingRebind_ = false;
                 awaitingRebindAction_ = -1;
                 ignoreNextRebindMousePress_ = false;
@@ -364,7 +364,7 @@ namespace ui {
             return;
         }
 
-        if (hover.row < 0 || hover.line < 0) {
+        if (row < 0 || line < 0) {
             if (actionHovered(PauseAction::Apply)) {
                 commitSelectedSetting(window);
                 return;
@@ -390,34 +390,34 @@ namespace ui {
 
         const bool isDoubleClick =
             lastClickedPage_ == settingsPage_ &&
-            lastClickedRow_ == hover.row &&
+            lastClickedRow_ == row &&
             lastClickAt_ >= 0.0 &&
             (clickAt - lastClickAt_) <= kDoubleClickWindowSeconds;
         lastClickedPage_ = settingsPage_;
-        lastClickedRow_ = hover.row;
+        lastClickedRow_ = row;
         lastClickAt_ = clickAt;
 
-        if (selectedSettingRow_ != hover.row) {
+        if (selectedSettingRow_ != row) {
             discardPendingEdit();
-            setSelectedSettingRow(hover.row);
+            setSelectedSettingRow(row);
             statusMessage_.clear();
         }
 
         if (isControlPage()) {
-            if (isDoubleClick && hover.row >= 0 && hover.row < controlCount()) {
-                beginRebindForRow(hover.row);
+            if (isDoubleClick && row < controlCount()) {
+                beginRebindForRow(row);
             }
             return;
         }
 
-        const auto controlType = hud.lines[static_cast<std::size_t>(hover.line)].controlType;
-        const bool disabled = isSettingRowDisabled(hover.row);
+        const auto controlType = hud.lines[static_cast<std::size_t>(line)].controlType;
+        const bool disabled = isSettingRowDisabled(row);
         const auto widgets = layout.lineWidgets(
-            static_cast<std::size_t>(hover.visible),
-            hud.lines[static_cast<std::size_t>(hover.line)]);
+            static_cast<std::size_t>(visible),
+            hud.lines[static_cast<std::size_t>(line)]);
 
         if (disabled) {
-            statusMessage_ = disabledReasonForRow(hover.row);
+            statusMessage_ = disabledReasonForRow(row);
             return;
         }
 
@@ -458,8 +458,7 @@ namespace ui {
                                       bool& held,
                                       double& nextRepeatAt,
                                       const auto& onRepeat) {
-            const bool down = glfwGetKey(window, key) == GLFW_PRESS;
-            if (!down) {
+            if (const bool down = glfwGetKey(window, key) == GLFW_PRESS; !down) {
                 held = false;
                 nextRepeatAt = 0.0;
                 return;
@@ -750,8 +749,7 @@ namespace ui::pause_menu_shared {
         }
 
         layout.rowScalePx = kSettingsScalePx * layout.menuScale * 1.8f;
-        const float rowAreaWidth = (layout.sectionX1 - layout.sectionX0) - 28.0f * layout.menuScale - maxControlReserve;
-        if (maxRowWidth > 0.0f && rowAreaWidth > 0.0f) {
+        if (const float rowAreaWidth = (layout.sectionX1 - layout.sectionX0) - 28.0f * layout.menuScale - maxControlReserve; maxRowWidth > 0.0f && rowAreaWidth > 0.0f) {
             layout.rowScalePx = std::min(layout.rowScalePx, rowAreaWidth / maxRowWidth);
         }
 

@@ -19,9 +19,6 @@
 namespace ui {
     namespace {
         int wrapIndex(const int idx, const int count) {
-            if (count <= 0) {
-                return 0;
-            }
             const int mod = idx % count;
             return mod < 0 ? (mod + count) : mod;
         }
@@ -41,9 +38,6 @@ namespace ui {
         constexpr int choiceCount(const std::array<T, N>&) {
             return static_cast<int>(N);
         }
-
-        template <typename T, std::size_t N>
-        void stepChoice(const std::array<T, N>& choices, T& value, int delta);
 
         enum class FieldDependency {
             None = 0,
@@ -158,19 +152,6 @@ namespace ui {
             return text;
         }
 
-        bool tryParseBool(const std::string_view value, bool& outValue) {
-            const std::string needle = toUpperCopy(trimCopy(value));
-            if (needle == "1" || needle == "TRUE" || needle == "ON" || needle == "YES") {
-                outValue = true;
-                return true;
-            }
-            if (needle == "0" || needle == "FALSE" || needle == "OFF" || needle == "NO") {
-                outValue = false;
-                return true;
-            }
-            return false;
-        }
-
         bool tryParseInt(const std::string_view value, int& outValue) {
             const std::string trimmed = trimCopy(value);
             if (trimmed.empty()) {
@@ -189,46 +170,6 @@ namespace ui {
             }
         }
 
-        bool tryParseDouble(const std::string_view value, double& outValue) {
-            const std::string trimmed = trimCopy(value);
-            if (trimmed.empty()) {
-                return false;
-            }
-            try {
-                std::size_t pos = 0;
-                const double parsed = std::stod(trimmed, &pos);
-                if (pos != trimmed.size()) {
-                    return false;
-                }
-                outValue = parsed;
-                return true;
-            } catch (...) {
-                return false;
-            }
-        }
-
-        bool tryParseFloat(const std::string_view value, float& outValue) {
-            double parsed = 0.0;
-            if (!tryParseDouble(value, parsed)) {
-                return false;
-            }
-            outValue = static_cast<float>(parsed);
-            return true;
-        }
-
-        bool tryParseWindowMode(const std::string_view value, WindowMode& outMode) {
-            const std::string needle = toUpperCopy(trimCopy(value));
-            if (needle == "BORDERLESS") {
-                outMode = WindowMode::Borderless;
-                return true;
-            }
-            if (needle == "WINDOWED") {
-                outMode = WindowMode::Windowed;
-                return true;
-            }
-            return false;
-        }
-
         template <typename Value>
         void writeSettingValue(std::ostream& out, const Value& value) {
             out << value;
@@ -236,6 +177,20 @@ namespace ui {
 
         void writeSettingValue(std::ostream& out, const bool value) {
             out << (value ? "ON" : "OFF");
+        }
+
+        void writeSettingValue(std::ostream& out, const WindowMode mode) {
+            switch (mode) {
+                case WindowMode::Borderless:
+                    out << "BORDERLESS";
+                    return;
+                case WindowMode::Windowed:
+                    out << "WINDOWED";
+                    return;
+                default:
+                    out << "UNKNOWN";
+                    return;
+            }
         }
 
         template <typename Value>
@@ -247,14 +202,6 @@ namespace ui {
 
         std::string toggleValueText(const bool enabled) {
             return enabled ? "ON" : "OFF";
-        }
-
-        std::string formatWindowModeText(const WindowMode mode) {
-            const auto index = static_cast<std::size_t>(mode);
-            if (index >= kWindowModeLabels.size()) {
-                return "UNKNOWN";
-            }
-            return kWindowModeLabels[index];
         }
 
         std::string formatIterationText(const int value) {
@@ -288,37 +235,6 @@ namespace ui {
                 "%.2fX",
                 pause_menu_shared::kUiScaleChoices[static_cast<std::size_t>(clampedValue)]);
             return buffer;
-        }
-
-        template <typename T>
-        std::string configValueString(const T& value) {
-            std::ostringstream out;
-            writeSettingValue(out, value);
-            return out.str();
-        }
-
-        std::string configValueString(const WindowMode value) {
-            return formatWindowModeText(value);
-        }
-
-        bool parseConfigValue(const std::string_view value, bool& outValue) {
-            return tryParseBool(value, outValue);
-        }
-
-        bool parseConfigValue(const std::string_view value, int& outValue) {
-            return tryParseInt(value, outValue);
-        }
-
-        bool parseConfigValue(const std::string_view value, double& outValue) {
-            return tryParseDouble(value, outValue);
-        }
-
-        bool parseConfigValue(const std::string_view value, float& outValue) {
-            return tryParseFloat(value, outValue);
-        }
-
-        bool parseConfigValue(const std::string_view value, WindowMode& outValue) {
-            return tryParseWindowMode(value, outValue);
         }
 
         template <typename Settings, auto Member>
@@ -382,8 +298,60 @@ namespace ui {
         bool parseFieldConfig(PauseMenuSettingsBundle& settings, const std::string_view value)
         {
             MemberValueType<Settings, Member> parsed{};
-            if (!parseConfigValue(value, parsed)) {
-                return false;
+            if constexpr (std::is_same_v<MemberValueType<Settings, Member>, bool>) {
+                const std::string needle = toUpperCopy(trimCopy(value));
+                if (needle == "1" || needle == "TRUE" || needle == "ON" || needle == "YES") {
+                    parsed = true;
+                } else if (needle == "0" || needle == "FALSE" || needle == "OFF" || needle == "NO") {
+                    parsed = false;
+                } else {
+                    return false;
+                }
+            } else if constexpr (std::is_same_v<MemberValueType<Settings, Member>, int>) {
+                if (!tryParseInt(value, parsed)) {
+                    return false;
+                }
+            } else if constexpr (std::is_same_v<MemberValueType<Settings, Member>, double>) {
+                const std::string trimmed = trimCopy(value);
+                if (trimmed.empty()) {
+                    return false;
+                }
+                try {
+                    std::size_t pos = 0;
+                    const double parsedValue = std::stod(trimmed, &pos);
+                    if (pos != trimmed.size()) {
+                        return false;
+                    }
+                    parsed = parsedValue;
+                } catch (...) {
+                    return false;
+                }
+            } else if constexpr (std::is_same_v<MemberValueType<Settings, Member>, float>) {
+                const std::string trimmed = trimCopy(value);
+                if (trimmed.empty()) {
+                    return false;
+                }
+                try {
+                    std::size_t pos = 0;
+                    const double parsedValue = std::stod(trimmed, &pos);
+                    if (pos != trimmed.size()) {
+                        return false;
+                    }
+                    parsed = static_cast<float>(parsedValue);
+                } catch (...) {
+                    return false;
+                }
+            } else if constexpr (std::is_same_v<MemberValueType<Settings, Member>, WindowMode>) {
+                const std::string needle = toUpperCopy(trimCopy(value));
+                if (needle == "BORDERLESS") {
+                    parsed = WindowMode::Borderless;
+                } else if (needle == "WINDOWED") {
+                    parsed = WindowMode::Windowed;
+                } else {
+                    return false;
+                }
+            } else {
+                static_assert(!sizeof(MemberValueType<Settings, Member>), "Unsupported config value type");
             }
             settingsRef<Settings>(settings).*Member = parsed;
             return true;
@@ -392,7 +360,9 @@ namespace ui {
         template <typename Settings, auto Member>
         std::string serializeFieldConfig(const PauseMenuSettingsBundle& settings)
         {
-            return configValueString(settingsRef<Settings>(settings).*Member);
+            std::ostringstream out;
+            writeSettingValue(out, settingsRef<Settings>(settings).*Member);
+            return out.str();
         }
 
         template <typename Settings, auto Member>
@@ -409,7 +379,11 @@ namespace ui {
         }
 
         AdjustResult adjustMinSpeed(SimulationSettings& simulation, const int delta) {
-            stepChoice(pause_menu_shared::kMinSpeedChoices, simulation.minSimSpeed, delta);
+            const int idx = std::clamp(
+                pause_menu_shared::closestChoiceIndex(pause_menu_shared::kMinSpeedChoices, simulation.minSimSpeed) + delta,
+                0,
+                static_cast<int>(pause_menu_shared::kMinSpeedChoices.size()) - 1);
+            simulation.minSimSpeed = pause_menu_shared::kMinSpeedChoices[static_cast<std::size_t>(idx)];
             if (simulation.maxSimSpeed < simulation.minSimSpeed) {
                 simulation.maxSimSpeed = simulation.minSimSpeed;
             }
@@ -417,7 +391,11 @@ namespace ui {
         }
 
         AdjustResult adjustMaxSpeed(SimulationSettings& simulation, const int delta) {
-            stepChoice(pause_menu_shared::kMaxSpeedChoices, simulation.maxSimSpeed, delta);
+            const int idx = std::clamp(
+                pause_menu_shared::closestChoiceIndex(pause_menu_shared::kMaxSpeedChoices, simulation.maxSimSpeed) + delta,
+                0,
+                static_cast<int>(pause_menu_shared::kMaxSpeedChoices.size()) - 1);
+            simulation.maxSimSpeed = pause_menu_shared::kMaxSpeedChoices[static_cast<std::size_t>(idx)];
             if (simulation.minSimSpeed > simulation.maxSimSpeed) {
                 simulation.minSimSpeed = simulation.maxSimSpeed;
             }
@@ -465,16 +443,14 @@ namespace ui {
         template <typename Settings, auto Member, const auto& Choices, auto Formatter, auto Adjuster = nullptr>
         constexpr SettingFieldInfo makeChoiceField(
             const char* label,
-            const char* hint,
-            const ControlType controlType = ControlType::Numeric,
-            const FieldDependency dependency = FieldDependency::None)
+            const char* hint)
         {
             return {
                 label,
                 hint,
-                controlType,
+                ControlType::Numeric,
                 choiceCount(Choices),
-                dependency,
+                FieldDependency::None,
                 +[](const PauseMenuSettingsBundle& settings) {
                     return Formatter(settingsRef<Settings>(settings).*Member);
                 },
@@ -484,7 +460,11 @@ namespace ui {
                 +[](PauseMenuSettingsBundle& settings, const int delta) {
                     auto& typedSettings = settingsRef<Settings>(settings);
                     if constexpr (Adjuster == nullptr) {
-                        stepChoice(Choices, typedSettings.*Member, delta);
+                        const int idx = std::clamp(
+                            pause_menu_shared::closestChoiceIndex(Choices, typedSettings.*Member) + delta,
+                            0,
+                            static_cast<int>(Choices.size()) - 1);
+                        typedSettings.*Member = Choices[static_cast<std::size_t>(idx)];
                         return AdjustResult::Updated;
                     } else {
                         return Adjuster(typedSettings, delta);
@@ -493,66 +473,37 @@ namespace ui {
             };
         }
 
-        template <typename Settings, auto Member, const auto& Labels, auto Formatter>
-        constexpr SettingFieldInfo makeEnumChoiceField(const char* label, const char* hint) {
-            using Enum = MemberValueType<Settings, Member>;
-            return {
-                label,
-                hint,
-                ControlType::Choice,
-                choiceCount(Labels),
-                FieldDependency::None,
-                +[](const PauseMenuSettingsBundle& settings) {
-                    return Formatter(settingsRef<Settings>(settings).*Member);
-                },
-                +[](const PauseMenuSettingsBundle& settings) {
-                    return std::clamp(
-                        static_cast<int>(settingsRef<Settings>(settings).*Member),
-                        0,
-                        static_cast<int>(Labels.size()) - 1);
-                },
-                +[](PauseMenuSettingsBundle& settings, const int delta) {
-                    auto& value = settingsRef<Settings>(settings).*Member;
-                    value = static_cast<Enum>(wrapIndex(static_cast<int>(value) + delta, static_cast<int>(Labels.size())));
-                    return AdjustResult::Updated;
-                },
-            };
-        }
-
-        template <typename Settings, auto Member, const auto& Choices, auto Formatter>
-        constexpr SettingFieldInfo makeIndexedChoiceField(
-            const char* label,
-            const char* hint,
-            const FieldDependency dependency = FieldDependency::None)
-        {
-            return {
-                label,
-                hint,
-                ControlType::Numeric,
-                choiceCount(Choices),
-                dependency,
-                +[](const PauseMenuSettingsBundle& settings) {
-                    return Formatter(settingsRef<Settings>(settings).*Member);
-                },
-                +[](const PauseMenuSettingsBundle& settings) {
-                    return std::clamp(
-                        settingsRef<Settings>(settings).*Member,
-                        0,
-                        static_cast<int>(Choices.size()) - 1);
-                },
-                +[](PauseMenuSettingsBundle& settings, const int delta) {
-                    auto& value = settingsRef<Settings>(settings).*Member;
-                    value = std::clamp(value + delta, 0, static_cast<int>(Choices.size()) - 1);
-                    return AdjustResult::Updated;
-                },
-            };
-        }
-
         constexpr auto kFieldInfo = std::to_array<SettingFieldInfo>({
             withConfig<DisplaySettings, &DisplaySettings::windowMode>(
-                makeEnumChoiceField<DisplaySettings, &DisplaySettings::windowMode, kWindowModeLabels, formatWindowModeText>(
+                SettingFieldInfo{
                     "WINDOW MODE",
-                    "LEFT/RIGHT TO CYCLE"),
+                    "LEFT/RIGHT TO CYCLE",
+                    ControlType::Choice,
+                    choiceCount(kWindowModeLabels),
+                    FieldDependency::None,
+                    +[](const PauseMenuSettingsBundle& settings) {
+                        switch (settings.display.windowMode) {
+                            case WindowMode::Borderless:
+                                return std::string{kWindowModeLabels[0]};
+                            case WindowMode::Windowed:
+                                return std::string{kWindowModeLabels[1]};
+                            default:
+                                return std::string{"UNKNOWN"};
+                        }
+                    },
+                    +[](const PauseMenuSettingsBundle& settings) {
+                        return std::clamp(
+                            static_cast<int>(settings.display.windowMode),
+                            0,
+                            static_cast<int>(kWindowModeLabels.size()) - 1);
+                    },
+                    +[](PauseMenuSettingsBundle& settings, const int delta) {
+                        auto& value = settings.display.windowMode;
+                        value = static_cast<WindowMode>(
+                            wrapIndex(static_cast<int>(value) + delta, static_cast<int>(kWindowModeLabels.size())));
+                        return AdjustResult::Updated;
+                    },
+                },
                 "WINDOW_MODE"),
             withConfig<DisplaySettings, &DisplaySettings::vsync>(
                 makeToggleField<DisplaySettings, &DisplaySettings::vsync>("VSYNC", "TOGGLE"),
@@ -613,9 +564,27 @@ namespace ui {
                     "LEFT/RIGHT OR SLIDER"),
                 "FOV_DEGREES"),
             withConfig<InterfaceSettings, &InterfaceSettings::uiScaleIndex>(
-                makeIndexedChoiceField<InterfaceSettings, &InterfaceSettings::uiScaleIndex, pause_menu_shared::kUiScaleChoices, formatUiScaleText>(
+                SettingFieldInfo{
                     "UI SCALE",
-                    "LEFT/RIGHT OR SLIDER"),
+                    "LEFT/RIGHT OR SLIDER",
+                    ControlType::Numeric,
+                    choiceCount(pause_menu_shared::kUiScaleChoices),
+                    FieldDependency::None,
+                    +[](const PauseMenuSettingsBundle& settings) {
+                        return formatUiScaleText(settings.interface.uiScaleIndex);
+                    },
+                    +[](const PauseMenuSettingsBundle& settings) {
+                        return std::clamp(
+                            settings.interface.uiScaleIndex,
+                            0,
+                            static_cast<int>(pause_menu_shared::kUiScaleChoices.size()) - 1);
+                    },
+                    +[](PauseMenuSettingsBundle& settings, const int delta) {
+                        auto& value = settings.interface.uiScaleIndex;
+                        value = std::clamp(value + delta, 0, static_cast<int>(pause_menu_shared::kUiScaleChoices.size()) - 1);
+                        return AdjustResult::Updated;
+                    },
+                },
                 "UI_SCALE_INDEX"),
             withConfig<InterfaceSettings, &InterfaceSettings::showHud>(
                 makeToggleField<InterfaceSettings, &InterfaceSettings::showHud>("SHOW HUD", "TOGGLE"),
@@ -681,12 +650,6 @@ namespace ui {
                     return settings.objectInfo;
             }
             return true;
-        }
-
-        template <typename T, std::size_t N>
-        void stepChoice(const std::array<T, N>& choices, T& value, const int delta) {
-            const int idx = std::clamp(pause_menu_shared::closestChoiceIndex(choices, value) + delta, 0, static_cast<int>(N) - 1);
-            value = choices[static_cast<std::size_t>(idx)];
         }
 
         float normalizedOption(const int idx, const int count) {
@@ -850,7 +813,9 @@ namespace ui {
         hud.lines.push_back(header);
 
         const int rowCount = settingCount();
-        hud.lines.reserve(static_cast<std::size_t>(rowCount + 1));
+        using HudLinesSizeType = decltype(hud.lines)::size_type;
+        const auto reserveCount = static_cast<HudLinesSizeType>(std::max(rowCount, 0) + 1);
+        hud.lines.reserve(reserveCount);
         if (isControlPage()) {
             for (int row = 0; row < rowCount; ++row) {
                 const auto& action = input::rebindActions()[row];
@@ -1223,9 +1188,10 @@ namespace ui {
         }
 
         const auto findFocus = [](const auto& order, const int count, const FocusTarget target) {
-            for (int i = 0; i < count; ++i) {
-                if (order[static_cast<std::size_t>(i)] == target) {
-                    return i;
+            const auto limit = std::min(order.size(), static_cast<std::size_t>(std::max(count, 0)));
+            for (std::size_t i = 0; i < limit; ++i) {
+                if (order[i] == target) {
+                    return static_cast<int>(i);
                 }
             }
             return -1;
@@ -1253,12 +1219,12 @@ namespace ui {
         if (const int topIndex = findFocus(kTopOrder, static_cast<int>(kTopOrder.size()), focusTarget_); topIndex >= 0) {
             if (delta > 0) {
                 if (topIndex + 1 < static_cast<int>(kTopOrder.size())) {
-                    focusTarget_ = kTopOrder[static_cast<std::size_t>(topIndex + 1)];
+                    focusTarget_ = kTopOrder[static_cast<std::size_t>(topIndex) + 1u];
                 } else if (rowCount > 0) {
                     setSelectedSettingRow(0);
                 }
             } else if (topIndex > 0) {
-                focusTarget_ = kTopOrder[static_cast<std::size_t>(topIndex - 1)];
+                focusTarget_ = kTopOrder[static_cast<std::size_t>(topIndex) - 1u];
             }
             statusMessage_.clear();
             return;
@@ -1267,10 +1233,10 @@ namespace ui {
         if (const int bottomIndex = findFocus(bottomOrder, bottomCount, focusTarget_); bottomIndex >= 0) {
             if (delta > 0) {
                 if (bottomIndex + 1 < bottomCount) {
-                    focusTarget_ = bottomOrder[static_cast<std::size_t>(bottomIndex + 1)];
+                    focusTarget_ = bottomOrder[static_cast<std::size_t>(bottomIndex) + 1u];
                 }
             } else if (bottomIndex > 0) {
-                focusTarget_ = bottomOrder[static_cast<std::size_t>(bottomIndex - 1)];
+                focusTarget_ = bottomOrder[static_cast<std::size_t>(bottomIndex) - 1u];
             } else if (rowCount > 0) {
                 setSelectedSettingRow(rowCount - 1);
             }
