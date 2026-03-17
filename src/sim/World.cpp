@@ -1,12 +1,9 @@
 #include "World.h"
-#include "Broadphase.h"
-#include "Collision.h"
 #include "Material.h"
+
 #include <algorithm>
 #include <cmath>
-#include <limits>
 #include <ranges>
-#include <utility>
 
 namespace sim {
     namespace {
@@ -52,16 +49,30 @@ namespace sim {
     void World::step(const double dt)
     {
         metrics_ = {};
+        const int substeps = computeSubstepCount_(dt);
+        const double substepDt = dt / static_cast<double>(substeps);
+        for (int substep = 0; substep < substeps; ++substep) {
+            stepSingle_(substepDt);
+        }
+        metrics_.manifoldActivePairs = contactCache_.size();
+    }
+
+    void World::stepSingle_(const double dt)
+    {
         beginContactFrame_();
         sanitizeBodies_();
         prepareForces_();
         computeForces_();
-        integrate_(dt);
+        integrateVelocities_(dt * 0.5);
         sanitizeBodies_();
         moveBodiesWithCCD_(dt);
         sanitizeBodies_();
+        prepareForces_();
+        computeForces_();
+        integrateVelocities_(dt * 0.5);
+        sanitizeBodies_();
+        updateSleepState_(dt);
         endContactFrame_();
-        metrics_.manifoldActivePairs = contactCache_.size();
     }
 
     void World::addBody(const Body& b)
@@ -70,6 +81,8 @@ namespace sim {
         assignMaterial(bodies_.back(), bodies_.back().materialName);
         bodies_.back().prevPosition = bodies_.back().position;
         bodies_.back().prevOrientation = bodies_.back().orientation;
+        bodies_.back().sleeping = false;
+        bodies_.back().sleepTimer = 0.0;
         assignBodyId_(bodies_.back());
     }
 
@@ -78,6 +91,7 @@ namespace sim {
         metrics_ = {};
         bodies_.clear();
         forces_.clear();
+        contactTouchedBodies_.clear();
         contactCache_.clear();
         nextBodyId_ = 1;
     }
@@ -93,7 +107,26 @@ namespace sim {
         if (bodies_.size() != forces_.size()) {
             forces_.resize(bodies_.size());
         }
+        if (bodies_.size() != contactTouchedBodies_.size()) {
+            contactTouchedBodies_.resize(bodies_.size());
+        }
         std::ranges::fill(forces_, Vec3{});
+    }
+
+    int World::computeSubstepCount_(const double dt) const
+    {
+        const double absDt = std::abs(dt);
+        if (!(absDt > 0.0)) {
+            return 1;
+        }
+
+        const double maxSubstepDt =
+            (std::isfinite(params_.maxSubstepDt) && params_.maxSubstepDt > 0.0)
+                ? params_.maxSubstepDt
+                : Params::kDefaultMaxSubstepDt;
+        const int maxSubsteps = std::clamp(params_.maxSubsteps, 1, Params::kDefaultMaxSubsteps);
+        const int requested = static_cast<int>(std::ceil(absDt / maxSubstepDt));
+        return std::clamp(requested, 1, maxSubsteps);
     }
 
     void World::computeForces_()
@@ -111,6 +144,7 @@ namespace sim {
                 dynamicBodies.push_back(i);
             }
         }
+        metrics_.gravityBodies += dynamicBodies.size();
 
         if (dynamicBodies.size() < 2) {
             return;
@@ -119,6 +153,7 @@ namespace sim {
         for (std::size_t a = 0; a + 1 < dynamicBodies.size(); ++a) {
             const std::size_t i = dynamicBodies[a];
             for (std::size_t b = a + 1; b < dynamicBodies.size(); ++b) {
+                ++metrics_.gravityPairs;
                 applyGravityPair_(i, dynamicBodies[b]);
             }
         }
@@ -138,22 +173,24 @@ namespace sim {
         const double eps = (A.radius + B.radius) * 1e-6;
         const double r2Soft = r2 + eps * eps;
 
-        const double m1 = 1.0 / A.invMass;
-        const double m2 = 1.0 / B.invMass;
+        const double invMassProduct = A.invMass * B.invMass;
+        if (!std::isfinite(invMassProduct) || invMassProduct <= 0.0) {
+            return;
+        }
 
         const double invR = 1.0 / std::sqrt(r2Soft);
         const double invR3 = invR * invR * invR;
-
-        const Vec3 f12 = d * (params_.G * m1 * m2 * invR3);
+        const double forceScale = (params_.G / invMassProduct) * invR3;
+        const Vec3 f12 = d * forceScale;
         forces_[i] += f12;
         forces_[j] -= f12;
     }
 
-    void World::integrate_(const double dt)
+    void World::integrateVelocities_(const double dt)
     {
         for (std::size_t i = 0; i < bodies_.size(); ++i) {
             Body& b = bodies_[i];
-            if (b.invMass == 0.0) {
+            if (b.invMass == 0.0 || b.sleeping) {
                 continue;
             }
             const Vec3 a = forces_[i] * b.invMass;
@@ -171,6 +208,9 @@ namespace sim {
     void World::advancePositions_(const double dt)
     {
         for (auto& b : bodies_) {
+            if (b.sleeping) {
+                continue;
+            }
             b.position += b.velocity * dt;
             integrateOrientation(b.orientation, b.angularVelocity, dt);
         }
@@ -228,197 +268,19 @@ namespace sim {
             } else {
                 normalizeQuat(b.prevOrientation);
             }
+            if (b.invMass <= 0.0) {
+                b.sleeping = false;
+                b.sleepTimer = 0.0;
+            } else if (!std::isfinite(b.sleepTimer) || b.sleepTimer < 0.0) {
+                b.sleepTimer = 0.0;
+                b.sleeping = false;
+                mark();
+            }
 
             if (bodySanitized) {
                 ++metrics_.sanitizedBodies;
             }
         }
-    }
-
-    void World::moveBodiesWithCCD_(const double dt)
-    {
-        if (!params_.enableCollisions) {
-            advancePositions_(dt);
-            return;
-        }
-
-        double remaining = dt;
-        constexpr double machineEps = std::numeric_limits<double>::epsilon();
-        const double timeTol = machineEps * std::max(1.0, std::abs(dt));
-        if (remaining <= timeTol) {
-            return;
-        }
-
-        while (remaining > timeTol) {
-            const auto pairs = broadphase::sweptPairs(bodies_, remaining);
-            metrics_.broadphaseCandidatesSwept += pairs.size();
-
-            bool found = false;
-            double tHit = std::numeric_limits<double>::infinity();
-            std::size_t toiI = 0;
-            std::size_t toiJ = 0;
-            for (const auto& [i, j] : pairs) {
-                const Body& A = bodies_[i];
-                const Body& B = bodies_[j];
-                if (A.invMass == 0.0 && B.invMass == 0.0) continue;
-
-                double t = 0.0;
-                if (!collision::sweptCollisionTime(A, B, remaining, t)) continue;
-                if (t < tHit) {
-                    tHit = t;
-                    toiI = i;
-                    toiJ = j;
-                    found = true;
-                }
-            }
-
-            if (!found) {
-                advancePositions_(remaining);
-                break;
-            }
-
-            bool advancedToToi = false;
-            if (tHit > timeTol) {
-                const double consumeToToi = std::min(tHit, remaining);
-                if (consumeToToi > timeTol) {
-                    advancePositions_(consumeToToi);
-                    remaining = std::max(0.0, remaining - consumeToToi);
-                    advancedToToi = true;
-                }
-            }
-
-            const auto toiStats = collision::solveCollisionPair(
-                bodies_[toiI], bodies_[toiJ], solveParamsForPair_(toiI, toiJ), true);
-            metrics_.pairsVisited += toiStats.visited ? 1 : 0;
-            metrics_.pairsImpulseApplied += toiStats.impulseApplied ? 1 : 0;
-
-            if (toiStats.hasNormal) {
-                ContactManifold& manifold = contactCache_[contactKeyForPair_(toiI, toiJ)];
-                manifold.touched = true;
-                manifold.staleFrames = 0;
-                if (toiStats.normalImpulse > 0.0) {
-                    manifold.normalImpulse = toiStats.normalImpulse;
-                } else {
-                    manifold.normalImpulse *= 0.9;
-                }
-            }
-            ++metrics_.ccdEvents;
-
-            const auto overlapPairs = broadphase::discretePairs(bodies_);
-            metrics_.broadphaseCandidatesDiscrete += overlapPairs.size();
-            std::vector<std::pair<std::size_t, std::size_t>> zeroTimeOverlapPairs;
-            zeroTimeOverlapPairs.reserve(overlapPairs.size());
-            for (const auto& [i, j] : overlapPairs) {
-                const Body& A = bodies_[i];
-                const Body& B = bodies_[j];
-                if (A.invMass == 0.0 && B.invMass == 0.0) {
-                    continue;
-                }
-                if (collision::isColliding(A, B)) {
-                    zeroTimeOverlapPairs.emplace_back(i, j);
-                }
-            }
-
-            if (!zeroTimeOverlapPairs.empty()) {
-                collidePairs_(zeroTimeOverlapPairs, params_.collisionIterations);
-                ++metrics_.ccdEvents;
-                if (params_.collisionIterations > 0) {
-                    metrics_.ccdZeroTimePairsResolved += zeroTimeOverlapPairs.size();
-                }
-            }
-
-            if (!advancedToToi) {
-                // Ensure forward progress for repeated zero-time TOI contacts.
-                const double minConsume = std::max(timeTol * 32.0, std::max(0.0, dt) / 128.0);
-                const double consume = std::min(remaining, minConsume);
-                if (consume > 0.0) {
-                    advancePositions_(consume);
-                    remaining = std::max(0.0, remaining - consume);
-                } else {
-                    break;
-                }
-            }
-        }
-    }
-
-    void World::collidePairs_(const std::vector<std::pair<std::size_t, std::size_t>>& pairs, const int iterations)
-    {
-        if (pairs.empty() || iterations <= 0) {
-            return;
-        }
-
-        std::vector<ActiveCollisionPair> activePairs;
-        activePairs.reserve(pairs.size());
-        for (const auto& [i, j] : pairs) {
-            activePairs.push_back(ActiveCollisionPair{
-                .i = i,
-                .j = j,
-                .key = contactKeyForPair_(i, j),
-                .params = solveParamsForPair_(i, j),
-            });
-        }
-        if (activePairs.empty()) {
-            return;
-        }
-
-        warmStartPairs_(activePairs);
-
-        for (int it = 0; it < iterations; ++it) {
-            for (auto& pair : activePairs) {
-                const auto stats = collision::solveCollisionPair(
-                    bodies_[pair.i], bodies_[pair.j], pair.params, false);
-                metrics_.pairsVisited += stats.visited ? 1 : 0;
-                metrics_.pairsImpulseApplied += stats.impulseApplied ? 1 : 0;
-
-                if (stats.hasNormal && stats.normalImpulse > 0.0) {
-                    pair.accumulatedImpulse += stats.normalImpulse;
-                }
-            }
-        }
-
-        for (const auto& pair : activePairs) {
-            if (!collision::isColliding(bodies_[pair.i], bodies_[pair.j])) {
-                continue;
-            }
-
-            ContactManifold& manifold = contactCache_[pair.key];
-            manifold.touched = true;
-            manifold.staleFrames = 0;
-
-            if (pair.accumulatedImpulse > 0.0) {
-                manifold.normalImpulse = pair.accumulatedImpulse;
-            } else {
-                manifold.normalImpulse *= 0.9;
-            }
-        }
-    }
-
-    World::ContactKey World::contactKeyForPair_(const std::size_t i, const std::size_t j) const
-    {
-        const std::uint64_t a = bodies_[i].id;
-        const std::uint64_t b = bodies_[j].id;
-        return (a < b) ? ContactKey{a, b} : ContactKey{b, a};
-    }
-
-    collision::SolveParams World::solveParamsForPair_(const std::size_t i, const std::size_t j) const
-    {
-        const Body& a = bodies_[i];
-        const Body& b = bodies_[j];
-
-        collision::SolveParams params{};
-        const double pairRestitution = std::clamp(std::min(a.restitution, b.restitution), 0.0, 1.0);
-        const double worldRestitution = std::isfinite(params_.restitution)
-            ? std::clamp(params_.restitution, 0.0, 1.0)
-            : Params::kDefaultRestitution;
-        params.restitution = std::min(pairRestitution, worldRestitution);
-        params.staticFriction = std::sqrt(std::max(0.0, a.staticFriction) * std::max(0.0, b.staticFriction));
-        params.dynamicFriction = std::sqrt(std::max(0.0, a.dynamicFriction) * std::max(0.0, b.dynamicFriction));
-        if (params.dynamicFriction > params.staticFriction) {
-            params.dynamicFriction = params.staticFriction;
-        }
-        params.penetrationSlop = params_.penetrationSlop;
-        params.positionCorrectionPercent = params_.positionCorrectionPercent;
-        return params;
     }
 
     void World::assignBodyId_(Body& b)
@@ -432,58 +294,60 @@ namespace sim {
             assignMaterial(body, body.materialName);
             body.prevPosition = body.position;
             body.prevOrientation = body.orientation;
+            body.sleeping = false;
+            body.sleepTimer = 0.0;
             assignBodyId_(body);
         }
     }
 
-    void World::beginContactFrame_()
+    void World::wakeBody_(Body& b)
     {
-        for (auto &val: contactCache_ | std::views::values) {
-            val.touched = false;
+        if (!isDynamicBody(b)) {
+            return;
         }
+        b.sleeping = false;
+        b.sleepTimer = 0.0;
     }
 
-    void World::warmStartPairs_(const std::span<const ActiveCollisionPair> pairs)
+    void World::updateSleepState_(const double dt)
     {
-        for (const auto& pair : pairs) {
-            constexpr double kWarmStartFactor = 0.85;
-            auto it = contactCache_.find(pair.key);
-            if (it == contactCache_.end()) continue;
-
-            ContactManifold& manifold = it->second;
-            if (manifold.normalImpulse <= 0.0) continue;
-            if (!collision::isColliding(bodies_[pair.i], bodies_[pair.j])) continue;
-
-            Vec3 n{};
-            if (!collision::contactNormal(bodies_[pair.i], bodies_[pair.j], n)) continue;
-
-            const double vN = (bodies_[pair.j].velocity - bodies_[pair.i].velocity).dot(n);
-            if (vN > 0.0) continue;
-
-            collision::applyNormalImpulse(
-                bodies_[pair.i], bodies_[pair.j], n, manifold.normalImpulse * kWarmStartFactor);
-            manifold.touched = true;
-            manifold.staleFrames = 0;
-            ++metrics_.warmStartedPairs;
+        if (!params_.enableSleeping) {
+            for (auto& body : bodies_) {
+                wakeBody_(body);
+            }
+            return;
         }
-    }
 
-    void World::endContactFrame_()
-    {
-        for (auto it = contactCache_.begin(); it != contactCache_.end(); ) {
-            ContactManifold& manifold = it->second;
-            if (manifold.touched) {
-                manifold.staleFrames = 0;
-                ++it;
+        const double linearThreshold = std::max(0.0, params_.sleepLinearThreshold);
+        const double angularThreshold = std::max(0.0, params_.sleepAngularThreshold);
+        const double linearThreshold2 = linearThreshold * linearThreshold;
+        const double angularThreshold2 = angularThreshold * angularThreshold;
+        const double requiredSleepTime = std::max(0.0, params_.sleepTime);
+
+        for (std::size_t i = 0; i < bodies_.size(); ++i) {
+            Body& body = bodies_[i];
+            if (!isDynamicBody(body)) {
                 continue;
             }
 
-            ++manifold.staleFrames;
-            manifold.normalImpulse *= 0.75;
-            if (manifold.staleFrames > 2 || manifold.normalImpulse < 1e-8) {
-                it = contactCache_.erase(it);
+            const bool touching = i < contactTouchedBodies_.size() && contactTouchedBodies_[i];
+            const bool eligibleForSleep = !params_.enableGravity || touching;
+            const double linearSpeed2 = body.velocity.dot(body.velocity);
+            const double angularSpeed2 = body.angularVelocity.dot(body.angularVelocity);
+            const bool belowThresholds =
+                linearSpeed2 <= linearThreshold2 &&
+                angularSpeed2 <= angularThreshold2;
+
+            if (eligibleForSleep && belowThresholds) {
+                body.sleepTimer += dt;
+                if (body.sleepTimer >= requiredSleepTime) {
+                    body.sleeping = true;
+                    body.velocity = Vec3{};
+                    body.angularVelocity = Vec3{};
+                }
             } else {
-                ++it;
+                body.sleepTimer = 0.0;
+                body.sleeping = false;
             }
         }
     }

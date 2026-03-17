@@ -9,7 +9,9 @@
 namespace sim::broadphase {
     using Pair = std::pair<std::size_t, std::size_t>;
 
+    void discretePairs(const std::vector<Body>& bodies, std::vector<Pair>& outPairs);
     [[nodiscard]] std::vector<Pair> discretePairs(const std::vector<Body>& bodies);
+    void sweptPairs(const std::vector<Body>& bodies, double maxTime, std::vector<Pair>& outPairs);
     [[nodiscard]] std::vector<Pair> sweptPairs(const std::vector<Body>& bodies, double maxTime);
 } // namespace sim::broadphase
 

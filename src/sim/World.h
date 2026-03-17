@@ -16,12 +16,16 @@ namespace sim {
     public:
         struct Metrics {
             // Lightweight per-step counters surfaced through the optional HUD diagnostics.
+            std::size_t gravityBodies = 0;
+            std::size_t gravityPairs = 0;
             std::size_t broadphaseCandidatesDiscrete = 0;
             std::size_t broadphaseCandidatesSwept = 0;
             std::size_t pairsVisited = 0;
             std::size_t pairsImpulseApplied = 0;
             std::size_t ccdEvents = 0;
             std::size_t ccdZeroTimePairsResolved = 0;
+            std::size_t ccdIterations = 0;
+            std::size_t ccdBudgetExhaustions = 0;
             std::size_t warmStartedPairs = 0;
             std::size_t manifoldActivePairs = 0;
             std::size_t sanitizedBodies = 0;
@@ -33,15 +37,32 @@ namespace sim {
             static constexpr double kDefaultRestitution = 0.5;
             static constexpr double kDefaultPenetrationSlop = 1e-4;
             static constexpr double kDefaultPositionCorrectionPercent = 0.8;
-            static constexpr int kDefaultCollisionIterations = 1;
+            static constexpr int kDefaultVelocityIterations = 2;
+            static constexpr int kDefaultPositionIterations = 2;
+            static constexpr double kDefaultMaxSubstepDt = 1.0 / 60.0;
+            static constexpr int kDefaultMaxSubsteps = 4;
+            static constexpr int kDefaultMaxCcdIterationsPerStep = 64;
+            static constexpr int kDefaultMaxRepeatedZeroToiPairs = 4;
+            static constexpr double kDefaultSleepLinearThreshold = 0.02;
+            static constexpr double kDefaultSleepAngularThreshold = 0.02;
+            static constexpr double kDefaultSleepTime = 0.5;
 
             double G = kDefaultG;
             double restitution = kDefaultRestitution; // Global upper bound for contact restitution [0..1]
             double penetrationSlop = kDefaultPenetrationSlop; // Advanced collision tuning
             double positionCorrectionPercent = kDefaultPositionCorrectionPercent; // Advanced collision tuning
-            int collisionIterations = kDefaultCollisionIterations;
+            int velocityIterations = kDefaultVelocityIterations;
+            int positionIterations = kDefaultPositionIterations;
+            double maxSubstepDt = kDefaultMaxSubstepDt;
+            int maxSubsteps = kDefaultMaxSubsteps;
+            int maxCcdIterationsPerStep = kDefaultMaxCcdIterationsPerStep;
+            int maxRepeatedZeroToiPairs = kDefaultMaxRepeatedZeroToiPairs;
+            double sleepLinearThreshold = kDefaultSleepLinearThreshold;
+            double sleepAngularThreshold = kDefaultSleepAngularThreshold;
+            double sleepTime = kDefaultSleepTime;
             bool enableGravity = true;
             bool enableCollisions = true;
+            bool enableSleeping = true;
         };
 
         World() = default;
@@ -70,6 +91,8 @@ namespace sim {
 
         struct ContactManifold {
             double normalImpulse = 0.0;
+            double tangentImpulse = 0.0;
+            Vec3 normal{};
             bool touched = false;
             std::size_t staleFrames = 0;
         };
@@ -89,15 +112,24 @@ namespace sim {
         std::uint64_t nextBodyId_ = 1;
 
         std::vector<Vec3> forces_{};
+        std::vector<bool> contactTouchedBodies_{};
+        void stepSingle_(double dt);
         void prepareForces_();
         void computeForces_();
-        void integrate_(double dt);
+        void integrateVelocities_(double dt);
         void advancePositions_(double dt);
         void moveBodiesWithCCD_(double dt);
+        [[nodiscard]] int computeSubstepCount_(double dt) const;
         void sanitizeBodies_();
+        void updateSleepState_(double dt);
+
+        static void wakeBody_(Body& b);
         void applyGravityPair_(std::size_t i, std::size_t j);
 
-        void collidePairs_(const std::vector<std::pair<std::size_t, std::size_t>>& pairs, int iterations);
+        void collidePairs_(
+            const std::vector<std::pair<std::size_t, std::size_t>>& pairs,
+            int velocityIterations,
+            int positionIterations);
         [[nodiscard]] ContactKey contactKeyForPair_(std::size_t i, std::size_t j) const;
         [[nodiscard]] collision::SolveParams solveParamsForPair_(std::size_t i, std::size_t j) const;
         void assignBodyId_(Body& b);

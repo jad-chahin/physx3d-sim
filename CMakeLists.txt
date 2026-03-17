@@ -44,24 +44,31 @@ endif()
 add_subdirectory("${PHYSICS3D_GLFW_DIR}" "${CMAKE_BINARY_DIR}/third_party/glfw")
 add_subdirectory("${PHYSICS3D_GLM_DIR}" "${CMAKE_BINARY_DIR}/third_party/glm")
 
+add_library(physics3d_sim STATIC
+        src/sim/DefaultWorld.cpp
+        src/sim/Material.cpp
+        src/sim/World.cpp
+        src/sim/WorldCollision.cpp
+        src/sim/Broadphase.cpp
+        src/sim/Collision.cpp
+)
+
+target_include_directories(physics3d_sim PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
 add_executable(physics3d
         src/main.cpp
         src/app/AppLoop.cpp
         src/app/AppLoopSupport.cpp
-        src/sim/DefaultWorld.cpp
-        src/sim/Material.cpp
-        src/sim/World.cpp
-        src/sim/Broadphase.cpp
-        src/sim/Collision.cpp
+        src/app/FixedStepRunner.cpp
+        src/app/SceneUi.cpp
         src/third_party/glad/src/glad.c
         src/ui/OverlayRenderer.cpp
         src/ui/OverlayRendererDraw.cpp
-        src/ui/PauseMenuDisplay.cpp
-        src/ui/PauseMenuHud.cpp
+        src/ui/OverlayRendererPauseMenu.cpp
+        src/ui/PauseMenuController.cpp
         src/ui/PauseMenuInput.cpp
-        src/ui/PauseMenuShared.cpp
-        src/ui/PauseMenuSettingsIO.cpp
-        src/ui/PauseMenuState.cpp
         src/render/ShaderUtil.cpp
         src/render/SphereMesh.cpp
         src/input/Camera.cpp
@@ -76,15 +83,44 @@ target_include_directories(physics3d PRIVATE
 )
 
 if (TARGET glm::glm)
-    target_link_libraries(physics3d PRIVATE glfw opengl32 glm::glm)
+    target_link_libraries(physics3d PRIVATE physics3d_sim glfw opengl32 glm::glm)
 else()
-    target_link_libraries(physics3d PRIVATE glfw opengl32 glm)
+    target_link_libraries(physics3d PRIVATE physics3d_sim glfw opengl32 glm)
 endif()
 
 if (MSVC)
     target_compile_options(physics3d PRIVATE /W4 /permissive-)
 else()
+    target_compile_options(physics3d_sim PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(physics3d PRIVATE -Wall -Wextra -Wpedantic)
     set_source_files_properties("${PHYSICS3D_GLAD_SOURCE}" PROPERTIES
             COMPILE_OPTIONS "-Wno-pedantic")
+endif()
+
+enable_testing()
+
+add_executable(physics3d_tests
+        tests/PhysicsRegressionTests.cpp
+        tests/PauseMenuControllerTests.cpp
+        src/input/Bindings.cpp
+        src/ui/PauseMenuController.cpp
+        src/ui/PauseMenuInput.cpp
+)
+target_include_directories(physics3d_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/glad/include
+)
+target_link_libraries(physics3d_tests PRIVATE physics3d_sim glfw)
+if (MSVC)
+    target_compile_options(physics3d_tests PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(physics3d_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+if (WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND EXISTS "${PHYSICS3D_GNU_BIN_DIR}/libwinpthread-1.dll")
+    add_test(
+            NAME physics3d_tests
+            COMMAND ${CMAKE_COMMAND} -E env "PATH=${PHYSICS3D_TOOLCHAIN_PATH}" $<TARGET_FILE:physics3d_tests>)
+else()
+    add_test(NAME physics3d_tests COMMAND $<TARGET_FILE:physics3d_tests>)
 endif()

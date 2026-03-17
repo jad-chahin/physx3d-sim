@@ -11,6 +11,9 @@ namespace sim::collision {
         double dynamicFriction = 0.4;
         double penetrationSlop = 1e-4;
         double positionCorrectionPercent = 0.8;
+        bool applyPositionCorrection = true;
+        bool applyVelocityImpulse = true;
+        bool applyFrictionImpulse = true;
     };
 
     struct SolveStats {
@@ -19,6 +22,7 @@ namespace sim::collision {
         bool hasNormal = false;
         Vec3 normal{};
         double normalImpulse = 0.0;
+        double tangentImpulse = 0.0;
     };
 
     [[nodiscard]] bool isColliding(const Body& a, const Body& b);

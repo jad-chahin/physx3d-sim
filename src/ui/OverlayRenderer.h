@@ -2,6 +2,7 @@
 #define PHYSICS3D_OVERLAYRENDERER_H
 
 #include <glad/glad.h>
+#include <array>
 #include <string>
 #include <vector>
 
@@ -15,6 +16,22 @@ public:
         Numeric,
         Rebind,
         Action,
+    };
+
+    enum class PauseMenuAction {
+        Apply = 0,
+        ResetWorld,
+        ResetControls,
+        ResetIcon,
+        Close,
+        Exit,
+        Count,
+    };
+
+    struct PauseMenuActionState {
+        bool visible = false;
+        bool hovered = false;
+        bool selected = false;
     };
 
     struct PauseMenuHudLine {
@@ -48,26 +65,18 @@ public:
         bool visible = false;
         bool awaitingBind = false;
         bool selectedRowIsControl = false;
-        bool showApplyAction = false;
-        bool hoverApplyAction = false;
-        bool selectedApplyAction = false;
-        bool showResetWorldAction = false;
-        bool hoverResetWorldAction = false;
-        bool selectedResetWorldAction = false;
-        bool showResetControlsAction = false;
-        bool hoverResetControlsAction = false;
-        bool selectedResetControlsAction = false;
-        bool showResetIcon = false;
-        bool hoverResetIcon = false;
-        bool selectedResetIcon = false;
-        bool selectedCloseAction = false;
-        bool selectedExitAction = false;
+        std::array<PauseMenuActionState, static_cast<std::size_t>(PauseMenuAction::Count)> actions{};
+        int hoveredPageTabIndex = -1;
         bool showResetConfirm = false;
         bool hoverResetConfirmYes = false;
         bool hoverResetConfirmNo = false;
         bool selectedResetConfirmYes = false;
         bool selectedResetConfirmNo = false;
+        bool resetConfirmSingleAcknowledge = false;
+        std::string resetConfirmTitleText;
         std::string resetConfirmBodyText;
+        std::string resetConfirmYesLabel;
+        std::string resetConfirmNoLabel;
         std::string pendingAction;
         std::string statusLine;
         int activePageIndex = 0;

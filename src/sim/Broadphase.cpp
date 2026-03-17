@@ -4,6 +4,10 @@
 
 namespace sim::broadphase {
     namespace {
+        [[nodiscard]] bool canBodiesGeneratePair(const Body& a, const Body& b) {
+            return a.invMass > 0.0 || b.invMass > 0.0;
+        }
+
         struct AxisInterval {
             std::size_t idx = 0;
             double minX = 0.0;
@@ -20,16 +24,17 @@ namespace sim::broadphase {
         }
 
         template <typename Builder>
-        std::vector<Pair> sapPairs(const std::vector<Body>& bodies, Builder&& builder)
+        void sapPairs(const std::vector<Body>& bodies, Builder&& builder, std::vector<Pair>& outPairs)
         {
-            std::vector<Pair> pairs;
+            outPairs.clear();
             if (bodies.size() < 2) {
-                return pairs;
+                return;
             }
 
             thread_local std::vector<AxisInterval> intervals;
             intervals.clear();
             intervals.reserve(bodies.size());
+            outPairs.reserve(std::max(outPairs.capacity(), bodies.size() * 2));
 
             for (std::size_t i = 0; i < bodies.size(); ++i) {
                 AxisInterval in;
@@ -39,7 +44,7 @@ namespace sim::broadphase {
             }
 
             if (intervals.size() < 2) {
-                return pairs;
+                return;
             }
 
             std::ranges::sort(intervals, [](const AxisInterval& a, const AxisInterval& b) {
@@ -53,13 +58,11 @@ namespace sim::broadphase {
                     if (b.minX > a.maxX) {
                         break;
                     }
-                    if (overlapsYZ(a, b)) {
-                        pairs.emplace_back(std::min(a.idx, b.idx), std::max(a.idx, b.idx));
+                    if (overlapsYZ(a, b) && canBodiesGeneratePair(bodies[a.idx], bodies[b.idx])) {
+                        outPairs.emplace_back(std::min(a.idx, b.idx), std::max(a.idx, b.idx));
                     }
                 }
             }
-
-            return pairs;
         }
 
         [[nodiscard]] bool buildDiscreteInterval(const Body& b, const std::size_t index, AxisInterval& out)
@@ -111,15 +114,29 @@ namespace sim::broadphase {
         }
     } // namespace
 
+    void discretePairs(const std::vector<Body>& bodies, std::vector<Pair>& outPairs)
+    {
+        sapPairs(bodies, buildDiscreteInterval, outPairs);
+    }
+
     std::vector<Pair> discretePairs(const std::vector<Body>& bodies)
     {
-        return sapPairs(bodies, buildDiscreteInterval);
+        std::vector<Pair> pairs;
+        discretePairs(bodies, pairs);
+        return pairs;
+    }
+
+    void sweptPairs(const std::vector<Body>& bodies, const double maxTime, std::vector<Pair>& outPairs)
+    {
+        sapPairs(bodies, [maxTime](const Body& b, const std::size_t index, AxisInterval& out) {
+            return buildSweptInterval(b, index, maxTime, out);
+        }, outPairs);
     }
 
     std::vector<Pair> sweptPairs(const std::vector<Body>& bodies, const double maxTime)
     {
-        return sapPairs(bodies, [maxTime](const Body& b, const std::size_t index, AxisInterval& out) {
-            return buildSweptInterval(b, index, maxTime, out);
-        });
+        std::vector<Pair> pairs;
+        sweptPairs(bodies, maxTime, pairs);
+        return pairs;
     }
 } // namespace sim::broadphase

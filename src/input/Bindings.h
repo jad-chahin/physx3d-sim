@@ -25,6 +25,8 @@ namespace input {
         int moveUp = GLFW_KEY_E;
         int moveDown = GLFW_KEY_Q;
         int cameraBoost = GLFW_KEY_LEFT_SHIFT;
+
+        bool operator==(const ControlBindings&) const = default;
     };
 
     struct RebindAction {

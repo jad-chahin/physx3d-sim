@@ -21,6 +21,7 @@ namespace app_loop {
 constexpr double kTickRate = 60.0;
 constexpr double kFixedDt = 1.0 / kTickRate;
 constexpr double kFpsUpdateInterval = 0.5;
+constexpr double kMaxCameraFrameTime = 0.25;
 constexpr int kInternalMaxPhysicsStepsPerFrame = 512;
 
 struct FramebufferSize {
@@ -35,6 +36,34 @@ struct AppLoopState {
 };
 
 struct RuntimeState {
+    struct InputRuntime {
+        double lastMouseX = 0.0;
+        double lastMouseY = 0.0;
+        bool firstMouse = true;
+        bool mouseCaptured = true;
+    };
+
+    struct SimulationRuntime {
+        bool freezeWasDown = false;
+        bool speedDownWasDown = false;
+        bool speedUpWasDown = false;
+        bool speedResetWasDown = false;
+        bool simFrozen = false;
+        double simSpeed = 1.0;
+
+        struct FixedStepState {
+            double lastFrameTime = 0.0;
+            double accumulator = 0.0;
+            double alpha = 0.0;
+        } fixedStep{};
+    };
+
+    struct FpsRuntime {
+        double elapsed = 0.0;
+        double displayed = 0.0;
+        int frames = 0;
+    };
+
     struct SmoothedHudMetrics {
         sim::World::Metrics accumulated{};
         sim::World::Metrics displayed{};
@@ -48,21 +77,9 @@ struct RuntimeState {
         std::size_t count = 0;
     };
 
-    double lastMouseX = 0.0;
-    double lastMouseY = 0.0;
-    bool firstMouse = true;
-    bool mouseCaptured = true;
-    bool freezeWasDown = false;
-    bool speedDownWasDown = false;
-    bool speedUpWasDown = false;
-    bool speedResetWasDown = false;
-    bool simFrozen = false;
-    double simSpeed = 1.0;
-    double lastTime = 0.0;
-    double accumulator = 0.0;
-    double fpsElapsed = 0.0;
-    double hudFps = 0.0;
-    int fpsFrames = 0;
+    InputRuntime input{};
+    SimulationRuntime simulation{};
+    FpsRuntime fps{};
     SmoothedHudMetrics hudMetrics{};
     std::vector<PathTrail> pathHistory{};
 };
@@ -144,7 +161,7 @@ void updateCamera(
     double frameTime,
     input::Camera& cam);
 
-void stepSimulation(sim::World& world, double frameTime, RuntimeState& runtime, bool pauseMenuOpen);
+void stepSimulation(sim::World& world, RuntimeState& runtime, bool pauseMenuOpen, double frameTime);
 void reloadDefaultWorld(
     sim::World& world,
     RuntimeState& runtime,

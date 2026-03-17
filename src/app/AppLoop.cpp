@@ -200,14 +200,15 @@ void updatePauseMenu(
 
     pauseMenu.updateEscapeState(
         window,
-        runtime.mouseCaptured,
-        runtime.firstMouse,
-        runtime.lastTime,
-        runtime.accumulator,
+        runtime.input.mouseCaptured,
+        runtime.input.firstMouse,
+        runtime.simulation.fixedStep.lastFrameTime,
+        runtime.simulation.fixedStep.accumulator,
+        runtime.simulation.fixedStep.alpha,
         world.bodies());
     pauseMenu.handlePointerInput(window, controls, controlsConfigPath, scrollDeltaY);
     pauseMenu.handlePressedKey(window, pressedKey, controls, controlsConfigPath);
-    pauseMenu.updateContinuousInput(window, controls, controlsConfigPath);
+    pauseMenu.updateContinuousInput(window, controls);
 }
 
 void updateFrameState(
@@ -222,20 +223,21 @@ void updateFrameState(
     const auto& cameraSettings = pauseMenu.cameraSettings();
 
     app_loop::applySimulationSettings(world, simSettings);
-    runtime.simSpeed = std::clamp(runtime.simSpeed, simSettings.minSimSpeed, simSettings.maxSimSpeed);
+    runtime.simulation.simSpeed = std::clamp(runtime.simulation.simSpeed, simSettings.minSimSpeed, simSettings.maxSimSpeed);
     app_loop::handleSimulationHotkeys(window, controls, simSettings, pauseMenu.isOpen(), runtime, world);
 
     const double now = glfwGetTime();
-    double frameTime = std::min(now - runtime.lastTime, 0.25);
-    runtime.lastTime = now;
+    const double frameTime = std::max(0.0, now - runtime.simulation.fixedStep.lastFrameTime);
+    const double cameraFrameTime = std::min(frameTime, app_loop::kMaxCameraFrameTime);
+    runtime.simulation.fixedStep.lastFrameTime = now;
 
     app_loop::updateFps(runtime, frameTime);
-    app_loop::updateCamera(window, controls, cameraSettings, runtime, frameTime, cam);
-    app_loop::stepSimulation(world, frameTime, runtime, pauseMenu.isOpen());
+    app_loop::updateCamera(window, controls, cameraSettings, runtime, cameraFrameTime, cam);
+    app_loop::stepSimulation(world, runtime, pauseMenu.isOpen(), frameTime);
 }
 
 void clearFrame(const app_loop::RuntimeState& runtime, const ui::PauseMenuController& pauseMenu) {
-    if (runtime.simFrozen && !pauseMenu.isOpen()) {
+    if (runtime.simulation.simFrozen && !pauseMenu.isOpen()) {
         glClearColor(0.20f, 0.02f, 0.02f, 1.0f);
     } else {
         glClearColor(0.05f, 0.05f, 0.08f, 1.0f);
@@ -296,7 +298,7 @@ int runApp(sim::World world) {
 
     OverlayRenderer overlay;
     overlay.init();
-    runtime.lastTime = glfwGetTime();
+    runtime.simulation.fixedStep.lastFrameTime = glfwGetTime();
 
     std::vector<glm::mat4> models;
     std::vector<glm::vec3> renderPositions;
@@ -323,8 +325,7 @@ int runApp(sim::World world) {
         if (!world.bodies().empty()) {
             const app_loop::SceneView sceneView =
                 app_loop::buildSceneView(cam, pauseMenu.cameraSettings(), appState.framebufferSize);
-            const double alpha = std::clamp(runtime.accumulator / app_loop::kFixedDt, 0.0, 1.0);
-            app_loop::buildRenderModels(world, alpha, models, renderPositions);
+            app_loop::buildRenderModels(world, runtime.simulation.fixedStep.alpha, models, renderPositions);
             app_loop::drawBodies(
                 renderResources.instanceVbo,
                 renderResources.program,
@@ -351,7 +352,6 @@ int runApp(sim::World world) {
                 appState.framebufferSize,
                 pauseMenu.interfaceSettings());
         }
-
         app_loop::drawOverlay(
             overlay,
             appState.framebufferSize,

@@ -26,6 +26,8 @@ namespace sim {
         Quaternion prevOrientation; // previous world orientation for render interpolation
         Vec3 prevPosition; // previous world position for render interpolation
         std::uint64_t id = 0; // Stable identity assigned by World
+        bool sleeping = false;
+        double sleepTimer = 0.0;
     };
 } // sim
 

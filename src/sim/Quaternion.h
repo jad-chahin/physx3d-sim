@@ -48,7 +48,7 @@ namespace sim {
         return a.w * b.w + a.x * b.x + a.y * b.y + a.z * b.z;
     }
 
-    [[nodiscard]] inline Quaternion nlerpQuat(Quaternion a, Quaternion b, const double t) {
+    [[nodiscard]] inline Quaternion nlerpQuat(const Quaternion &a, Quaternion b, const double t) {
         if (quatDot(a, b) < 0.0) {
             b.w = -b.w;
             b.x = -b.x;

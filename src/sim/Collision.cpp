@@ -4,6 +4,8 @@
 
 namespace sim::collision {
     namespace {
+        constexpr double kRestitutionVelocityThreshold = 1e-3;
+
         [[nodiscard]] double epsilon(const Body& a, const Body& b) {
             return std::max((a.radius + b.radius) * 1e-6, 1e-12);
         }
@@ -236,18 +238,25 @@ namespace sim::collision {
             return stats;
         }
 
-        const double correction =
-            std::max(0.0, pen - params.penetrationSlop) * params.positionCorrectionPercent;
-        pA -= n * (correction * wA / invMassSum);
-        pB += n * (correction * wB / invMassSum);
+        if (params.applyPositionCorrection) {
+            const double correction =
+                std::max(0.0, pen - params.penetrationSlop) * params.positionCorrectionPercent;
+            pA -= n * (correction * wA / invMassSum);
+            pB += n * (correction * wB / invMassSum);
+        }
 
         const Vec3 rv = contactRelativeVelocity(a, b, rA, rB);
         const double vN = rv.dot(n);
-        if (vN >= 0.0) {
+        if (!params.applyVelocityImpulse || vN >= 0.0) {
             return stats;
         }
 
-        const double normalImpulse = -(1 + params.restitution) * vN / effMassN;
+        const double restitution =
+            std::abs(vN) > kRestitutionVelocityThreshold ? std::clamp(params.restitution, 0.0, 1.0) : 0.0;
+        const double normalImpulse = std::max(0.0, -((1.0 + restitution) * vN) / effMassN);
+        if (!std::isfinite(normalImpulse) || normalImpulse <= 0.0) {
+            return stats;
+        }
         applyImpulseAtContact(a, b, invIA, invIB, rA, rB, n * normalImpulse);
         stats.normalImpulse = normalImpulse;
         stats.impulseApplied = true;
@@ -256,7 +265,7 @@ namespace sim::collision {
         const Vec3 rv2 = contactRelativeVelocity(a, b, rA, rB);
         const Vec3 tangentUnscaled = rv2 - n * rv2.dot(n);
         const double tangentLen2 = tangentUnscaled.dot(tangentUnscaled);
-        if (tangentLen2 > 1e-24) {
+        if (params.applyFrictionImpulse && tangentLen2 > 1e-24) {
             const double tangentLen = std::sqrt(tangentLen2);
             const Vec3 t = tangentUnscaled / tangentLen;
             const double effMassT = effectiveMassAlong(a, b, invIA, invIB, rA, rB, t);
@@ -264,6 +273,9 @@ namespace sim::collision {
                 return stats;
             }
             const double jt = -rv2.dot(t) / effMassT;
+            if (!std::isfinite(jt)) {
+                return stats;
+            }
 
             double tangentImpulse = 0.0;
             const double maxStatic = normalImpulse * std::max(0.0, params.staticFriction);
@@ -274,6 +286,7 @@ namespace sim::collision {
             }
 
             applyImpulseAtContact(a, b, invIA, invIB, rA, rB, t * tangentImpulse);
+            stats.tangentImpulse = tangentImpulse;
             if (tangentImpulse != 0.0) {
                 stats.impulseApplied = true;
             }
