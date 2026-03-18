@@ -39,3 +39,7 @@
 
 # debug information files
 *.dwo
+
+# Local runtime config
+controls.cfg
+settings.cfg
