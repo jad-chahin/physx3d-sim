@@ -219,7 +219,7 @@ void drawOverlay(
     const OverlayRenderer& overlay,
     const FramebufferSize& framebufferSize,
     const RuntimeState& runtime,
-    const OverlayRenderer::PauseMenuHud& pauseMenuHud,
+    const ui::MenuView& menuView,
     const OverlayRenderer::TargetHud& targetHud,
     const std::vector<OverlayRenderer::ScreenLine>& pathLines,
     float uiScale,

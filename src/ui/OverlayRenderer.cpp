@@ -77,6 +77,52 @@ void drawLineLayer(
 
 } // namespace
 
+namespace overlay_renderer {
+
+struct Geometry {
+    float width;
+    float height;
+    float uiScale;
+};
+
+struct Buffers {
+    std::vector<float>& screenDim;
+    std::vector<float>& panelFill;
+    std::vector<float>& panelFrame;
+    std::vector<float>& accentFill;
+    std::vector<float>& textPrimary;
+    std::vector<float>& textMuted;
+    std::vector<float>& textAccent;
+    std::vector<float>& textWarning;
+    std::vector<float>& statusText;
+    std::vector<float>& crosshair;
+    std::vector<float>& pathLines;
+    std::vector<float>& popupBg;
+    std::vector<float>& popupFrame;
+    std::vector<float>& popupAccent;
+    std::vector<float>& popupText;
+};
+
+void drawMenu(const ui::MenuView& menu, const Geometry& geometry, const Buffers& buffers);
+void drawHud(
+    const Geometry& geometry,
+    bool simFrozen,
+    double simSpeed,
+    double fps,
+    const std::vector<std::string>& hudDebugLines,
+    const Buffers& buffers);
+void drawCrosshair(const Geometry& geometry, bool simFrozen, const Buffers& buffers);
+void drawPathLines(
+    const Geometry& geometry,
+    const std::vector<OverlayRenderer::ScreenLine>& pathLines,
+    const Buffers& buffers);
+void drawTargetPopup(
+    const OverlayRenderer::TargetHud& targetHud,
+    const Geometry& geometry,
+    const Buffers& buffers);
+
+} // namespace overlay_renderer
+
 void OverlayRenderer::init() {
     const GLuint vs = compileShader(GL_VERTEX_SHADER, kUiVert);
     const GLuint fs = compileShader(GL_FRAGMENT_SHADER, kUiFrag);
@@ -113,7 +159,7 @@ void OverlayRenderer::draw(
     bool simFrozen,
     double simSpeed,
     double fps,
-    const PauseMenuHud& pauseMenu,
+    const ui::MenuView& menu,
     const TargetHud& targetHud,
     const std::vector<ScreenLine>& pathLines,
     float uiScale,
@@ -159,20 +205,20 @@ void OverlayRenderer::draw(
         popupAccent,
         popupText,
     };
-    const bool frozenOverlay = simFrozen && !pauseMenu.visible;
+    const bool frozenOverlay = simFrozen && !menu.visible;
 
-    if (pauseMenu.visible) {
-        overlay_renderer::drawPauseMenu(pauseMenu, geometry, buffers);
+    if (menu.visible) {
+        overlay_renderer::drawMenu(menu, geometry, buffers);
     } else if (showHud) {
         overlay_renderer::drawHud(geometry, simFrozen, simSpeed, fps, hudDebugLines, buffers);
     }
-    if (!pauseMenu.visible && showCrosshair) {
+    if (!menu.visible && showCrosshair) {
         overlay_renderer::drawCrosshair(geometry, simFrozen, buffers);
     }
-    if (!pauseMenu.visible && !pathLines.empty()) {
+    if (!menu.visible && !pathLines.empty()) {
         overlay_renderer::drawPathLines(geometry, pathLines, buffers);
     }
-    if (!pauseMenu.visible) {
+    if (!menu.visible) {
         overlay_renderer::drawTargetPopup(targetHud, geometry, buffers);
     }
 
@@ -190,21 +236,21 @@ void OverlayRenderer::draw(
         screenDim,
         frozenOverlay
             ? std::array<float, 4>{0.05f, 0.09f, 0.12f, 0.68f}
-            : std::array<float, 4>{0.01f, 0.03f, 0.05f, pauseMenu.visible ? 0.42f : 0.62f});
+            : std::array<float, 4>{0.01f, 0.03f, 0.05f, menu.visible ? 0.42f : 0.62f});
     drawLayer(
         uColor_,
         panelFill,
-        {pauseMenu.visible ? 0.03f : 0.05f,
-         pauseMenu.visible ? 0.05f : 0.07f,
-         pauseMenu.visible ? 0.07f : 0.10f,
-         pauseMenu.visible ? 0.56f : 0.90f});
-    drawLayer(uColor_, panelFrame, {0.18f, 0.24f, 0.30f, pauseMenu.visible ? 0.78f : 0.98f});
+        {menu.visible ? 0.03f : 0.05f,
+         menu.visible ? 0.05f : 0.07f,
+         menu.visible ? 0.07f : 0.10f,
+         menu.visible ? 0.56f : 0.90f});
+    drawLayer(uColor_, panelFrame, {0.18f, 0.24f, 0.30f, menu.visible ? 0.78f : 0.98f});
     drawLayer(
         uColor_,
         accentFill,
         frozenOverlay
             ? std::array<float, 4>{0.58f, 0.83f, 0.92f, 0.88f}
-            : std::array<float, 4>{0.23f, 0.70f, 0.92f, pauseMenu.visible ? 0.72f : 0.95f});
+            : std::array<float, 4>{0.23f, 0.70f, 0.92f, menu.visible ? 0.72f : 0.95f});
     drawLayer(uColor_, textPrimary, {1.0f, 1.0f, 1.0f, 1.0f});
     drawLayer(uColor_, textMuted, {0.74f, 0.80f, 0.86f, 0.98f});
     drawLayer(uColor_, textAccent, {0.37f, 0.81f, 0.97f, 1.0f});
@@ -244,26 +290,43 @@ using namespace draw_shared;
 
 namespace {
 
-constexpr std::size_t actionIndex(const OverlayRenderer::PauseMenuAction action) {
-    return static_cast<std::size_t>(action);
+void drawActionButtons(
+    const ui::MenuView& menu,
+    const ui::pause_menu_layout::PauseMenuLayout& layout,
+    const ButtonStyle& style,
+    const ui::ActionPlacement placement,
+    const float padX,
+    const float padY,
+    const float textScalePx)
+{
+    for (std::size_t i = 0; i < menu.actions.size(); ++i) {
+        const auto& action = menu.actions[i];
+        if (action.placement != placement) {
+            continue;
+        }
+        drawButtonPx(
+            style,
+            layout.actionRect(i),
+            padX,
+            padY,
+            textScalePx,
+            action.label,
+            action.hovered,
+            action.selected);
+    }
 }
-
-struct ActionButtonDef {
-    OverlayRenderer::PauseMenuAction action;
-    const char* label;
-};
 
 } // namespace
 
-void drawPauseMenu(
-    const OverlayRenderer::PauseMenuHud& pauseMenu,
+void drawMenu(
+    const ui::MenuView& menu,
     const Geometry& geometry,
     const Buffers& buffers)
 {
     const float w = geometry.width;
     const float h = geometry.height;
     const ui::pause_menu_layout::PauseMenuLayout l =
-        ui::pause_menu_layout::buildPauseMenuLayout(w, h, geometry.uiScale, pauseMenu);
+        ui::pause_menu_layout::buildPauseMenuLayout(w, h, geometry.uiScale, menu);
     const float menuScale = l.menuScale;
     const float baseScalePx = l.baseScalePx;
     const float preferredTitleScalePx = kTitleScalePx * menuScale;
@@ -281,32 +344,35 @@ void drawPauseMenu(
 
     const float centerX = w * 0.5f;
     const float infoWidth = cardW - 72.0f;
-    const std::string title = "PAUSED";
-    const std::string resume = "ESC: RESUME";
+    const std::string title = menu.title.empty() ? "MENU" : menu.title;
+    const std::string subtitle = menu.subtitle;
     const float titleScalePx = fitScaleForWidth(title, preferredTitleScalePx, infoWidth);
-    const float resumeScalePx = fitScaleForWidth(resume, baseScalePx * 1.05f, infoWidth);
+    const float subtitleScalePx =
+        subtitle.empty() ? 0.0f : fitScaleForWidth(subtitle, baseScalePx * 1.05f, infoWidth);
     appendTextPx(
         buffers.textAccent,
         centerX - measureMaxLinePx(title, titleScalePx) * 0.5f,
         cardY0 + 18.0f * menuScale,
         titleScalePx,
         title);
-    appendTextPx(
-        buffers.textMuted,
-        centerX - measureMaxLinePx(resume, resumeScalePx) * 0.5f,
-        cardY0 + 64.0f * menuScale,
-        resumeScalePx,
-        resume);
-
-    if (!pauseMenu.statusLine.empty()) {
-        const float statusScalePx =
-            fitScaleForWidth(pauseMenu.statusLine, baseScalePx * 0.95f, infoWidth);
+    if (!subtitle.empty()) {
         appendTextPx(
-            pauseMenu.awaitingBind ? buffers.textWarning : buffers.textAccent,
-            centerX - measureMaxLinePx(pauseMenu.statusLine, statusScalePx) * 0.5f,
+            buffers.textMuted,
+            centerX - measureMaxLinePx(subtitle, subtitleScalePx) * 0.5f,
+            cardY0 + 64.0f * menuScale,
+            subtitleScalePx,
+            subtitle);
+    }
+
+    if (!menu.statusLine.empty()) {
+        const float statusScalePx =
+            fitScaleForWidth(menu.statusLine, baseScalePx * 0.95f, infoWidth);
+        appendTextPx(
+            menu.statusWarning ? buffers.textWarning : buffers.textAccent,
+            centerX - measureMaxLinePx(menu.statusLine, statusScalePx) * 0.5f,
             cardY0 + 96.0f * menuScale,
             statusScalePx,
-            pauseMenu.statusLine);
+            menu.statusLine);
     }
 
     const float tabsScalePx = l.tabsScalePx;
@@ -317,52 +383,40 @@ void drawPauseMenu(
         {buffers.panelFrame, buffers.panelFrame, buffers.textPrimary},
         {buffers.panelFill, buffers.textPrimary, buffers.textPrimary},
     };
-    const int activeTab = std::clamp(
-        pauseMenu.activePageIndex,
-        0,
-        static_cast<int>(ui::pause_menu_layout::kPageTabLabels.size()) - 1);
+    const int maxTabIndex = static_cast<int>(menu.tabs.size()) - 1;
+    const int activeTab = maxTabIndex >= 0 ? std::clamp(menu.activeTabIndex, 0, maxTabIndex) : -1;
 
-    for (std::size_t i = 0; i < ui::pause_menu_layout::kPageTabLabels.size(); ++i) {
+    for (std::size_t i = 0; i < menu.tabs.size() && i < l.tabRects.size(); ++i) {
         drawButtonPx(
             pauseButtonStyle,
             l.tabRects[i],
             tabPadX,
             tabPadY,
             tabsScalePx,
-            ui::pause_menu_layout::kPageTabLabels[i],
-            pauseMenu.hoveredPageTabIndex == static_cast<int>(i),
+            menu.tabs[i],
+            menu.hoveredTabIndex == static_cast<int>(i),
             static_cast<int>(i) == activeTab);
     }
 
-    for (const ActionButtonDef button :
-         {ActionButtonDef{OverlayRenderer::PauseMenuAction::Exit, "EXIT TO HOME"},
-          ActionButtonDef{OverlayRenderer::PauseMenuAction::Close, "X"},
-          ActionButtonDef{OverlayRenderer::PauseMenuAction::ResetIcon, "R"}})
-    {
-        const auto& state = pauseMenu.actions[actionIndex(button.action)];
-        if (!state.visible) {
-            continue;
-        }
-        drawButtonPx(
-            pauseButtonStyle,
-            l.actionRect(button.action),
-            12.0f * menuScale,
-            tabPadY,
-            tabsScalePx,
-            button.label,
-            state.hovered,
-            state.selected);
-    }
+    drawActionButtons(
+        menu,
+        l,
+        pauseButtonStyle,
+        ui::ActionPlacement::Top,
+        12.0f * menuScale,
+        tabPadY,
+        tabsScalePx);
 
     pushQuadPx(buffers.panelFill, l.sectionX0, l.settingsY0, l.sectionX1, l.settingsY1);
     pushFramePx(buffers.panelFrame, l.sectionX0, l.settingsY0, l.sectionX1, l.settingsY1, 1.5f);
     pushQuadPx(buffers.accentFill, l.sectionX0, l.settingsY0, l.sectionX1, l.settingsY0 + 3.0f);
+    const std::string sectionTitle = menu.sectionTitle.empty() ? "SETTINGS" : menu.sectionTitle;
     appendTextPx(
         buffers.textAccent,
         l.sectionX0 + 14.0f * menuScale,
         l.settingsY0 + 10.0f * menuScale,
         l.sectionHeaderScalePx,
-        "SETTINGS");
+        sectionTitle);
 
     if (l.visibleLines > 0 && l.totalLines > l.visibleLines) {
         const float trackW = 8.0f * menuScale;
@@ -375,7 +429,7 @@ void drawPauseMenu(
         const float visibleRatio =
             std::clamp(static_cast<float>(l.visibleLines) / static_cast<float>(l.totalLines), 0.0f, 1.0f);
         const float thumbH = std::max(18.0f * menuScale, (trackY1 - trackY0) * visibleRatio);
-        const float maxFirst = static_cast<float>(l.totalLines - l.visibleLines);
+        const auto maxFirst = static_cast<float>(l.totalLines - l.visibleLines);
         const float scrollT = maxFirst > 0.0f ? static_cast<float>(l.firstLine) / maxFirst : 0.0f;
         const float thumbTravel = std::max(0.0f, (trackY1 - trackY0) - thumbH);
         const float thumbY0 = trackY0 + thumbTravel * scrollT;
@@ -387,36 +441,25 @@ void drawPauseMenu(
             thumbY0 + thumbH - 1.0f);
     }
 
-    for (const auto [action, label] :
-         {ActionButtonDef{OverlayRenderer::PauseMenuAction::Apply, "APPLY CHANGES"},
-          ActionButtonDef{OverlayRenderer::PauseMenuAction::ResetWorld, "RESET WORLD"},
-          ActionButtonDef{OverlayRenderer::PauseMenuAction::ResetControls, "RESET CONTROLS"}})
-    {
-        const auto& state = pauseMenu.actions[actionIndex(action)];
-        if (!state.visible) {
-            continue;
-        }
-        drawButtonPx(
-            pauseButtonStyle,
-            l.actionRect(action),
-            16.0f * menuScale,
-            8.0f * menuScale,
-            l.actionScalePx,
-            label,
-            state.hovered,
-            state.selected);
-    }
+    drawActionButtons(
+        menu,
+        l,
+        pauseButtonStyle,
+        ui::ActionPlacement::Bottom,
+        16.0f * menuScale,
+        8.0f * menuScale,
+        l.actionScalePx);
 
     for (std::size_t i = 0; i < l.visibleLines; ++i) {
         const std::size_t lineIdx = l.firstLine + i;
-        const auto& line = pauseMenu.lines[lineIdx];
-        const bool selected = static_cast<int>(lineIdx) == pauseMenu.selectedSettingLineIndex;
-        const bool hovered = static_cast<int>(lineIdx) == pauseMenu.hoveredSettingLineIndex;
+        const auto& line = menu.rows[lineIdx];
+        const bool selected = line.selected;
+        const bool hovered = static_cast<int>(lineIdx) == menu.hoveredRowIndex;
         const bool disabled = line.disabled;
         const auto widgets = l.lineWidgets(i, line);
         const float lineY = l.linesStartY + static_cast<float>(i) * l.rowStep;
 
-        if (selected && !line.header) {
+        if (selected && line.kind != ui::RowKind::Header) {
             pushFramePx(
                 buffers.textPrimary,
                 widgets.line.x0,
@@ -424,21 +467,21 @@ void drawPauseMenu(
                 widgets.line.x1,
                 widgets.line.y1,
                 1.5f);
-        } else if (hovered && !line.header) {
+        } else if (hovered && line.kind != ui::RowKind::Header) {
             pushQuadPx(buffers.panelFrame, widgets.line.x0, widgets.line.y0, widgets.line.x1, widgets.line.y1);
         }
 
-        const float lineScalePx = line.header
-            ? fitScaleForWidth(line.text, l.rowScalePx * 1.03f, (l.sectionX1 - l.sectionX0))
+        const float lineScalePx = line.kind == ui::RowKind::Header
+            ? fitScaleForWidth(line.label, l.rowScalePx * 1.03f, (l.sectionX1 - l.sectionX0))
             : l.rowScalePx;
         appendTextPx(
-            line.header ? buffers.textAccent
+            line.kind == ui::RowKind::Header ? buffers.textAccent
                         : (disabled ? buffers.textMuted : (selected ? buffers.textPrimary : buffers.textMuted)),
             l.sectionX0 + 14.0f * menuScale,
             lineY,
             lineScalePx,
-            line.text);
-        if (line.header) {
+            line.label);
+        if (line.kind == ui::RowKind::Header) {
             continue;
         }
 
@@ -470,8 +513,8 @@ void drawPauseMenu(
                     text);
             };
 
-        switch (line.controlType) {
-            case OverlayRenderer::PauseMenuControlType::Toggle: {
+        switch (line.kind) {
+            case ui::RowKind::Toggle: {
                 const std::string toggleText = line.boolValue ? "ON" : "OFF";
                 const float textX0 = widgets.checkbox.x1 + 5.0f * menuScale;
                 const float textW = measureMaxLinePx(toggleText, valueScalePx);
@@ -500,42 +543,39 @@ void drawPauseMenu(
                     toggleText);
                 break;
             }
-            case OverlayRenderer::PauseMenuControlType::Choice:
-            case OverlayRenderer::PauseMenuControlType::Numeric:
+            case ui::RowKind::Choice:
                 if (disabled) {
                     appendTextPx(
                         buffers.textMuted,
                         widgets.value.x0 +
-                            ((widgets.value.x1 - widgets.value.x0) - measureMaxLinePx(line.valueText, valueScalePx)) *
+                            ((widgets.value.x1 - widgets.value.x0) - measureMaxLinePx(line.value, valueScalePx)) *
                                 0.5f,
                         lineY + 0.3f * menuScale,
                         valueScalePx,
-                        line.valueText);
+                        line.value);
                 } else {
-                    const bool numeric = line.controlType == OverlayRenderer::PauseMenuControlType::Numeric;
-                    drawInlineButton(widgets.leftArrow.x0, widgets.leftArrow.x1, numeric ? "-" : "<", false, false);
-                    drawInlineButton(widgets.rightArrow.x0, widgets.rightArrow.x1, numeric ? "+" : ">", false, false);
-                    drawInlineButton(widgets.value.x0, widgets.value.x1, line.valueText, false, false);
+                    drawInlineButton(widgets.leftArrow.x0, widgets.leftArrow.x1, "<", false, false);
+                    drawInlineButton(widgets.rightArrow.x0, widgets.rightArrow.x1, ">", false, false);
+                    drawInlineButton(widgets.value.x0, widgets.value.x1, line.value, false, false);
                 }
                 break;
-            case OverlayRenderer::PauseMenuControlType::Rebind:
-            case OverlayRenderer::PauseMenuControlType::Action:
-            case OverlayRenderer::PauseMenuControlType::None:
-                if (!line.valueText.empty()) {
+            case ui::RowKind::Rebind:
+            case ui::RowKind::Header:
+                if (!line.value.empty()) {
                     appendTextPx(
                         buffers.textMuted,
                         widgets.value.x0 +
-                            ((widgets.value.x1 - widgets.value.x0) - measureMaxLinePx(line.valueText, valueScalePx)) *
+                            ((widgets.value.x1 - widgets.value.x0) - measureMaxLinePx(line.value, valueScalePx)) *
                                 0.5f,
                         lineY + 0.3f * menuScale,
                         valueScalePx,
-                        line.valueText);
+                        line.value);
                 }
                 break;
         }
     }
 
-    if (!pauseMenu.footerHint.empty()) {
+    if (!menu.footerHint.empty()) {
         const float footerX0 = l.sectionX0;
         const float footerY0 = l.settingsY1 + 10.0f * menuScale;
         const float footerY1 = cardY1 - 16.0f * menuScale;
@@ -546,24 +586,24 @@ void drawPauseMenu(
             footerX0 + 10.0f * menuScale,
             footerY0 + 6.0f * menuScale,
             fitScaleForWidth(
-                pauseMenu.footerHint,
+                menu.footerHint,
                 baseScalePx * 0.92f,
                 (l.sectionX1 - footerX0) - 18.0f * menuScale),
-            pauseMenu.footerHint);
+            menu.footerHint);
     }
 
-    if (!pauseMenu.showResetConfirm) {
+    if (!menu.popup.visible) {
         return;
     }
 
-    const auto popupButtons = ui::pause_menu_layout::buildPopupButtonsLayout(l, pauseMenu);
+    const auto popupButtons = ui::pause_menu_layout::buildPopupButtonsLayout(l, menu.popup);
     const bool singleAcknowledge = popupButtons.singleAcknowledge;
     const std::string titleText =
-        pauseMenu.resetConfirmTitleText.empty()
+        menu.popup.title.empty()
             ? (singleAcknowledge ? "WARNING" : "ARE YOU SURE?")
-            : pauseMenu.resetConfirmTitleText;
+            : menu.popup.title;
     const std::string bodyText =
-        pauseMenu.resetConfirmBodyText.empty() ? "RESET ALL SETTINGS" : pauseMenu.resetConfirmBodyText;
+        menu.popup.body.empty() ? "CONFIRM ACTION" : menu.popup.body;
 
     pushQuadPx(buffers.popupBg, l.popupRect.x0, l.popupRect.y0, l.popupRect.x1, l.popupRect.y1);
     pushFramePx(buffers.popupFrame, l.popupRect.x0, l.popupRect.y0, l.popupRect.x1, l.popupRect.y1, 1.5f);
@@ -581,7 +621,7 @@ void drawPauseMenu(
         popupButtons.buttonScalePx,
         bodyText);
 
-    if (pauseMenu.hoverResetConfirmYes && !pauseMenu.selectedResetConfirmYes) {
+    if (menu.popup.hoverConfirm && !menu.popup.confirmSelected) {
         pushQuadPx(
             buffers.popupFrame,
             popupButtons.yesButton.x0 + 1.0f,
@@ -590,12 +630,12 @@ void drawPauseMenu(
             popupButtons.yesButton.y1 - 1.0f);
     }
     pushFramePx(
-        pauseMenu.selectedResetConfirmYes ? buffers.popupText : buffers.popupFrame,
+        menu.popup.confirmSelected ? buffers.popupText : buffers.popupFrame,
         popupButtons.yesButton.x0,
         popupButtons.yesButton.y0,
         popupButtons.yesButton.x1,
         popupButtons.yesButton.y1,
-        pauseMenu.selectedResetConfirmYes ? 2.4f : 1.2f);
+        menu.popup.confirmSelected ? 2.4f : 1.2f);
     appendTextPx(
         buffers.popupText,
         popupButtons.yesButton.x0 + popupButtons.buttonPadX,
@@ -606,7 +646,8 @@ void drawPauseMenu(
         return;
     }
 
-    if (pauseMenu.hoverResetConfirmNo && !pauseMenu.selectedResetConfirmNo) {
+    const bool cancelSelected = !menu.popup.confirmSelected;
+    if (menu.popup.hoverCancel && !cancelSelected) {
         pushQuadPx(
             buffers.popupFrame,
             popupButtons.noButton.x0 + 1.0f,
@@ -615,12 +656,12 @@ void drawPauseMenu(
             popupButtons.noButton.y1 - 1.0f);
     }
     pushFramePx(
-        pauseMenu.selectedResetConfirmNo ? buffers.popupText : buffers.popupFrame,
+        cancelSelected ? buffers.popupText : buffers.popupFrame,
         popupButtons.noButton.x0,
         popupButtons.noButton.y0,
         popupButtons.noButton.x1,
         popupButtons.noButton.y1,
-        pauseMenu.selectedResetConfirmNo ? 2.4f : 1.2f);
+        cancelSelected ? 2.4f : 1.2f);
     appendTextPx(
         buffers.popupText,
         popupButtons.noButton.x0 + popupButtons.buttonPadX,

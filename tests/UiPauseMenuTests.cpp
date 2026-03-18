@@ -5,7 +5,7 @@
 #include <vector>
 
 #include "ui/PauseMenu.h"
-#include "ui/OverlayRenderer.h"
+#include "ui/PauseMenuLayout.h"
 
 namespace ui::testing {
 class PauseMenuAccess {
@@ -17,9 +17,11 @@ public:
         menu.focusArea_ = PauseMenu::FocusArea::Rows;
         menu.selectedRow_ = 0;
         menu.selectedAction_ = 0;
+        menu.firstVisibleLine_ = 0;
         menu.popup_ = PauseMenu::PopupKind::None;
         menu.awaitingRebind_ = false;
         menu.awaitingRebindAction_ = -1;
+        menu.manualScroll_ = false;
         menu.statusMessage_.clear();
     }
 
@@ -33,7 +35,8 @@ public:
     }
 
     static void moveHorizontal(PauseMenu& menu, const int delta, input::ControlBindings& controls) {
-        menu.moveSelectionHorizontal(delta, controls, "");
+        (void)controls;
+        menu.moveSelectionHorizontal(delta);
     }
 
     static void applyCurrentPage(PauseMenu& menu) {
@@ -54,6 +57,23 @@ public:
 
     static int focusArea(const PauseMenu& menu) {
         return static_cast<int>(menu.focusArea_);
+    }
+
+    static void setStatus(PauseMenu& menu, const std::string& status, const bool warning) {
+        menu.statusMessage_ = status;
+        menu.awaitingRebind_ = warning;
+    }
+
+    static void focusBottomAction(PauseMenu& menu, const int actionIndex) {
+        menu.focusArea_ = PauseMenu::FocusArea::BottomActions;
+        menu.selectedAction_ = actionIndex;
+    }
+
+    static void showPopup(PauseMenu& menu, const PauseMenu::PopupKind popup) {
+        menu.popup_ = popup;
+        menu.popupConfirmSelected_ = true;
+        menu.hoverPopupConfirm_ = true;
+        menu.hoverPopupCancel_ = false;
     }
 };
 } // namespace ui::testing
@@ -163,56 +183,134 @@ void testUi2LastRowDoesNotJumpToActionsEarly()
         "actions should start at the first action when leaving the list");
 }
 
-void testUi2OverlayAdapterMapsViewState()
+void testUi2BuildViewMapsMenuState()
+{
+    ui::PauseMenu menu;
+    input::ControlBindings controls{};
+    ui::testing::PauseMenuAccess::openMenu(menu);
+    ui::testing::PauseMenuAccess::selectPage(menu, ui::SettingsPage::Interface);
+    ui::testing::PauseMenuAccess::setSelectedRow(menu, 1);
+    ui::testing::PauseMenuAccess::moveHorizontal(menu, 1, controls);
+    ui::testing::PauseMenuAccess::focusBottomAction(menu, 0);
+    ui::testing::PauseMenuAccess::setStatus(menu, "STATUS", true);
+    ui::testing::PauseMenuAccess::showPopup(menu, ui::PauseMenu::PopupKind::EnableDrawPath);
+
+    const auto view = menu.buildView(controls);
+    require(view.visible, "view should preserve visibility");
+    require(view.title == "PAUSED", "view should expose the menu title");
+    require(view.activeTabIndex == static_cast<int>(ui::SettingsPage::Interface),
+        "view should preserve active tab");
+    require(view.rows.size() > 2 && view.rows[2].label == "SHOW HUD",
+        "view should preserve row ordering");
+
+    bool foundApply = false;
+    for (const auto& action : view.actions) {
+        if (action.id == static_cast<int>(ui::ActionKind::Apply)) {
+            foundApply = true;
+            require(action.placement == ui::ActionPlacement::Bottom,
+                "apply should be exposed as a bottom action");
+            require(action.selected, "focused bottom action should stay selected");
+        }
+    }
+    require(foundApply, "view should expose the apply action when the page is dirty");
+
+    require(view.statusLine == "STATUS" && view.statusWarning,
+        "view should preserve warning status messages");
+    require(view.popup.visible && view.popup.singleAction,
+        "view should preserve single-action popup state");
+    require(view.popup.title == "WARNING",
+        "view should preserve popup title");
+}
+
+void testUi2LayoutKeepsManualScrollOffset()
 {
     ui::MenuView view{};
     view.visible = true;
-    view.activePage = ui::SettingsPage::Interface;
-    view.statusLine = "STATUS";
-    view.footerHint = "FOOTER";
+    view.sectionTitle = "SETTINGS";
+    view.firstVisibleLineIndex = 5;
+    view.keepSelectedVisible = false;
     view.rows.push_back(ui::ViewRow{
-        .label = "INTERFACE",
+        .label = "CONTROLS",
         .value = "",
-        .hint = "",
         .kind = ui::RowKind::Header,
     });
+    for (int i = 0; i < 24; ++i) {
+        view.rows.push_back(ui::ViewRow{
+            .label = "ACTION " + std::to_string(i),
+            .value = "KEY",
+            .kind = ui::RowKind::Rebind,
+            .disabled = false,
+            .selected = i == 0,
+            .boolValue = false,
+        });
+    }
+
+    const auto layout = ui::pause_menu_layout::buildPauseMenuLayout(1280.0f, 720.0f, 1.0f, view);
+    require(layout.visibleLines < layout.totalLines,
+        "test layout should overflow to exercise scrolling");
+    require(layout.firstLine == 5,
+        "layout should honor a manual first visible line");
+}
+
+void testUi2LayoutKeepsSelectedRowVisibleWhenMovingUp()
+{
+    ui::MenuView view{};
+    view.visible = true;
+    view.sectionTitle = "SETTINGS";
+    view.firstVisibleLineIndex = 8;
+    view.keepSelectedVisible = true;
     view.rows.push_back(ui::ViewRow{
-        .label = "SHOW HUD",
-        .value = "ON",
-        .hint = "",
-        .kind = ui::RowKind::Toggle,
-        .selected = true,
-        .edited = true,
-        .boolValue = true,
+        .label = "CONTROLS",
+        .value = "",
+        .kind = ui::RowKind::Header,
     });
-    view.actions.push_back(ui::ViewAction{
-        .kind = ui::ActionKind::Apply,
-        .label = "APPLY CHANGES",
-        .visible = true,
-        .selected = true,
-    });
-    view.popup = ui::ViewPopup{
-        .visible = true,
-        .title = "WARNING",
-        .body = "MAY IMPACT PERFORMANCE",
-        .confirmLabel = "I UNDERSTAND",
-        .cancelLabel = "",
-        .singleAction = true,
-        .confirmSelected = true,
+    for (int i = 0; i < 24; ++i) {
+        view.rows.push_back(ui::ViewRow{
+            .label = "ACTION " + std::to_string(i),
+            .value = "KEY",
+            .kind = ui::RowKind::Rebind,
+            .disabled = false,
+            .selected = i == 1,
+            .boolValue = false,
+        });
+    }
+
+    const auto layout = ui::pause_menu_layout::buildPauseMenuLayout(1280.0f, 720.0f, 1.0f, view);
+    const std::size_t selectedLine = 2;
+    require(layout.visibleLines < layout.totalLines,
+        "test layout should overflow to exercise selection pinning");
+    require(selectedLine >= layout.firstLine,
+        "layout should scroll upward enough to include the selected row");
+    require(selectedLine < layout.firstLine + layout.visibleLines,
+        "selected row should remain visible when keepSelectedVisible is enabled");
+}
+
+void testUi2LayoutUsesRemoteStyleTopButtons()
+{
+    ui::MenuView view{};
+    view.visible = true;
+    view.tabs = {"DISPLAY", "SIMULATION", "CAMERA", "INTERFACE", "CONTROLS"};
+    view.actions = {
+        {.id = static_cast<int>(ui::ActionKind::ResetSettings), .placement = ui::ActionPlacement::Top, .label = "R"},
+        {.id = static_cast<int>(ui::ActionKind::Close), .placement = ui::ActionPlacement::Top, .label = "X"},
+        {.id = static_cast<int>(ui::ActionKind::Exit), .placement = ui::ActionPlacement::Top, .label = "EXIT TO HOME"},
     };
 
-    const auto hud = ui::toOverlayPauseMenuHud(view);
-    require(hud.visible, "adapter should preserve visibility");
-    require(hud.activePageIndex == static_cast<int>(ui::SettingsPage::Interface),
-        "adapter should preserve active page");
-    require(hud.selectedSettingLineIndex == 1,
-        "adapter should map selected row index");
-    require(hud.actions[static_cast<std::size_t>(OverlayRenderer::PauseMenuAction::Apply)].visible,
-        "adapter should expose apply action visibility");
-    require(hud.showResetConfirm && hud.resetConfirmSingleAcknowledge,
-        "adapter should map single-action popup state");
-    require(hud.resetConfirmTitleText == "WARNING",
-        "adapter should preserve popup title");
+    const auto layout = ui::pause_menu_layout::buildPauseMenuLayout(1024.0f, 720.0f, 1.0f, view);
+    require(!layout.tabRects.empty(),
+        "layout should create tab rects");
+    require(layout.actionRects.size() == view.actions.size(),
+        "layout should create top action rects");
+    require(layout.actionRect(0).x0 <= layout.tabRects[0].x0,
+        "reset button should be pinned to the top-left side");
+    require(layout.actionRect(0).y1 <= layout.tabRects[0].y0,
+        "reset button should sit above the tabs");
+    require(layout.actionRect(1).x1 >= layout.cardX1 - 18.0f,
+        "close button should be pinned to the top-right side");
+    require(layout.actionRect(1).y1 <= layout.tabRects[0].y0,
+        "close button should sit above the tabs");
+    require(layout.actionRect(2).y0 == layout.tabRects[0].y0,
+        "exit button should share the tab row");
 }
 
 } // namespace
@@ -224,6 +322,9 @@ void appendUiPauseMenuTests(std::vector<std::pair<std::string, std::function<voi
     tests.emplace_back("ui2_display_page_uses_draft_apply_model", testUi2DisplayPageUsesDraftApplyModel);
     tests.emplace_back("ui2_scroll_keeps_selection_and_draft", testUi2ScrollKeepsSelectionAndDraft);
     tests.emplace_back("ui2_last_row_does_not_jump_to_actions_early", testUi2LastRowDoesNotJumpToActionsEarly);
-    tests.emplace_back("ui2_overlay_adapter_maps_view_state", testUi2OverlayAdapterMapsViewState);
+    tests.emplace_back("ui2_build_view_maps_menu_state", testUi2BuildViewMapsMenuState);
+    tests.emplace_back("ui2_layout_keeps_manual_scroll_offset", testUi2LayoutKeepsManualScrollOffset);
+    tests.emplace_back("ui2_layout_keeps_selected_row_visible_when_moving_up", testUi2LayoutKeepsSelectedRowVisibleWhenMovingUp);
+    tests.emplace_back("ui2_layout_uses_remote_style_top_buttons", testUi2LayoutUsesRemoteStyleTopButtons);
 }
 

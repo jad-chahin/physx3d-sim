@@ -317,8 +317,7 @@ int runApp(sim::World world) {
         updateFrameState(window, world, controls, pauseMenu, runtime, cam);
         clearFrame(runtime, pauseMenu);
 
-        const OverlayRenderer::PauseMenuHud pauseMenuHud =
-            ui::toOverlayPauseMenuHud(pauseMenu.buildView(controls));
+        const ui::MenuView menuView = pauseMenu.buildView(controls);
         OverlayRenderer::TargetHud targetHud{};
         pathLines.clear();
         hudDebugLines = app_loop::buildHudDebugLines(runtime, pauseMenu.interfaceSettings());
@@ -357,7 +356,7 @@ int runApp(sim::World world) {
             overlay,
             appState.framebufferSize,
             runtime,
-            pauseMenuHud,
+            menuView,
             targetHud,
             pathLines,
             pauseMenu.uiScale(),

@@ -1,7 +1,6 @@
 #ifndef PHYSICS3D_UI_OVERLAYRENDERERDRAWSHARED_H
 #define PHYSICS3D_UI_OVERLAYRENDERERDRAWSHARED_H
 
-#include "ui/OverlayRenderer.h"
 #include "ui/PauseMenuLayout.h"
 
 #include <algorithm>

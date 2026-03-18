@@ -24,6 +24,8 @@ struct InterfaceSettings { int uiScaleIndex = 2; bool showHud = true, showCrossh
 struct SettingsBundle { DisplaySettings display{}; SimulationSettings simulation{}; CameraSettings camera{}; InterfaceSettings interface{}; bool operator==(const SettingsBundle&) const = default; };
 
 enum class SettingsPage { Display = 0, Simulation = 1, Camera = 2, Interface = 3, Controls = 4 };
+enum class RowKind { Header = 0, Toggle, Choice, Rebind };
+enum class ActionPlacement { Top = 0, Bottom };
 
 inline constexpr std::array<float, 7> kUiScaleChoices{{0.75f, 0.85f, 1.00f, 1.15f, 1.30f, 1.40f, 1.50f}};
 inline constexpr std::array<double, 9> kMinSpeedChoices{{1.0 / 256.0, 1.0 / 128.0, 1.0 / 64.0, 1.0 / 32.0, 1.0 / 16.0, 1.0 / 8.0, 1.0 / 4.0, 1.0 / 2.0, 1.0}};
@@ -36,25 +38,67 @@ inline constexpr std::array<float, 9> kLookSensitivityChoices{{0.0008f, 0.0012f,
 inline constexpr std::array<float, 7> kBaseMoveSpeedChoices{{10.0f, 20.0f, 30.0f, 40.0f, 50.0f, 60.0f, 80.0f}};
 inline constexpr std::array<float, 8> kFovChoices{{50.0f, 60.0f, 70.0f, 80.0f, 90.0f, 100.0f, 110.0f, 120.0f}};
 
-enum class RowKind { Header = 0, Toggle, Choice, Rebind };
-enum class ActionKind { Apply = 0, ResetWorld, ResetControls, ResetSettings, Close, Exit };
+struct ViewRow {
+    std::string label;
+    std::string value;
+    RowKind kind = RowKind::Header;
+    bool disabled = false;
+    bool selected = false;
+    bool boolValue = false;
+};
 
-struct ViewRow { std::string label, value, hint; RowKind kind = RowKind::Header; bool disabled = false, selected = false, edited = false, boolValue = false; float sliderT = 0.0f; };
-struct ViewAction { ActionKind kind = ActionKind::Apply; std::string label; bool visible = false, selected = false, hovered = false; };
-struct ViewPopup { bool visible = false; std::string title, body, confirmLabel, cancelLabel; bool singleAction = false, confirmSelected = true, hoverConfirm = false, hoverCancel = false; };
-struct MenuView { bool visible = false; SettingsPage activePage = SettingsPage::Display; int hoveredPageTabIndex = -1, hoveredRowIndex = -1; std::string statusLine, footerHint; std::vector<ViewRow> rows; std::vector<ViewAction> actions; ViewPopup popup{}; };
+struct ViewAction {
+    int id = 0;
+    ActionPlacement placement = ActionPlacement::Bottom;
+    std::string label;
+    bool selected = false;
+    bool hovered = false;
+};
+
+struct ViewPopup {
+    bool visible = false;
+    std::string title;
+    std::string body;
+    std::string confirmLabel;
+    std::string cancelLabel;
+    bool singleAction = false;
+    bool confirmSelected = true;
+    bool hoverConfirm = false;
+    bool hoverCancel = false;
+};
+
+struct MenuView {
+    bool visible = false;
+    std::string title;
+    std::string subtitle;
+    std::string sectionTitle;
+    std::vector<std::string> tabs;
+    int activeTabIndex = 0;
+    int hoveredTabIndex = -1;
+    int hoveredRowIndex = -1;
+    int firstVisibleLineIndex = 0;
+    bool keepSelectedVisible = true;
+    std::string statusLine;
+    bool statusWarning = false;
+    std::string footerHint;
+    std::vector<ViewRow> rows;
+    std::vector<ViewAction> actions;
+    ViewPopup popup{};
+};
+
+enum class ActionKind { Apply = 0, ResetWorld, ResetControls, ResetSettings, Close, Exit };
 
 class PauseMenu {
 public:
     friend class testing::PauseMenuAccess;
     enum class PopupKind { None = 0, ResetSettings, ResetWorld, ResetControls, ExitToHome, EnableDrawPath };
 
-    bool isOpen() const { return open_; }
-    float uiScale() const;
-    const DisplaySettings& displaySettings() const { return applied_.display; }
-    const SimulationSettings& simulationSettings() const { return applied_.simulation; }
-    const CameraSettings& cameraSettings() const { return applied_.camera; }
-    const InterfaceSettings& interfaceSettings() const { return applied_.interface; }
+    [[nodiscard]] bool isOpen() const { return open_; }
+    [[nodiscard]] float uiScale() const;
+    [[nodiscard]] const DisplaySettings& displaySettings() const { return applied_.display; }
+    [[nodiscard]] const SimulationSettings& simulationSettings() const { return applied_.simulation; }
+    [[nodiscard]] const CameraSettings& cameraSettings() const { return applied_.camera; }
+    [[nodiscard]] const InterfaceSettings& interfaceSettings() const { return applied_.interface; }
 
     void loadSettings(const std::string& path);
     void applyCurrentDisplaySettings(GLFWwindow* window);
@@ -62,14 +106,14 @@ public:
     void handlePressedKey(GLFWwindow* window, int pressedKey, input::ControlBindings& controls, const std::string& controlsConfigPath);
     void handlePointerInput(GLFWwindow* window, input::ControlBindings& controls, const std::string& controlsConfigPath, float scrollDeltaY = 0.0f);
     void updateContinuousInput(GLFWwindow* window, const input::ControlBindings& controls);
-    MenuView buildView(const input::ControlBindings& controls) const;
+    [[nodiscard]] MenuView buildView(const input::ControlBindings& controls) const;
     bool consumeResetWorldRequest();
 
 private:
     enum class FocusArea { Rows = 0, TopActions, BottomActions, Popup };
 
     bool open_ = false, escWasDown_ = false, resumeRequested_ = false, resetWorldRequested_ = false, awaitingRebind_ = false, popupConfirmSelected_ = true, leftMouseWasDown_ = false;
-    int awaitingRebindAction_ = -1, selectedRow_ = 0, selectedAction_ = 0, scrollOffset_ = 0, lastClickedRow_ = -1, hoveredPageTab_ = -1, hoveredRow_ = -1, hoveredAction_ = -1;
+    int awaitingRebindAction_ = -1, selectedRow_ = 0, selectedAction_ = 0, firstVisibleLine_ = 0, lastClickedRow_ = -1, hoveredPageTab_ = -1, hoveredRow_ = -1, hoveredAction_ = -1;
     SettingsPage page_ = SettingsPage::Display, lastClickedPage_ = SettingsPage::Display;
     SettingsBundle applied_{}, draft_{};
     std::string settingsPath_, statusMessage_;
@@ -77,19 +121,19 @@ private:
     FocusArea focusArea_ = FocusArea::Rows;
     std::array<bool, input::kMouseBindingMaxButtons> mouseButtonWasDown_{};
     double lastClickAt_ = -1.0, upNextRepeatAt_ = 0.0, downNextRepeatAt_ = 0.0, leftNextRepeatAt_ = 0.0, rightNextRepeatAt_ = 0.0;
-    bool upHeld_ = false, downHeld_ = false, leftHeld_ = false, rightHeld_ = false, hoverPopupConfirm_ = false, hoverPopupCancel_ = false;
+    bool upHeld_ = false, downHeld_ = false, leftHeld_ = false, rightHeld_ = false, manualScroll_ = false, hoverPopupConfirm_ = false, hoverPopupCancel_ = false;
 
     void normalizeSettings();
     void saveSettings() const;
     static void applyDisplaySettings(GLFWwindow* window, DisplaySettings& settings);
-    int rowCount() const;
-    bool pageDirty(SettingsPage page) const;
-    bool fieldDisabled(int row) const;
-    std::string disabledReason(int row) const;
+    [[nodiscard]] int rowCount() const;
+    [[nodiscard]] bool pageDirty(SettingsPage page) const;
+    [[nodiscard]] bool fieldDisabled(int row) const;
+    [[nodiscard]] std::string disabledReason(int row) const;
     void cyclePage(int delta);
     void selectPage(SettingsPage page);
     void moveSelectionVertical(int delta, const input::ControlBindings& controls);
-    void moveSelectionHorizontal(int delta, const input::ControlBindings& controls, const std::string& controlsConfigPath);
+    void moveSelectionHorizontal(int delta);
     void activateFocused(GLFWwindow* window, input::ControlBindings& controls, const std::string& controlsConfigPath);
     void applyCurrentPage(GLFWwindow* window);
     void resetAllSettings(GLFWwindow* window);
@@ -99,10 +143,14 @@ private:
     void openPopup(PopupKind popup);
     void closePopup();
     void confirmPopup(GLFWwindow* window, input::ControlBindings& controls, const std::string& controlsConfigPath);
+    void appendCurrentPageRows(MenuView& view, const input::ControlBindings& controls) const;
+    void adjustCurrentPageRow(int delta);
+    [[nodiscard]] bool selectedRowActsAsToggle() const;
+    void triggerAction(ActionKind action, GLFWwindow* window);
+    bool triggerFocusedAction(GLFWwindow* window, const input::ControlBindings& controls, const std::string& controlsConfigPath);
 };
 
 } // namespace ui
 
 #endif // PHYSICS3D_UI_PAUSEMENU_H
-
 

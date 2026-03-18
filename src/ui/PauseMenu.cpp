@@ -1,5 +1,4 @@
 #include "ui/PauseMenu.h"
-#include "ui/OverlayRenderer.h"
 #include "ui/PauseMenuLayout.h"
 
 #ifndef GLFW_INCLUDE_NONE
@@ -133,9 +132,8 @@ void appendRowsFromDescriptors(
     const Settings& settings,
     const int selectedRow,
     const bool rowsFocused,
-    const bool edited,
     DisabledFn&& disabledFn,
-    DisabledReasonFn&& disabledReasonFn)
+    DisabledReasonFn&&)
 {
     for (std::size_t i = 0; i < descriptors.size(); ++i) {
         const auto& descriptor = descriptors[i];
@@ -144,11 +142,9 @@ void appendRowsFromDescriptors(
         view.rows.push_back(ViewRow{
             .label = descriptor.label,
             .value = descriptor.value(settings),
-            .hint = disabled ? disabledReasonFn(row) : "",
             .kind = descriptor.kind,
             .disabled = disabled,
             .selected = rowsFocused && row == selectedRow,
-            .edited = edited,
             .boolValue = descriptor.boolValue != nullptr ? descriptor.boolValue(settings) : false,
         });
     }
@@ -302,8 +298,8 @@ bool actionResetWorldVisible(const SettingsPage page, bool, const input::Control
 bool actionResetControlsVisible(const SettingsPage page, bool, const input::ControlBindings& controls) { return page == SettingsPage::Controls && controls != input::ControlBindings{}; }
 
 constexpr std::array<ActionDefinition, 6> kActionDefinitions{{
-    {ActionKind::ResetSettings, "RESET SETTINGS", ActionSection::Top, actionAlwaysVisible},
-    {ActionKind::Close, "CLOSE", ActionSection::Top, actionAlwaysVisible},
+    {ActionKind::ResetSettings, "R", ActionSection::Top, actionAlwaysVisible},
+    {ActionKind::Close, "X", ActionSection::Top, actionAlwaysVisible},
     {ActionKind::Exit, "EXIT TO HOME", ActionSection::Top, actionAlwaysVisible},
     {ActionKind::ResetWorld, "RESET WORLD", ActionSection::Bottom, actionResetWorldVisible},
     {ActionKind::ResetControls, "RESET CONTROLS", ActionSection::Bottom, actionResetControlsVisible},
@@ -333,19 +329,6 @@ std::vector<const ActionDefinition*> visibleActionsForSection(
     return actions;
 }
 
-ActionKind actionKindFromOverlay(const OverlayRenderer::PauseMenuAction action) {
-    switch (action) {
-        case OverlayRenderer::PauseMenuAction::Apply: return ActionKind::Apply;
-        case OverlayRenderer::PauseMenuAction::ResetWorld: return ActionKind::ResetWorld;
-        case OverlayRenderer::PauseMenuAction::ResetControls: return ActionKind::ResetControls;
-        case OverlayRenderer::PauseMenuAction::ResetIcon: return ActionKind::ResetSettings;
-        case OverlayRenderer::PauseMenuAction::Close: return ActionKind::Close;
-        case OverlayRenderer::PauseMenuAction::Exit: return ActionKind::Exit;
-        case OverlayRenderer::PauseMenuAction::Count: return ActionKind::Apply;
-    }
-    return ActionKind::Apply;
-}
-
 const PopupDefinition* popupDefinitionFor(const PauseMenu::PopupKind kind) {
     for (const auto& definition : kPopupDefinitions) {
         if (definition.kind == kind) {
@@ -355,26 +338,17 @@ const PopupDefinition* popupDefinitionFor(const PauseMenu::PopupKind kind) {
     return nullptr;
 }
 
-OverlayRenderer::PauseMenuControlType toOverlayControlType(const RowKind kind) {
-    switch (kind) {
-        case RowKind::Header: return OverlayRenderer::PauseMenuControlType::None;
-        case RowKind::Toggle: return OverlayRenderer::PauseMenuControlType::Toggle;
-        case RowKind::Choice: return OverlayRenderer::PauseMenuControlType::Choice;
-        case RowKind::Rebind: return OverlayRenderer::PauseMenuControlType::Rebind;
+ActionKind actionKindFromId(const int id) {
+    switch (static_cast<ActionKind>(id)) {
+        case ActionKind::Apply:
+        case ActionKind::ResetWorld:
+        case ActionKind::ResetControls:
+        case ActionKind::ResetSettings:
+        case ActionKind::Close:
+        case ActionKind::Exit:
+            return static_cast<ActionKind>(id);
     }
-    return OverlayRenderer::PauseMenuControlType::None;
-}
-
-OverlayRenderer::PauseMenuAction toOverlayAction(const ActionKind kind) {
-    switch (kind) {
-        case ActionKind::Apply: return OverlayRenderer::PauseMenuAction::Apply;
-        case ActionKind::ResetWorld: return OverlayRenderer::PauseMenuAction::ResetWorld;
-        case ActionKind::ResetControls: return OverlayRenderer::PauseMenuAction::ResetControls;
-        case ActionKind::ResetSettings: return OverlayRenderer::PauseMenuAction::ResetIcon;
-        case ActionKind::Close: return OverlayRenderer::PauseMenuAction::Close;
-        case ActionKind::Exit: return OverlayRenderer::PauseMenuAction::Exit;
-    }
-    return OverlayRenderer::PauseMenuAction::Apply;
+    return ActionKind::Apply;
 }
 
 SettingsPage pageFromNumberKey(const int key) {
@@ -389,71 +363,6 @@ SettingsPage pageFromNumberKey(const int key) {
 }
 
 } // namespace
-
-OverlayRenderer::PauseMenuHud toOverlayPauseMenuHud(const MenuView& view) {
-    OverlayRenderer::PauseMenuHud hud{};
-    hud.visible = view.visible;
-    if (!view.visible) {
-        return hud;
-    }
-
-    hud.activePageIndex = static_cast<int>(view.activePage);
-    hud.hoveredPageTabIndex = view.hoveredPageTabIndex;
-    hud.statusLine = view.statusLine;
-    hud.footerHint = view.footerHint;
-    hud.selectedSettingLineIndex = -1;
-    hud.hoveredSettingLineIndex = -1;
-    hud.appliedSettingLineIndex = -1;
-    hud.firstVisibleLineIndex = 0;
-
-    hud.lines.reserve(view.rows.size());
-    for (std::size_t i = 0; i < view.rows.size(); ++i) {
-        const auto& row = view.rows[i];
-        OverlayRenderer::PauseMenuHudLine line{};
-        line.text = row.label;
-        line.valueText = row.value;
-        line.hintText = row.hint;
-        line.header = row.kind == RowKind::Header;
-        line.disabled = row.disabled;
-        line.controlType = toOverlayControlType(row.kind);
-        line.boolValue = row.boolValue;
-        line.showArrows = row.kind == RowKind::Choice;
-        line.sliderT = std::clamp(row.sliderT, 0.0f, 1.0f);
-        hud.lines.push_back(std::move(line));
-
-        if (row.selected) {
-            hud.selectedSettingLineIndex = static_cast<int>(i);
-        }
-        if (view.hoveredRowIndex >= 0 && static_cast<int>(i) == view.hoveredRowIndex) {
-            hud.hoveredSettingLineIndex = static_cast<int>(i);
-        }
-        if (row.edited && !line.header && hud.appliedSettingLineIndex < 0) {
-            hud.appliedSettingLineIndex = static_cast<int>(i);
-        }
-    }
-
-    for (const auto& action : view.actions) {
-        const auto idx = static_cast<std::size_t>(toOverlayAction(action.kind));
-        hud.actions[idx].visible = action.visible;
-        hud.actions[idx].selected = action.selected;
-        hud.actions[idx].hovered = action.hovered;
-    }
-
-    if (view.popup.visible) {
-        hud.showResetConfirm = true;
-        hud.resetConfirmTitleText = view.popup.title;
-        hud.resetConfirmBodyText = view.popup.body;
-        hud.resetConfirmYesLabel = view.popup.confirmLabel;
-        hud.resetConfirmNoLabel = view.popup.cancelLabel;
-        hud.resetConfirmSingleAcknowledge = view.popup.singleAction;
-        hud.selectedResetConfirmYes = view.popup.confirmSelected;
-        hud.selectedResetConfirmNo = !view.popup.singleAction && !view.popup.confirmSelected;
-        hud.hoverResetConfirmYes = view.popup.hoverConfirm;
-        hud.hoverResetConfirmNo = !view.popup.singleAction && view.popup.hoverCancel;
-    }
-
-    return hud;
-}
 
 float PauseMenu::uiScale() const {
     const int index = std::clamp(applied_.interface.uiScaleIndex, 0, static_cast<int>(kUiScaleChoices.size()) - 1);
@@ -714,10 +623,12 @@ void PauseMenu::selectPage(const SettingsPage page) {
     focusArea_ = FocusArea::Rows;
     selectedRow_ = 0;
     selectedAction_ = 0;
+    firstVisibleLine_ = 0;
     popup_ = PopupKind::None;
     popupConfirmSelected_ = true;
     awaitingRebind_ = false;
     awaitingRebindAction_ = -1;
+    manualScroll_ = false;
     statusMessage_.clear();
 }
 
@@ -725,11 +636,16 @@ void PauseMenu::moveSelectionVertical(const int delta, const input::ControlBindi
     if (popup_ != PopupKind::None) {
         return;
     }
+    manualScroll_ = false;
+
+    const auto visibleActions = [&](const ActionSection section) {
+        return visibleActionsForSection(page_, pageDirty(page_), section, controls);
+    };
 
     if (focusArea_ == FocusArea::Rows) {
         const int count = rowCount();
         if (count <= 0) {
-            const auto actions = visibleActionsForSection(page_, pageDirty(page_), ActionSection::Top, controls);
+            const auto actions = visibleActions(ActionSection::Top);
             if (!actions.empty()) {
                 focusArea_ = FocusArea::TopActions;
                 selectedAction_ = 0;
@@ -738,7 +654,7 @@ void PauseMenu::moveSelectionVertical(const int delta, const input::ControlBindi
         }
         const int nextRow = selectedRow_ + delta;
         if (nextRow < 0) {
-            const auto actions = visibleActionsForSection(page_, pageDirty(page_), ActionSection::Top, controls);
+            const auto actions = visibleActions(ActionSection::Top);
             if (!actions.empty()) {
                 focusArea_ = FocusArea::TopActions;
                 selectedAction_ = static_cast<int>(actions.size()) - 1;
@@ -747,7 +663,7 @@ void PauseMenu::moveSelectionVertical(const int delta, const input::ControlBindi
             return;
         }
         if (nextRow >= count) {
-            const auto actions = visibleActionsForSection(page_, pageDirty(page_), ActionSection::Bottom, controls);
+            const auto actions = visibleActions(ActionSection::Bottom);
             if (!actions.empty()) {
                 focusArea_ = FocusArea::BottomActions;
                 selectedAction_ = 0;
@@ -760,7 +676,7 @@ void PauseMenu::moveSelectionVertical(const int delta, const input::ControlBindi
     }
 
     if (focusArea_ == FocusArea::TopActions) {
-        const auto actions = visibleActionsForSection(page_, pageDirty(page_), ActionSection::Top, controls);
+        const auto actions = visibleActions(ActionSection::Top);
         const int count = static_cast<int>(actions.size());
         if (count <= 0) {
             focusArea_ = FocusArea::Rows;
@@ -783,7 +699,7 @@ void PauseMenu::moveSelectionVertical(const int delta, const input::ControlBindi
     }
 
     if (focusArea_ == FocusArea::BottomActions) {
-        const auto actions = visibleActionsForSection(page_, pageDirty(page_), ActionSection::Bottom, controls);
+        const auto actions = visibleActions(ActionSection::Bottom);
         const int count = static_cast<int>(actions.size());
         if (count <= 0) {
             focusArea_ = FocusArea::Rows;
@@ -864,41 +780,6 @@ void PauseMenu::resetControlsToDefaults(
     statusMessage_ = "CONTROLS RESET";
 }
 
-void PauseMenu::applyCurrentPage(GLFWwindow* window) {
-    switch (page_) {
-        case SettingsPage::Display:
-            if (!pageDirty(page_)) {
-                return;
-            }
-            applied_.display = draft_.display;
-            applyDisplaySettings(window, applied_.display);
-            break;
-        case SettingsPage::Simulation:
-            if (!pageDirty(page_)) {
-                return;
-            }
-            applied_.simulation = draft_.simulation;
-            break;
-        case SettingsPage::Camera:
-            if (!pageDirty(page_)) {
-                return;
-            }
-            applied_.camera = draft_.camera;
-            break;
-        case SettingsPage::Interface:
-            if (!pageDirty(page_)) {
-                return;
-            }
-            applied_.interface = draft_.interface;
-            break;
-        case SettingsPage::Controls:
-            return;
-    }
-
-    saveSettings();
-    statusMessage_ = "CHANGES APPLIED";
-}
-
 void PauseMenu::resetAllSettings(GLFWwindow* window) {
     applied_ = SettingsBundle{};
     normalizeSettings();
@@ -937,26 +818,17 @@ void PauseMenu::confirmPopup(GLFWwindow* window, input::ControlBindings& control
     }
 }
 
-void PauseMenu::moveSelectionHorizontal(
-    const int delta,
-    const input::ControlBindings& controls,
-    const std::string& controlsConfigPath)
-{
-    (void)controls;
-    (void)controlsConfigPath;
-
+void PauseMenu::adjustCurrentPageRow(const int delta) {
     if (popup_ != PopupKind::None) {
-        if (popup_ == PopupKind::EnableDrawPath) {
-            popupConfirmSelected_ = true;
-        } else {
-            popupConfirmSelected_ = delta <= 0;
-        }
+        popupConfirmSelected_ = popup_ == PopupKind::EnableDrawPath || delta <= 0;
         return;
     }
 
     if (focusArea_ != FocusArea::Rows || selectedRow_ < 0 || fieldDisabled(selectedRow_)) {
         return;
     }
+
+    manualScroll_ = false;
 
     switch (page_) {
         case SettingsPage::Display:
@@ -984,6 +856,90 @@ void PauseMenu::moveSelectionHorizontal(
     }
 }
 
+bool PauseMenu::selectedRowActsAsToggle() const {
+    if (focusArea_ != FocusArea::Rows || selectedRow_ < 0 || fieldDisabled(selectedRow_)) {
+        return false;
+    }
+
+    switch (page_) {
+        case SettingsPage::Display: return selectedRow_ == 1;
+        case SettingsPage::Simulation: return selectedRow_ == 2 || selectedRow_ == 4;
+        case SettingsPage::Camera: return selectedRow_ == 2;
+        case SettingsPage::Interface: return selectedRow_ >= 1;
+        case SettingsPage::Controls: return false;
+    }
+    return false;
+}
+
+void PauseMenu::moveSelectionHorizontal(const int delta) {
+    adjustCurrentPageRow(delta);
+}
+
+void PauseMenu::triggerAction(
+    const ActionKind action,
+    GLFWwindow* window)
+{
+    switch (action) {
+        case ActionKind::Apply: applyCurrentPage(window); return;
+        case ActionKind::ResetWorld: openPopup(PopupKind::ResetWorld); return;
+        case ActionKind::ResetControls: openPopup(PopupKind::ResetControls); return;
+        case ActionKind::ResetSettings: openPopup(PopupKind::ResetSettings); return;
+        case ActionKind::Close: resumeRequested_ = true; return;
+        case ActionKind::Exit: openPopup(PopupKind::ExitToHome); return;
+    }
+}
+
+bool PauseMenu::triggerFocusedAction(
+    GLFWwindow* window,
+    const input::ControlBindings& controls,
+    const std::string& controlsConfigPath)
+{
+    if (focusArea_ != FocusArea::TopActions && focusArea_ != FocusArea::BottomActions) {
+        return false;
+    }
+
+    const auto actions = visibleActionsForSection(
+        page_,
+        pageDirty(page_),
+        focusArea_ == FocusArea::TopActions ? ActionSection::Top : ActionSection::Bottom,
+        controls);
+    if (selectedAction_ < 0 || selectedAction_ >= static_cast<int>(actions.size())) {
+        return false;
+    }
+
+    (void)controls;
+    (void)controlsConfigPath;
+    triggerAction(actions[static_cast<std::size_t>(selectedAction_)]->kind, window);
+    return true;
+}
+
+void PauseMenu::applyCurrentPage(GLFWwindow* window) {
+    if (!pageDirty(page_)) {
+        return;
+    }
+
+    switch (page_) {
+        case SettingsPage::Display:
+            applied_.display = draft_.display;
+            applyDisplaySettings(window, applied_.display);
+            break;
+        case SettingsPage::Simulation:
+            applied_.simulation = draft_.simulation;
+            break;
+        case SettingsPage::Camera:
+            applied_.camera = draft_.camera;
+            break;
+        case SettingsPage::Interface:
+            applied_.interface = draft_.interface;
+            break;
+        case SettingsPage::Controls:
+            return;
+    }
+
+    saveSettings();
+    statusMessage_ = "CHANGES APPLIED";
+}
+
 void PauseMenu::activateFocused(
     GLFWwindow* window,
     input::ControlBindings& controls,
@@ -998,25 +954,8 @@ void PauseMenu::activateFocused(
         return;
     }
 
-    if (focusArea_ == FocusArea::TopActions || focusArea_ == FocusArea::BottomActions) {
-        const auto actions = visibleActionsForSection(
-            page_,
-            pageDirty(page_),
-            focusArea_ == FocusArea::TopActions ? ActionSection::Top : ActionSection::Bottom,
-            controls);
-
-        if (selectedAction_ < 0 || selectedAction_ >= static_cast<int>(actions.size())) {
-            return;
-        }
-
-        switch (actions[static_cast<std::size_t>(selectedAction_)]->kind) {
-            case ActionKind::Apply: applyCurrentPage(window); return;
-            case ActionKind::ResetWorld: openPopup(PopupKind::ResetWorld); return;
-            case ActionKind::ResetControls: openPopup(PopupKind::ResetControls); return;
-            case ActionKind::ResetSettings: openPopup(PopupKind::ResetSettings); return;
-            case ActionKind::Close: resumeRequested_ = true; return;
-            case ActionKind::Exit: openPopup(PopupKind::ExitToHome); return;
-        }
+    if (triggerFocusedAction(window, controls, controlsConfigPath)) {
+        return;
     }
 
     if (page_ == SettingsPage::Controls) {
@@ -1025,7 +964,7 @@ void PauseMenu::activateFocused(
     }
 
     if (selectedRow_ >= 0 && !fieldDisabled(selectedRow_)) {
-        moveSelectionHorizontal(1, controls, controlsConfigPath);
+        moveSelectionHorizontal(1);
     }
 }
 
@@ -1070,9 +1009,10 @@ void PauseMenu::updateEscapeState(
         focusArea_ = FocusArea::Rows;
         selectedRow_ = 0;
         selectedAction_ = 0;
+        firstVisibleLine_ = 0;
         popup_ = PopupKind::None;
         popupConfirmSelected_ = true;
-        scrollOffset_ = 0;
+        manualScroll_ = false;
         draft_ = applied_;
 
         if (open_) {
@@ -1147,29 +1087,18 @@ void PauseMenu::handlePressedKey(
             moveSelectionVertical(1, controls);
             return;
         case GLFW_KEY_LEFT:
-            moveSelectionHorizontal(-1, controls, controlsConfigPath);
+            moveSelectionHorizontal(-1);
             return;
         case GLFW_KEY_RIGHT:
-            moveSelectionHorizontal(1, controls, controlsConfigPath);
+            moveSelectionHorizontal(1);
             return;
         case GLFW_KEY_ENTER:
         case GLFW_KEY_KP_ENTER:
             activateFocused(window, controls, controlsConfigPath);
             return;
         case GLFW_KEY_SPACE:
-            if (focusArea_ == FocusArea::Rows &&
-                page_ != SettingsPage::Controls &&
-                selectedRow_ >= 0 &&
-                !fieldDisabled(selectedRow_))
-            {
-                const bool toggleRow =
-                    (page_ == SettingsPage::Display && selectedRow_ == 1) ||
-                    (page_ == SettingsPage::Simulation && (selectedRow_ == 2 || selectedRow_ == 4)) ||
-                    (page_ == SettingsPage::Camera && selectedRow_ == 2) ||
-                    (page_ == SettingsPage::Interface && selectedRow_ >= 1);
-                if (toggleRow) {
-                    moveSelectionHorizontal(1, controls, controlsConfigPath);
-                }
+            if (selectedRowActsAsToggle()) {
+                moveSelectionHorizontal(1);
             }
             return;
         default:
@@ -1205,11 +1134,6 @@ void PauseMenu::handlePointerInput(
         return;
     }
 
-    if (std::fabs(scrollDeltaY) > 0.01f) {
-        const int direction = scrollDeltaY > 0.0f ? -1 : 1;
-        scrollOffset_ = std::max(0, scrollOffset_ + direction);
-    }
-
     if (window == nullptr) {
         return;
     }
@@ -1234,18 +1158,40 @@ void PauseMenu::handlePointerInput(
     double cursorX = 0.0;
     double cursorY = 0.0;
     glfwGetCursorPos(window, &cursorX, &cursorY);
-    const float xPx = static_cast<float>(cursorX * (static_cast<double>(fbw) / static_cast<double>(ww)));
-    const float yPx = static_cast<float>(cursorY * (static_cast<double>(fbh) / static_cast<double>(wh)));
+    const auto xPx = static_cast<float>(cursorX * (static_cast<double>(fbw) / static_cast<double>(ww)));
+    const auto yPx = static_cast<float>(cursorY * (static_cast<double>(fbh) / static_cast<double>(wh)));
 
-    const auto overlayHud = toOverlayPauseMenuHud(buildView(controls));
-    const auto layout = ui::pause_menu_layout::buildPauseMenuLayout(
+    auto view = buildView(controls);
+    auto layout = ui::pause_menu_layout::buildPauseMenuLayout(
         static_cast<float>(fbw),
         static_cast<float>(fbh),
         uiScale(),
-        overlayHud);
+        view);
+    if (!manualScroll_) {
+        firstVisibleLine_ = static_cast<int>(layout.firstLine);
+    }
+
+    if (popup_ == PopupKind::None &&
+        std::fabs(scrollDeltaY) > 0.01f &&
+        layout.visibleLines > 0 &&
+        layout.totalLines > layout.visibleLines)
+    {
+        const int maxFirst = static_cast<int>(layout.totalLines - layout.visibleLines);
+        const int lineDelta = scrollDeltaY > 0.0f
+            ? -static_cast<int>(std::ceil(scrollDeltaY))
+            : static_cast<int>(std::ceil(-scrollDeltaY));
+        firstVisibleLine_ = std::clamp(firstVisibleLine_ + lineDelta, 0, maxFirst);
+        manualScroll_ = true;
+        view = buildView(controls);
+        layout = ui::pause_menu_layout::buildPauseMenuLayout(
+            static_cast<float>(fbw),
+            static_cast<float>(fbh),
+            uiScale(),
+            view);
+    }
 
     if (popup_ != PopupKind::None) {
-        const auto popupButtons = ui::pause_menu_layout::buildPopupButtonsLayout(layout, overlayHud);
+        const auto popupButtons = ui::pause_menu_layout::buildPopupButtonsLayout(layout, view.popup);
         hoverPopupConfirm_ = popupButtons.yesButton.contains(xPx, yPx);
         hoverPopupCancel_ = !popupButtons.singleAcknowledge && popupButtons.noButton.contains(xPx, yPx);
         if (!clickPressed) {
@@ -1261,67 +1207,29 @@ void PauseMenu::handlePointerInput(
         return;
     }
 
-    for (std::size_t i = 0; i < ui::pause_menu_layout::kPageTabLabels.size(); ++i) if (layout.tabRects[i].contains(xPx, yPx)) { hoveredPageTab_ = static_cast<int>(i); break; }
+    for (std::size_t i = 0; i < layout.tabRects.size(); ++i) {
+        if (layout.tabRects[i].contains(xPx, yPx)) {
+            hoveredPageTab_ = static_cast<int>(i);
+            break;
+        }
+    }
     if (clickPressed && hoveredPageTab_ >= 0) {
         selectPage(static_cast<SettingsPage>(hoveredPageTab_));
         return;
     }
 
-    const auto clickActionIfVisible = [&](const OverlayRenderer::PauseMenuAction overlayAction) {
-        const ActionKind kind = actionKindFromOverlay(overlayAction);
-        const ActionSection section =
-            kind == ActionKind::ResetSettings || kind == ActionKind::Close || kind == ActionKind::Exit
-                ? ActionSection::Top
-                : ActionSection::Bottom;
-        const auto actions = visibleActionsForSection(page_, pageDirty(page_), section, controls);
-        bool visible = false;
-        for (const auto* action : actions) {
-            if (action->kind == kind) {
-                visible = true;
-                break;
-            }
+    for (std::size_t i = 0; i < view.actions.size(); ++i) {
+        const auto& action = view.actions[i];
+        if (!layout.actionRect(i).contains(xPx, yPx)) {
+            continue;
         }
-        if (!visible) {
-            return false;
-        }
-        if (!layout.actionRect(overlayAction).contains(xPx, yPx)) {
-            return false;
-        }
-        hoveredAction_ = static_cast<int>(kind);
+
+        hoveredAction_ = action.id;
         if (!clickPressed) {
-            return false;
+            return;
         }
 
-        switch (kind) {
-            case ActionKind::Apply:
-                applyCurrentPage(window);
-                return true;
-            case ActionKind::ResetWorld:
-                openPopup(PopupKind::ResetWorld);
-                return true;
-            case ActionKind::ResetControls:
-                openPopup(PopupKind::ResetControls);
-                return true;
-            case ActionKind::ResetSettings:
-                openPopup(PopupKind::ResetSettings);
-                return true;
-            case ActionKind::Close:
-                resumeRequested_ = true;
-                return true;
-            case ActionKind::Exit:
-                openPopup(PopupKind::ExitToHome);
-                return true;
-        }
-        return false;
-    };
-
-    if (clickActionIfVisible(OverlayRenderer::PauseMenuAction::Close) ||
-        clickActionIfVisible(OverlayRenderer::PauseMenuAction::Exit) ||
-        clickActionIfVisible(OverlayRenderer::PauseMenuAction::ResetIcon) ||
-        clickActionIfVisible(OverlayRenderer::PauseMenuAction::Apply) ||
-        clickActionIfVisible(OverlayRenderer::PauseMenuAction::ResetWorld) ||
-        clickActionIfVisible(OverlayRenderer::PauseMenuAction::ResetControls))
-    {
+        triggerAction(actionKindFromId(action.id), window);
         return;
     }
     if (!clickPressed && hoveredAction_ >= 0) {
@@ -1329,7 +1237,7 @@ void PauseMenu::handlePointerInput(
     }
 
     const int count = rowCount();
-    if (count <= 0 || overlayHud.lines.empty()) {
+    if (count <= 0 || view.rows.size() <= 1) {
         return;
     }
 
@@ -1340,8 +1248,8 @@ void PauseMenu::handlePointerInput(
         if (!layout.lineRect(i).contains(xPx, yPx)) {
             continue;
         }
-        if (lineIdx == 0 || overlayHud.lines[lineIdx].header) {
-            break;
+        if (view.rows[lineIdx].kind == RowKind::Header) {
+            continue;
         }
         clickedLine = static_cast<int>(lineIdx);
         clickedRow = clickedLine - 1;
@@ -1359,6 +1267,7 @@ void PauseMenu::handlePointerInput(
 
     focusArea_ = FocusArea::Rows;
     selectedRow_ = clickedRow;
+    manualScroll_ = false;
 
     const double clickAt = glfwGetTime();
     constexpr double kDoubleClickWindowSeconds = 0.35;
@@ -1385,23 +1294,32 @@ void PauseMenu::handlePointerInput(
 
     const auto widgets = layout.lineWidgets(
         static_cast<std::size_t>(clickedLine - static_cast<int>(layout.firstLine)),
-        overlayHud.lines[static_cast<std::size_t>(clickedLine)]);
+        view.rows[static_cast<std::size_t>(clickedLine)]);
 
-    if (widgets.hasCheckbox && widgets.checkbox.contains(xPx, yPx)) {
-        moveSelectionHorizontal(1, controls, controlsConfigPath);
-        return;
-    }
-    if (widgets.hasLeftArrow && widgets.leftArrow.contains(xPx, yPx)) {
-        moveSelectionHorizontal(-1, controls, controlsConfigPath);
-        return;
-    }
-    if (widgets.hasRightArrow && widgets.rightArrow.contains(xPx, yPx)) {
-        moveSelectionHorizontal(1, controls, controlsConfigPath);
-        return;
+    switch (view.rows[static_cast<std::size_t>(clickedLine)].kind) {
+        case RowKind::Toggle:
+            if (widgets.checkbox.contains(xPx, yPx)) {
+                moveSelectionHorizontal(1);
+                return;
+            }
+            break;
+        case RowKind::Choice:
+            if (widgets.leftArrow.contains(xPx, yPx)) {
+                moveSelectionHorizontal(-1);
+                return;
+            }
+            if (widgets.rightArrow.contains(xPx, yPx)) {
+                moveSelectionHorizontal(1);
+                return;
+            }
+            break;
+        case RowKind::Rebind:
+        case RowKind::Header:
+            break;
     }
 
     if (isDoubleClick) {
-        moveSelectionHorizontal(1, controls, controlsConfigPath);
+        moveSelectionHorizontal(1);
     }
 }
 
@@ -1435,14 +1353,49 @@ void PauseMenu::updateContinuousInput(GLFWwindow* window, const input::ControlBi
 
     handleRepeat(GLFW_KEY_UP, upHeld_, upNextRepeatAt_, [&] { moveSelectionVertical(-1, controls); });
     handleRepeat(GLFW_KEY_DOWN, downHeld_, downNextRepeatAt_, [&] { moveSelectionVertical(1, controls); });
-    handleRepeat(GLFW_KEY_LEFT, leftHeld_, leftNextRepeatAt_, [&] {
-        input::ControlBindings controlsCopy = controls;
-        moveSelectionHorizontal(-1, controlsCopy, "");
-    });
-    handleRepeat(GLFW_KEY_RIGHT, rightHeld_, rightNextRepeatAt_, [&] {
-        input::ControlBindings controlsCopy = controls;
-        moveSelectionHorizontal(1, controlsCopy, "");
-    });
+    handleRepeat(GLFW_KEY_LEFT, leftHeld_, leftNextRepeatAt_, [&] { moveSelectionHorizontal(-1); });
+    handleRepeat(GLFW_KEY_RIGHT, rightHeld_, rightNextRepeatAt_, [&] { moveSelectionHorizontal(1); });
+}
+
+void PauseMenu::appendCurrentPageRows(MenuView& view, const input::ControlBindings& controls) const {
+    const auto appendRows = [&](const auto& descriptors, const auto& settings) {
+        appendRowsFromDescriptors(
+            view,
+            descriptors,
+            settings,
+            selectedRow_,
+            focusArea_ == FocusArea::Rows,
+            [&](const int row) { return fieldDisabled(row); },
+            [&](const int row) { return disabledReason(row); });
+    };
+
+    switch (page_) {
+        case SettingsPage::Display:
+            appendRows(kDisplayRows, draft_.display);
+            return;
+        case SettingsPage::Simulation:
+            appendRows(kSimulationRows, draft_.simulation);
+            return;
+        case SettingsPage::Camera:
+            appendRows(kCameraRows, draft_.camera);
+            return;
+        case SettingsPage::Interface:
+            appendRows(kInterfaceRows, draft_.interface);
+            return;
+        case SettingsPage::Controls:
+            for (int i = 0; i < static_cast<int>(input::rebindActions().size()); ++i) {
+                const auto& action = input::rebindActions()[static_cast<std::size_t>(i)];
+                view.rows.push_back(ViewRow{
+                    .label = action.label,
+                    .value = input::keyNameForCode(controls.*(action.member)),
+                    .kind = RowKind::Rebind,
+                    .disabled = false,
+                    .selected = focusArea_ == FocusArea::Rows && i == selectedRow_,
+                    .boolValue = false,
+                });
+            }
+            return;
+    }
 }
 
 MenuView PauseMenu::buildView(const input::ControlBindings& controls) const {
@@ -1452,80 +1405,25 @@ MenuView PauseMenu::buildView(const input::ControlBindings& controls) const {
         return view;
     }
 
-    view.activePage = page_;
-    view.hoveredPageTabIndex = hoveredPageTab_;
+    view.title = "PAUSED";
+    view.subtitle = "ESC: RESUME";
+    view.sectionTitle = "SETTINGS";
+    view.tabs.assign(kPageNames.begin(), kPageNames.end());
+    view.activeTabIndex = static_cast<int>(page_);
+    view.hoveredTabIndex = hoveredPageTab_;
     view.hoveredRowIndex = hoveredRow_;
+    view.firstVisibleLineIndex = firstVisibleLine_;
+    view.keepSelectedVisible = !manualScroll_;
     view.statusLine = statusMessage_.empty() && fieldDisabled(selectedRow_) ? disabledReason(selectedRow_) : statusMessage_;
+    view.statusWarning = awaitingRebind_;
     view.footerHint = "ESC CLOSE  TAB PAGE  ARROWS NAVIGATE  ENTER APPLY/ACTIVATE";
     view.rows.reserve(static_cast<std::size_t>(rowCount()) + 1);
     view.rows.push_back(ViewRow{
         .label = kPageNames[static_cast<std::size_t>(page_)],
         .value = "",
-        .hint = "",
         .kind = RowKind::Header,
     });
-
-    switch (page_) {
-        case SettingsPage::Display:
-            appendRowsFromDescriptors(
-                view,
-                kDisplayRows,
-                draft_.display,
-                selectedRow_,
-                focusArea_ == FocusArea::Rows,
-                pageDirty(page_),
-                [&](const int row) { return fieldDisabled(row); },
-                [&](const int row) { return disabledReason(row); });
-            break;
-        case SettingsPage::Simulation:
-            appendRowsFromDescriptors(
-                view,
-                kSimulationRows,
-                draft_.simulation,
-                selectedRow_,
-                focusArea_ == FocusArea::Rows,
-                pageDirty(page_),
-                [&](const int row) { return fieldDisabled(row); },
-                [&](const int row) { return disabledReason(row); });
-            break;
-        case SettingsPage::Camera:
-            appendRowsFromDescriptors(
-                view,
-                kCameraRows,
-                draft_.camera,
-                selectedRow_,
-                focusArea_ == FocusArea::Rows,
-                pageDirty(page_),
-                [&](const int row) { return fieldDisabled(row); },
-                [&](const int row) { return disabledReason(row); });
-            break;
-        case SettingsPage::Interface:
-            appendRowsFromDescriptors(
-                view,
-                kInterfaceRows,
-                draft_.interface,
-                selectedRow_,
-                focusArea_ == FocusArea::Rows,
-                pageDirty(page_),
-                [&](const int row) { return fieldDisabled(row); },
-                [&](const int row) { return disabledReason(row); });
-            break;
-        case SettingsPage::Controls:
-            for (int i = 0; i < static_cast<int>(input::rebindActions().size()); ++i) {
-                const auto& action = input::rebindActions()[static_cast<std::size_t>(i)];
-                view.rows.push_back(ViewRow{
-                    .label = action.label,
-                    .value = input::keyNameForCode(controls.*(action.member)),
-                    .hint = "",
-                    .kind = RowKind::Rebind,
-                    .disabled = false,
-                    .selected = focusArea_ == FocusArea::Rows && i == selectedRow_,
-                    .edited = false,
-                    .boolValue = false,
-                });
-            }
-            break;
-    }
+    appendCurrentPageRows(view, controls);
 
     int topActionIndex = 0;
     int bottomActionIndex = 0;
@@ -1536,9 +1434,9 @@ MenuView PauseMenu::buildView(const input::ControlBindings& controls) const {
         const bool isTopAction = definition.section == ActionSection::Top;
         const int sectionIndex = isTopAction ? topActionIndex++ : bottomActionIndex++;
         view.actions.push_back(ViewAction{
-            .kind = definition.kind,
+            .id = static_cast<int>(definition.kind),
+            .placement = isTopAction ? ActionPlacement::Top : ActionPlacement::Bottom,
             .label = definition.label,
-            .visible = true,
             .selected =
                 (isTopAction && focusArea_ == FocusArea::TopActions && selectedAction_ == sectionIndex) ||
                 (!isTopAction && focusArea_ == FocusArea::BottomActions && selectedAction_ == sectionIndex),
@@ -1570,4 +1468,3 @@ bool PauseMenu::consumeResetWorldRequest() {
 }
 
 } // namespace ui
-
