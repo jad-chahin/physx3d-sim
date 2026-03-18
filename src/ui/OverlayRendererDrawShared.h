@@ -77,13 +77,59 @@ inline const std::array<std::uint8_t, 7>& glyph5x7(const char c) {
     }
 }
 
-inline void pushQuadPx(std::vector<float>& v, const float x0, const float y0, const float x1, const float y1) { v.insert(v.end(), {x0,y0,x1,y0,x1,y1,x0,y0,x1,y1,x0,y1}); }
-inline void pushLinePx(std::vector<float>& v, const float x0, const float y0, const float x1, const float y1) { v.insert(v.end(), {x0,y0,x1,y1}); }
-inline void pushFramePx(std::vector<float>& v, const float x0, const float y0, const float x1, const float y1, const float t) { pushQuadPx(v,x0,y0,x1,y0+t); pushQuadPx(v,x0,y1-t,x1,y1); pushQuadPx(v,x0,y0+t,x0+t,y1-t); pushQuadPx(v,x1-t,y0+t,x1,y1-t); }
-inline float measureLinePx(const std::string& s, const float scalePx) { int count = 0; for (const char c : s) { if (c == '\n') break; (void)c; count += kAdvance; } return static_cast<float>(count) * scalePx; }
-inline float measureMaxLinePx(const std::string& s, const float scalePx) { int lineChars = 0; int maxChars = 0; for (const char c : s) { if (c == '\n') { maxChars = std::max(maxChars, lineChars); lineChars = 0; continue; } (void)c; lineChars += kAdvance; } maxChars = std::max(maxChars, lineChars); return static_cast<float>(maxChars) * scalePx; }
-inline float fitScaleForWidth(const std::string& s, const float preferredScalePx, const float maxWidthPx) { const float unitWidth = measureMaxLinePx(s, 1.0f); if (unitWidth <= 0.0f || maxWidthPx <= 0.0f) return preferredScalePx; return std::min(preferredScalePx, maxWidthPx / unitWidth); }
-inline void formatHudSpeed(char* out, const std::size_t outSize, const double simSpeed) { const double absSpeed = std::abs(simSpeed); if (absSpeed < 0.01) { std::snprintf(out, outSize, "SPEED: %.4fX", simSpeed); return; } if (absSpeed < 0.1) { std::snprintf(out, outSize, "SPEED: %.3fX", simSpeed); return; } std::snprintf(out, outSize, "SPEED: %.2fX", simSpeed); }
+inline void pushQuadPx(std::vector<float>& v, const float x0, const float y0, const float x1, const float y1) {
+    v.insert(v.end(), {x0,y0,x1,y0,x1,y1,x0,y0,x1,y1,x0,y1});
+}
+inline void pushLinePx(std::vector<float>& v, const float x0, const float y0, const float x1, const float y1) {
+    v.insert(v.end(), {x0,y0,x1,y1});
+}
+inline void pushFramePx(std::vector<float>& v, const float x0, const float y0, const float x1, const float y1, const float t) {
+    pushQuadPx(v,x0,y0,x1,y0+t);
+    pushQuadPx(v,x0,y1-t,x1,y1);
+    pushQuadPx(v,x0,y0+t,x0+t,y1-t);
+    pushQuadPx(v,x1-t,y0+t,x1,y1-t);
+}
+inline float measureLinePx(const std::string& s, const float scalePx) {
+    int count = 0;
+    for (const char c : s) {
+        if (c == '\n') break;
+        (void)c;
+        count += kAdvance;
+    }
+    return static_cast<float>(count) * scalePx;
+}
+inline float measureMaxLinePx(const std::string& s, const float scalePx) {
+    int lineChars = 0;
+    int maxChars = 0;
+    for (const char c : s) {
+        if (c == '\n') {
+            maxChars = std::max(maxChars, lineChars);
+            lineChars = 0;
+            continue;
+        }
+        (void)c;
+        lineChars += kAdvance;
+    }
+    maxChars = std::max(maxChars, lineChars);
+    return static_cast<float>(maxChars) * scalePx;
+}
+inline float fitScaleForWidth(const std::string& s, const float preferredScalePx, const float maxWidthPx) {
+    const float unitWidth = measureMaxLinePx(s, 1.0f);
+    if (unitWidth <= 0.0f || maxWidthPx <= 0.0f) return preferredScalePx;
+    return std::min(preferredScalePx, maxWidthPx / unitWidth);
+}
+inline void formatHudSpeed(char* out, const std::size_t outSize, const double simSpeed) {
+    const double absSpeed = std::abs(simSpeed);
+    if (absSpeed < 0.01) {
+        std::snprintf(out, outSize, "SPEED: %.4fX", simSpeed);
+        return;
+    }
+    if (absSpeed < 0.1) {
+        std::snprintf(out, outSize, "SPEED: %.3fX", simSpeed);
+        return;
+    }
+    std::snprintf(out, outSize, "SPEED: %.2fX", simSpeed);
+}
 
 inline void appendTextPx(std::vector<float>& out, const float x, const float y, const float scalePx, const std::string& s) {
     const float cell = scalePx;
@@ -109,17 +155,27 @@ inline void appendTextPx(std::vector<float>& out, const float x, const float y, 
     }
 }
 
-struct ButtonPalette { std::vector<float>& fill; std::vector<float>& frame; std::vector<float>& text; };
-struct ButtonStyle { ButtonPalette normal; ButtonPalette hover; ButtonPalette selected; };
+struct ButtonPalette {
+    std::vector<float>& fill;
+    std::vector<float>& frame;
+    std::vector<float>& text;
+};
+struct ButtonStyle {
+    ButtonPalette normal;
+    ButtonPalette hover;
+    ButtonPalette selected;
+};
 
-inline void drawButtonPx(const ButtonStyle& style, const float x0, const float y0, const float x1, const float y1, const float padX, const float padY, const float textScalePx, const std::string& label, const bool hovered, const bool selected, const float frameThickness = 1.5f) {
+inline void drawButtonPx(const ButtonStyle& style, const float x0, const float y0, const float x1, const float y1, const float padX,
+    const float padY, const float textScalePx, const std::string& label, const bool hovered, const bool selected, const float frameThickness = 1.5f) {
     const ButtonPalette& palette = selected ? style.selected : (hovered ? style.hover : style.normal);
     pushQuadPx(palette.fill, x0, y0, x1, y1);
     pushFramePx(palette.frame, x0, y0, x1, y1, frameThickness);
     appendTextPx(palette.text, x0 + padX, y0 + padY, textScalePx, label);
 }
 
-inline void drawButtonPx(const ButtonStyle& style, const ui::pause_menu_layout::Rect& rect, const float padX, const float padY, const float textScalePx, const std::string& label, const bool hovered, const bool selected, const float frameThickness = 1.5f) {
+inline void drawButtonPx(const ButtonStyle& style, const ui::pause_menu_layout::Rect& rect, const float padX, const float padY,
+    const float textScalePx, const std::string& label, const bool hovered, const bool selected, const float frameThickness = 1.5f) {
     drawButtonPx(style, rect.x0, rect.y0, rect.x1, rect.y1, padX, padY, textScalePx, label, hovered, selected, frameThickness);
 }
 

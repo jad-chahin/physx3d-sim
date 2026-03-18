@@ -63,10 +63,12 @@ add_executable(physics3d
         src/app/AppLoopSupport.cpp
         src/app/FixedStepRunner.cpp
         src/app/SceneUi.cpp
+        src/app/ScenePresentation.cpp
         src/third_party/glad/src/glad.c
         src/ui/OverlayRenderer.cpp
         src/ui/PauseMenu.cpp
         src/ui/PauseMenuLayout.cpp
+        src/render/SceneRenderer.cpp
         src/render/ShaderUtil.cpp
         src/render/SphereMesh.cpp
         src/input/Camera.cpp

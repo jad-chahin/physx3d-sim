@@ -2,6 +2,41 @@
 
 namespace app_loop {
 
+SimulationController::SimulationController(sim::World world)
+    : world_(std::move(world)) {}
+
+std::vector<sim::Body>& SimulationController::mutableBodies() {
+    return world_.bodies();
+}
+
+const std::vector<sim::Body>& SimulationController::bodies() const {
+    return world_.bodies();
+}
+
+const sim::World::Metrics& SimulationController::metrics() const {
+    return world_.metrics();
+}
+
+bool SimulationController::hasBodies() const {
+    return !world_.bodies().empty();
+}
+
+void SimulationController::applySettings(const ui::SimulationSettings& simSettings) {
+    world_.params().enableGravity = simSettings.gravityEnabled;
+    world_.params().G = simSettings.gravityStrength;
+    world_.params().enableCollisions = simSettings.collisionsEnabled;
+    world_.params().velocityIterations = simSettings.velocityIterations;
+    world_.params().positionIterations = simSettings.positionIterations;
+    world_.params().restitution = simSettings.globalRestitution;
+}
+
+void SimulationController::syncPreviousState_() {
+    for (auto& body : world_.bodies()) {
+        body.prevPosition = body.position;
+        body.prevOrientation = body.orientation;
+    }
+}
+
 GlfwSession::~GlfwSession() {
     if (active_) {
         glfwTerminate();
@@ -46,13 +81,12 @@ int consumeLastPressedKey(AppLoopState& state) {
     return key;
 }
 
-void reloadDefaultWorld(
-    sim::World& world,
+void SimulationController::reset(
     RuntimeState& runtime,
     const ui::SimulationSettings& simSettings)
 {
-    world = sim::makeDefaultWorld();
-    applySimulationSettings(world, simSettings);
+    world_ = sim::makeDefaultWorld();
+    applySettings(simSettings);
     runtime.simulation.fixedStep.lastFrameTime = glfwGetTime();
     runtime.simulation.fixedStep.accumulator = 0.0;
     runtime.simulation.fixedStep.alpha = 0.0;
@@ -63,7 +97,7 @@ void reloadDefaultWorld(
     runtime.simulation.speedResetWasDown = false;
     runtime.hudMetrics = {};
     runtime.pathHistory.clear();
-    syncPreviousState(world);
+    syncPreviousState_();
 }
 
 } // namespace app_loop

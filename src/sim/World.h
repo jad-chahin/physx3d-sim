@@ -71,6 +71,8 @@ namespace sim {
         World(std::vector<Body> bodies, const Params& params);
 
         void step(double dt);
+        void beginDiagnostics();
+        void finalizeDiagnostics();
 
         void addBody(const Body& b);
         void clear();
@@ -110,6 +112,7 @@ namespace sim {
         std::vector<Body> bodies_{};
         std::unordered_map<ContactKey, ContactManifold, PairHash> contactCache_{};
         std::uint64_t nextBodyId_ = 1;
+        bool diagnosticsManagedExternally_ = false;
 
         std::vector<Vec3> forces_{};
         std::vector<bool> contactTouchedBodies_{};
@@ -120,6 +123,7 @@ namespace sim {
         void advancePositions_(double dt);
         void moveBodiesWithCCD_(double dt);
         [[nodiscard]] int computeSubstepCount_(double dt) const;
+        void sanitizeBody_(Body& b);
         void sanitizeBodies_();
         void updateSleepState_(double dt);
 

@@ -1,20 +1,20 @@
 #ifndef PHYSICS3D_APPLOOPINTERNAL_H
 #define PHYSICS3D_APPLOOPINTERNAL_H
 
-#include <glad/glad.h>
-#include <GLFW/glfw3.h>
-#include <glm/glm.hpp>
-
 #include <cstddef>
 #include <string>
 #include <vector>
 
+#include "app/ScenePresentation.h"
 #include "input/Bindings.h"
 #include "input/Camera.h"
+#include "render/SceneRenderer.h"
 #include "sim/DefaultWorld.h"
 #include "sim/World.h"
 #include "ui/OverlayRenderer.h"
 #include "ui/PauseMenu.h"
+
+#include <GLFW/glfw3.h>
 
 namespace app_loop {
 
@@ -24,13 +24,8 @@ constexpr double kFpsUpdateInterval = 0.5;
 constexpr double kMaxCameraFrameTime = 0.25;
 constexpr int kInternalMaxPhysicsStepsPerFrame = 512;
 
-struct FramebufferSize {
-    int w = 0;
-    int h = 0;
-};
-
 struct AppLoopState {
-    FramebufferSize framebufferSize{};
+    render_scene::FramebufferSize framebufferSize{};
     double scrollDeltaY = 0.0;
     int lastPressedKey = GLFW_KEY_UNKNOWN;
 };
@@ -69,29 +64,39 @@ struct RuntimeState {
         sim::World::Metrics displayed{};
         double elapsed = 0.0;
         std::size_t samples = 0;
-    };
-
-    struct PathTrail {
-        std::vector<sim::Vec3> points{};
-        std::size_t start = 0;
-        std::size_t count = 0;
+        std::size_t stepsSinceSample = 0;
     };
 
     InputRuntime input{};
     SimulationRuntime simulation{};
     FpsRuntime fps{};
     SmoothedHudMetrics hudMetrics{};
-    std::vector<PathTrail> pathHistory{};
+    std::vector<render_scene::PathTrail> pathHistory{};
 };
 
-struct SceneView {
-    glm::vec3 forward{0.0f, 0.0f, -1.0f};
-    glm::mat4 view{1.0f};
-    glm::mat4 proj{1.0f};
-};
+class SimulationController {
+public:
+    explicit SimulationController(sim::World world);
 
-struct InstanceBufferState {
-    std::size_t capacity = 0;
+    std::vector<sim::Body>& mutableBodies();
+    [[nodiscard]] const std::vector<sim::Body>& bodies() const;
+    [[nodiscard]] const sim::World::Metrics& metrics() const;
+    [[nodiscard]] bool hasBodies() const;
+
+    void applySettings(const ui::SimulationSettings& simSettings);
+    void handleHotkeys(
+        GLFWwindow* window,
+        const input::ControlBindings& controls,
+        const ui::SimulationSettings& simSettings,
+        bool pauseMenuOpen,
+        RuntimeState& runtime);
+    void step(RuntimeState& runtime, bool pauseMenuOpen, double frameTime);
+    void reset(RuntimeState& runtime, const ui::SimulationSettings& simSettings);
+
+private:
+    sim::World world_;
+
+    void syncPreviousState_();
 };
 
 class GlfwSession {
@@ -122,36 +127,10 @@ private:
     GLFWwindow* window_ = nullptr;
 };
 
-bool raySphereHit(
-    const glm::vec3& rayOrigin,
-    const glm::vec3& rayDir,
-    const glm::vec3& center,
-    float radius,
-    float& outT);
-
-bool worldToScreen(
-    const glm::vec3& worldPos,
-    const glm::mat4& view,
-    const glm::mat4& proj,
-    int fbw,
-    int fbh,
-    float& outXPx,
-    float& outYPx);
-
 double consumeScrollDeltaY(AppLoopState& state);
 int consumeLastPressedKey(AppLoopState& state);
 
-void applySimulationSettings(sim::World& world, const ui::SimulationSettings& simSettings);
 void updateFps(RuntimeState& runtime, double frameTime);
-void syncPreviousState(sim::World& world);
-
-void handleSimulationHotkeys(
-    GLFWwindow* window,
-    const input::ControlBindings& controls,
-    const ui::SimulationSettings& simSettings,
-    bool pauseMenuOpen,
-    RuntimeState& runtime,
-    sim::World& world);
 
 void updateCamera(
     GLFWwindow* window,
@@ -161,63 +140,15 @@ void updateCamera(
     double frameTime,
     input::Camera& cam);
 
-void stepSimulation(sim::World& world, RuntimeState& runtime, bool pauseMenuOpen, double frameTime);
-void reloadDefaultWorld(
-    sim::World& world,
-    RuntimeState& runtime,
-    const ui::SimulationSettings& simSettings);
-
-SceneView buildSceneView(
-    const input::Camera& cam,
-    const ui::CameraSettings& cameraSettings,
-    const FramebufferSize& framebufferSize);
-
-void buildRenderModels(
-    const sim::World& world,
+void buildSceneSnapshot(
+    const SimulationController& simulation,
+    const RuntimeState& runtime,
     double alpha,
-    std::vector<glm::mat4>& models,
-    std::vector<glm::vec3>& renderPositions);
-
-void drawBodies(
-    GLuint instanceVbo,
-    GLuint program,
-    GLint uView,
-    GLint uProj,
-    GLint uLightDir,
-    GLint uBaseColor,
-    GLint uAmbient,
-    GLuint sphereVao,
-    GLsizei sphereIndexCount,
-    const SceneView& sceneView,
-    InstanceBufferState& instanceBufferState,
-    const std::vector<glm::mat4>& models);
-
-OverlayRenderer::TargetHud buildTargetHud(
-    const sim::World& world,
-    const ui::InterfaceSettings& interfaceSettings,
-    const input::Camera& cam,
-    const SceneView& sceneView,
-    const FramebufferSize& framebufferSize,
-    const std::vector<glm::vec3>& renderPositions);
-
-std::vector<std::string> buildHudDebugLines(
-    const RuntimeState& runtime,
-    const ui::InterfaceSettings& interfaceSettings);
-
-void updatePathHistory(
-    const sim::World& world,
-    RuntimeState& runtime,
-    const ui::InterfaceSettings& interfaceSettings);
-
-std::vector<OverlayRenderer::ScreenLine> buildPathLines(
-    const RuntimeState& runtime,
-    const SceneView& sceneView,
-    const FramebufferSize& framebufferSize,
-    const ui::InterfaceSettings& interfaceSettings);
+    render_scene::SceneSnapshot& snapshot);
 
 void drawOverlay(
     const OverlayRenderer& overlay,
-    const FramebufferSize& framebufferSize,
+    const render_scene::FramebufferSize& framebufferSize,
     const RuntimeState& runtime,
     const ui::MenuView& menuView,
     const OverlayRenderer::TargetHud& targetHud,

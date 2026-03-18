@@ -45,6 +45,7 @@ struct ViewRow {
     bool disabled = false;
     bool selected = false;
     bool boolValue = false;
+    bool operator==(const ViewRow&) const = default;
 };
 
 struct ViewAction {
@@ -53,6 +54,7 @@ struct ViewAction {
     std::string label;
     bool selected = false;
     bool hovered = false;
+    bool operator==(const ViewAction&) const = default;
 };
 
 struct ViewPopup {
@@ -65,6 +67,7 @@ struct ViewPopup {
     bool confirmSelected = true;
     bool hoverConfirm = false;
     bool hoverCancel = false;
+    bool operator==(const ViewPopup&) const = default;
 };
 
 struct MenuView {
@@ -84,6 +87,7 @@ struct MenuView {
     std::vector<ViewRow> rows;
     std::vector<ViewAction> actions;
     ViewPopup popup{};
+    bool operator==(const MenuView&) const = default;
 };
 
 enum class ActionKind { Apply = 0, ResetWorld, ResetControls, ResetSettings, Close, Exit };
@@ -153,4 +157,3 @@ private:
 } // namespace ui
 
 #endif // PHYSICS3D_UI_PAUSEMENU_H
-

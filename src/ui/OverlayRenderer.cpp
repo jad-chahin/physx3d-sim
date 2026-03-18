@@ -42,37 +42,45 @@ void main() { FragColor = uColor; }
 )GLSL";
 
 void drawLayer(
+    const GLuint vao,
+    const GLuint buffer,
+    OverlayRenderer::SceneNode& node,
     const GLint uColor,
-    const std::vector<float>& vertices,
     const std::array<float, 4>& color)
 {
-    if (vertices.empty()) {
+    if (node.vertexCount == 0) {
         return;
     }
-    glBufferData(
-        GL_ARRAY_BUFFER,
-        static_cast<GLsizeiptr>(vertices.size() * sizeof(float)),
-        vertices.data(),
-        GL_DYNAMIC_DRAW);
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, buffer);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), nullptr);
+    glEnableVertexAttribArray(0);
     glUniform4f(uColor, color[0], color[1], color[2], color[3]);
-    glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertices.size() / 2));
+    glDrawArrays(
+        GL_TRIANGLES,
+        static_cast<GLint>(node.vertexOffset),
+        static_cast<GLsizei>(node.vertexCount));
 }
 
 void drawLineLayer(
+    const GLuint vao,
+    const GLuint buffer,
+    OverlayRenderer::SceneNode& node,
     const GLint uColor,
-    const std::vector<float>& vertices,
     const std::array<float, 4>& color)
 {
-    if (vertices.empty()) {
+    if (node.vertexCount == 0) {
         return;
     }
-    glBufferData(
-        GL_ARRAY_BUFFER,
-        static_cast<GLsizeiptr>(vertices.size() * sizeof(float)),
-        vertices.data(),
-        GL_DYNAMIC_DRAW);
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, buffer);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), nullptr);
+    glEnableVertexAttribArray(0);
     glUniform4f(uColor, color[0], color[1], color[2], color[3]);
-    glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(vertices.size() / 2));
+    glDrawArrays(
+        GL_LINES,
+        static_cast<GLint>(node.vertexOffset),
+        static_cast<GLsizei>(node.vertexCount));
 }
 
 } // namespace
@@ -121,6 +129,165 @@ void drawTargetPopup(
     const Geometry& geometry,
     const Buffers& buffers);
 
+void resetNode(OverlayRenderer::SceneNode& node, const std::size_t reserveHint) {
+    node.geometry.clear();
+    node.uploadDirty = true;
+    node.vertexOffset = 0;
+    node.vertexCount = 0;
+    if (node.geometry.capacity() < reserveHint) {
+        node.geometry.reserve(reserveHint);
+    }
+}
+
+template <typename Fn>
+void forEachSceneNode(OverlayRenderer::RetainedScene& scene, Fn&& fn) {
+    fn(scene.screenDim);
+    fn(scene.panelFill);
+    fn(scene.panelFrame);
+    fn(scene.accentFill);
+    fn(scene.textPrimary);
+    fn(scene.textMuted);
+    fn(scene.textAccent);
+    fn(scene.textWarning);
+    fn(scene.statusText);
+    fn(scene.crosshair);
+    fn(scene.pathLines);
+    fn(scene.popupBg);
+    fn(scene.popupFrame);
+    fn(scene.popupAccent);
+    fn(scene.popupText);
+}
+
+template <typename Fn>
+void forEachSceneNode(const OverlayRenderer::RetainedScene& scene, Fn&& fn) {
+    fn(scene.screenDim);
+    fn(scene.panelFill);
+    fn(scene.panelFrame);
+    fn(scene.accentFill);
+    fn(scene.textPrimary);
+    fn(scene.textMuted);
+    fn(scene.textAccent);
+    fn(scene.textWarning);
+    fn(scene.statusText);
+    fn(scene.crosshair);
+    fn(scene.pathLines);
+    fn(scene.popupBg);
+    fn(scene.popupFrame);
+    fn(scene.popupAccent);
+    fn(scene.popupText);
+}
+
+OverlayRenderer::GpuBatchBuffer& selectBatchBuffer(
+    OverlayRenderer::GpuBatchBuffer& staticBuffer,
+    OverlayRenderer::GpuBatchBuffer& dynamicBuffer,
+    const OverlayRenderer::BufferClass bufferClass)
+{
+    return bufferClass == OverlayRenderer::BufferClass::Static
+        ? staticBuffer
+        : dynamicBuffer;
+}
+
+void markBatchDirty(
+    OverlayRenderer::GpuBatchBuffer& staticBuffer,
+    OverlayRenderer::GpuBatchBuffer& dynamicBuffer,
+    const OverlayRenderer::BufferClass bufferClass)
+{
+    selectBatchBuffer(staticBuffer, dynamicBuffer, bufferClass).uploadDirty = true;
+}
+
+void uploadBatch(
+    OverlayRenderer::RetainedScene& scene,
+    OverlayRenderer::GpuBatchBuffer& batchBuffer,
+    std::vector<float>& scratch,
+    const OverlayRenderer::BufferClass bufferClass)
+{
+    if (!batchBuffer.buffer || !batchBuffer.uploadDirty) {
+        return;
+    }
+
+    scratch.clear();
+    std::size_t vertexOffset = 0;
+    forEachSceneNode(scene, [&](OverlayRenderer::SceneNode& node) {
+        if (node.bufferClass != bufferClass) {
+            return;
+        }
+        node.vertexOffset = vertexOffset;
+        node.vertexCount = node.geometry.size() / 2;
+        scratch.insert(scratch.end(), node.geometry.begin(), node.geometry.end());
+        vertexOffset += node.vertexCount;
+        node.uploadDirty = false;
+    });
+
+    glBindBuffer(GL_ARRAY_BUFFER, batchBuffer.buffer);
+    const auto requiredFloats = scratch.size();
+    if (requiredFloats > batchBuffer.capacityFloats) {
+        batchBuffer.capacityFloats = std::max<std::size_t>(requiredFloats, batchBuffer.capacityFloats * 2 + 256);
+        glBufferData(
+            GL_ARRAY_BUFFER,
+            static_cast<GLsizeiptr>(batchBuffer.capacityFloats * sizeof(float)),
+            nullptr,
+            bufferClass == OverlayRenderer::BufferClass::Static ? GL_STATIC_DRAW : GL_DYNAMIC_DRAW);
+    }
+    if (!scratch.empty()) {
+        glBufferSubData(
+            GL_ARRAY_BUFFER,
+            0,
+            static_cast<GLsizeiptr>(requiredFloats * sizeof(float)),
+            scratch.data());
+    }
+    batchBuffer.uploadDirty = false;
+}
+
+void resetMenuSection(OverlayRenderer::RetainedScene& scene) {
+    resetNode(scene.screenDim, 24);
+    resetNode(scene.panelFill, 600);
+    resetNode(scene.panelFrame, 600);
+    resetNode(scene.accentFill, 600);
+    resetNode(scene.textPrimary, 9000);
+    resetNode(scene.textMuted, 9000);
+    resetNode(scene.textAccent, 9000);
+    resetNode(scene.textWarning, 3000);
+    resetNode(scene.popupBg, 600);
+    resetNode(scene.popupFrame, 600);
+    resetNode(scene.popupAccent, 600);
+    resetNode(scene.popupText, 1200);
+    scene.statusText.geometry.clear();
+    scene.statusText.uploadDirty = true;
+}
+
+void resetHudSection(OverlayRenderer::RetainedScene& scene) {
+    resetNode(scene.panelFill, 600);
+    resetNode(scene.panelFrame, 600);
+    resetNode(scene.accentFill, 600);
+    resetNode(scene.textPrimary, 3000);
+    resetNode(scene.textMuted, 3000);
+    resetNode(scene.statusText, 2000);
+    scene.screenDim.geometry.clear();
+    scene.screenDim.uploadDirty = true;
+    scene.textAccent.geometry.clear();
+    scene.textAccent.uploadDirty = true;
+    scene.textWarning.geometry.clear();
+    scene.textWarning.uploadDirty = true;
+}
+
+void resetCrosshairSection(OverlayRenderer::RetainedScene& scene) {
+    resetNode(scene.crosshair, 24);
+}
+
+void resetPathSection(
+    OverlayRenderer::RetainedScene& scene,
+    const std::size_t lineCount)
+{
+    resetNode(scene.pathLines, std::max(scene.pathLines.geometry.capacity(), lineCount * 4));
+}
+
+void resetTargetPopupSection(OverlayRenderer::RetainedScene& scene) {
+    resetNode(scene.popupBg, 600);
+    resetNode(scene.popupFrame, 600);
+    resetNode(scene.popupAccent, 600);
+    resetNode(scene.popupText, 1200);
+}
+
 } // namespace overlay_renderer
 
 void OverlayRenderer::init() {
@@ -134,21 +301,29 @@ void OverlayRenderer::init() {
     uColor_ = glGetUniformLocation(program_, "uColor");
 
     glGenVertexArrays(1, &vao_);
-    glGenBuffers(1, &vbo_);
     glBindVertexArray(vao_);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo_);
-    glBufferData(GL_ARRAY_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), nullptr);
-    glEnableVertexAttribArray(0);
+    glGenBuffers(1, &staticBuffer_.buffer);
+    glGenBuffers(1, &dynamicBuffer_.buffer);
+    staticBuffer_.uploadDirty = true;
+    dynamicBuffer_.uploadDirty = true;
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
 }
 
 void OverlayRenderer::shutdown() {
-    if (vbo_) glDeleteBuffers(1, &vbo_);
+    if (staticBuffer_.buffer) glDeleteBuffers(1, &staticBuffer_.buffer);
+    if (dynamicBuffer_.buffer) glDeleteBuffers(1, &dynamicBuffer_.buffer);
     if (vao_) glDeleteVertexArrays(1, &vao_);
     if (program_) glDeleteProgram(program_);
-    vbo_ = 0;
+    staticBuffer_ = {};
+    dynamicBuffer_ = {};
+    staticUploadScratch_.clear();
+    dynamicUploadScratch_.clear();
+    overlay_renderer::forEachSceneNode(retainedScene_, [](SceneNode& node) {
+        node.uploadDirty = true;
+        node.vertexOffset = 0;
+        node.vertexCount = 0;
+    });
     vao_ = 0;
     program_ = 0;
 }
@@ -167,117 +342,235 @@ void OverlayRenderer::draw(
     bool showCrosshair,
     const std::vector<std::string>& hudDebugLines) const
 {
-    std::vector<float> screenDim, panelFill, panelFrame, accentFill, textPrimary, textMuted,
-        textAccent, textWarning, statusText, crosshair, screenPathLines, popupBg, popupFrame,
-        popupAccent, popupText;
-    screenDim.reserve(24);
-    panelFill.reserve(600);
-    panelFrame.reserve(600);
-    accentFill.reserve(600);
-    textPrimary.reserve(9000);
-    textMuted.reserve(9000);
-    textAccent.reserve(9000);
-    textWarning.reserve(3000);
-    statusText.reserve(2000);
-    crosshair.reserve(24);
-    screenPathLines.reserve(pathLines.size() * 4);
-    popupText.reserve(1200);
+    const FrameInput input{
+        fbw,
+        fbh,
+        simFrozen,
+        simSpeed,
+        fps,
+        &menu,
+        &targetHud,
+        &pathLines,
+        uiScale,
+        showHud,
+        showCrosshair,
+        &hudDebugLines,
+    };
+    const RenderPassState renderState{
+        fbw,
+        fbh,
+        menu.visible,
+        showHud,
+        showCrosshair,
+        !menu.visible && !pathLines.empty(),
+        !menu.visible && targetHud.visible && !targetHud.lines.empty(),
+        simFrozen && !menu.visible,
+        simFrozen,
+    };
 
+    updateCachedLayout(input);
+    uploadBatches();
+    renderCachedLayout(renderState);
+}
+
+void OverlayRenderer::updateCachedLayout(const FrameInput& input) const {
     const overlay_renderer::Geometry geometry{
-        static_cast<float>(fbw),
-        static_cast<float>(fbh),
-        std::clamp(uiScale, 0.75f, 2.0f),
+        static_cast<float>(input.fbw),
+        static_cast<float>(input.fbh),
+        std::clamp(input.uiScale, 0.75f, 2.0f),
     };
+    const GeometryKey geometryKey{input.fbw, input.fbh, geometry.uiScale};
     const overlay_renderer::Buffers buffers{
-        screenDim,
-        panelFill,
-        panelFrame,
-        accentFill,
-        textPrimary,
-        textMuted,
-        textAccent,
-        textWarning,
-        statusText,
-        crosshair,
-        screenPathLines,
-        popupBg,
-        popupFrame,
-        popupAccent,
-        popupText,
+        retainedScene_.screenDim.geometry,
+        retainedScene_.panelFill.geometry,
+        retainedScene_.panelFrame.geometry,
+        retainedScene_.accentFill.geometry,
+        retainedScene_.textPrimary.geometry,
+        retainedScene_.textMuted.geometry,
+        retainedScene_.textAccent.geometry,
+        retainedScene_.textWarning.geometry,
+        retainedScene_.statusText.geometry,
+        retainedScene_.crosshair.geometry,
+        retainedScene_.pathLines.geometry,
+        retainedScene_.popupBg.geometry,
+        retainedScene_.popupFrame.geometry,
+        retainedScene_.popupAccent.geometry,
+        retainedScene_.popupText.geometry,
     };
-    const bool frozenOverlay = simFrozen && !menu.visible;
 
-    if (menu.visible) {
-        overlay_renderer::drawMenu(menu, geometry, buffers);
-    } else if (showHud) {
-        overlay_renderer::drawHud(geometry, simFrozen, simSpeed, fps, hudDebugLines, buffers);
+    if (input.menu->visible) {
+        const MenuSectionState nextMenuState{geometryKey, *input.menu};
+        if (!sceneCache_.menuValid || !(sceneCache_.menu == nextMenuState)) {
+            overlay_renderer::resetMenuSection(retainedScene_);
+            overlay_renderer::drawMenu(*input.menu, geometry, buffers);
+            overlay_renderer::markBatchDirty(staticBuffer_, dynamicBuffer_, BufferClass::Static);
+            overlay_renderer::markBatchDirty(staticBuffer_, dynamicBuffer_, BufferClass::Dynamic);
+            sceneCache_.menu = nextMenuState;
+            sceneCache_.menuValid = true;
+            sceneCache_.hudValid = false;
+            sceneCache_.popupValid = false;
+        }
+    } else {
+        if (input.showHud) {
+            const HudSectionState nextHudState{
+                geometryKey,
+                input.simFrozen,
+                input.simSpeed,
+                input.fps,
+                *input.hudDebugLines,
+            };
+            if (!sceneCache_.hudValid || !(sceneCache_.hud == nextHudState)) {
+                overlay_renderer::resetHudSection(retainedScene_);
+                overlay_renderer::drawHud(
+                    geometry,
+                    input.simFrozen,
+                    input.simSpeed,
+                    input.fps,
+                    *input.hudDebugLines,
+                    buffers);
+                overlay_renderer::markBatchDirty(staticBuffer_, dynamicBuffer_, BufferClass::Static);
+                overlay_renderer::markBatchDirty(staticBuffer_, dynamicBuffer_, BufferClass::Dynamic);
+                sceneCache_.hud = nextHudState;
+                sceneCache_.hudValid = true;
+                sceneCache_.menuValid = false;
+            }
+        }
+        if (input.showCrosshair) {
+            const CrosshairSectionState nextCrosshairState{geometryKey, input.simFrozen};
+            if (!sceneCache_.crosshairValid || !(sceneCache_.crosshair == nextCrosshairState)) {
+                overlay_renderer::resetCrosshairSection(retainedScene_);
+                overlay_renderer::drawCrosshair(geometry, input.simFrozen, buffers);
+                overlay_renderer::markBatchDirty(staticBuffer_, dynamicBuffer_, BufferClass::Static);
+                sceneCache_.crosshair = nextCrosshairState;
+                sceneCache_.crosshairValid = true;
+            }
+        }
+        if (!input.pathLines->empty()) {
+            const PathSectionState nextPathState{*input.pathLines};
+            if (!sceneCache_.pathValid || !(sceneCache_.path == nextPathState)) {
+                overlay_renderer::resetPathSection(retainedScene_, input.pathLines->size());
+                overlay_renderer::drawPathLines(geometry, *input.pathLines, buffers);
+                overlay_renderer::markBatchDirty(staticBuffer_, dynamicBuffer_, BufferClass::Dynamic);
+                sceneCache_.path = nextPathState;
+                sceneCache_.pathValid = true;
+            }
+        }
+        if (input.targetHud->visible && !input.targetHud->lines.empty()) {
+            const PopupSectionState nextPopupState{geometryKey, *input.targetHud};
+            if (!sceneCache_.popupValid || !(sceneCache_.popup == nextPopupState)) {
+                overlay_renderer::resetTargetPopupSection(retainedScene_);
+                overlay_renderer::drawTargetPopup(*input.targetHud, geometry, buffers);
+                overlay_renderer::markBatchDirty(staticBuffer_, dynamicBuffer_, BufferClass::Dynamic);
+                sceneCache_.popup = nextPopupState;
+                sceneCache_.popupValid = true;
+                sceneCache_.menuValid = false;
+            }
+        }
     }
-    if (!menu.visible && showCrosshair) {
-        overlay_renderer::drawCrosshair(geometry, simFrozen, buffers);
-    }
-    if (!menu.visible && !pathLines.empty()) {
-        overlay_renderer::drawPathLines(geometry, pathLines, buffers);
-    }
-    if (!menu.visible) {
-        overlay_renderer::drawTargetPopup(targetHud, geometry, buffers);
-    }
+}
 
+void OverlayRenderer::uploadBatches() const {
+    glUseProgram(program_);
+    glDisable(GL_DEPTH_TEST);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    overlay_renderer::uploadBatch(
+        retainedScene_,
+        staticBuffer_,
+        staticUploadScratch_,
+        BufferClass::Static);
+    overlay_renderer::uploadBatch(
+        retainedScene_,
+        dynamicBuffer_,
+        dynamicUploadScratch_,
+        BufferClass::Dynamic);
+}
+
+void OverlayRenderer::renderCachedLayout(const RenderPassState& renderState) const {
     glDisable(GL_DEPTH_TEST);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glUseProgram(program_);
-    glUniform2f(uViewport_, static_cast<float>(fbw), static_cast<float>(fbh));
+    glUniform2f(uViewport_, static_cast<float>(renderState.fbw), static_cast<float>(renderState.fbh));
     glBindVertexArray(vao_);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo_);
-    glBufferData(GL_ARRAY_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
 
-    drawLayer(
-        uColor_,
-        screenDim,
-        frozenOverlay
-            ? std::array<float, 4>{0.05f, 0.09f, 0.12f, 0.68f}
-            : std::array<float, 4>{0.01f, 0.03f, 0.05f, menu.visible ? 0.42f : 0.62f});
-    drawLayer(
-        uColor_,
-        panelFill,
-        {menu.visible ? 0.03f : 0.05f,
-         menu.visible ? 0.05f : 0.07f,
-         menu.visible ? 0.07f : 0.10f,
-         menu.visible ? 0.56f : 0.90f});
-    drawLayer(uColor_, panelFrame, {0.18f, 0.24f, 0.30f, menu.visible ? 0.78f : 0.98f});
-    drawLayer(
-        uColor_,
-        accentFill,
-        frozenOverlay
-            ? std::array<float, 4>{0.58f, 0.83f, 0.92f, 0.88f}
-            : std::array<float, 4>{0.23f, 0.70f, 0.92f, menu.visible ? 0.72f : 0.95f});
-    drawLayer(uColor_, textPrimary, {1.0f, 1.0f, 1.0f, 1.0f});
-    drawLayer(uColor_, textMuted, {0.74f, 0.80f, 0.86f, 0.98f});
-    drawLayer(uColor_, textAccent, {0.37f, 0.81f, 0.97f, 1.0f});
-    drawLayer(uColor_, textWarning, {1.0f, 0.62f, 0.31f, 1.0f});
-    drawLayer(uColor_, popupText, {0.95f, 0.97f, 1.0f, 1.0f});
-    drawLayer(
-        uColor_,
-        statusText,
-        simFrozen
-            ? std::array<float, 4>{0.74f, 0.91f, 1.0f, 1.0f}
-            : std::array<float, 4>{0.48f, 0.88f, 0.54f, 1.0f});
-    drawLineLayer(
-        uColor_,
-        screenPathLines,
-        frozenOverlay
-            ? std::array<float, 4>{0.70f, 0.90f, 1.0f, 0.32f}
-            : std::array<float, 4>{0.37f, 0.81f, 0.97f, 0.45f});
-    drawLayer(
-        uColor_,
-        crosshair,
-        frozenOverlay
-            ? std::array<float, 4>{0.74f, 0.91f, 1.0f, 1.0f}
-            : std::array<float, 4>{0.32f, 0.85f, 0.95f, 1.0f});
-    drawLayer(uColor_, popupBg, {0.05f, 0.07f, 0.10f, 1.0f});
-    drawLayer(uColor_, popupFrame, {0.18f, 0.24f, 0.30f, 0.98f});
-    drawLayer(uColor_, popupAccent, {1.0f, 0.62f, 0.31f, 1.0f});
-    drawLayer(uColor_, popupText, {0.95f, 0.97f, 1.0f, 1.0f});
+    if (renderState.menuVisible) {
+        drawLayer(
+            vao_,
+            staticBuffer_.buffer,
+            retainedScene_.screenDim,
+            uColor_,
+            renderState.frozenOverlay
+                ? std::array<float, 4>{0.05f, 0.09f, 0.12f, 0.68f}
+                : std::array<float, 4>{0.01f, 0.03f, 0.05f, 0.42f});
+        drawLayer(vao_, staticBuffer_.buffer, retainedScene_.panelFill, uColor_, {0.03f, 0.05f, 0.07f, 0.56f});
+        drawLayer(vao_, staticBuffer_.buffer, retainedScene_.panelFrame, uColor_, {0.18f, 0.24f, 0.30f, 0.78f});
+        drawLayer(
+            vao_,
+            staticBuffer_.buffer,
+            retainedScene_.accentFill,
+            uColor_,
+            renderState.frozenOverlay
+                ? std::array<float, 4>{0.58f, 0.83f, 0.92f, 0.88f}
+                : std::array<float, 4>{0.23f, 0.70f, 0.92f, 0.72f});
+        drawLayer(vao_, dynamicBuffer_.buffer, retainedScene_.textPrimary, uColor_, {1.0f, 1.0f, 1.0f, 1.0f});
+        drawLayer(vao_, staticBuffer_.buffer, retainedScene_.textMuted, uColor_, {0.74f, 0.80f, 0.86f, 0.98f});
+        drawLayer(vao_, staticBuffer_.buffer, retainedScene_.textAccent, uColor_, {0.37f, 0.81f, 0.97f, 1.0f});
+        drawLayer(vao_, staticBuffer_.buffer, retainedScene_.textWarning, uColor_, {1.0f, 0.62f, 0.31f, 1.0f});
+        drawLayer(vao_, dynamicBuffer_.buffer, retainedScene_.popupBg, uColor_, {0.05f, 0.07f, 0.10f, 1.0f});
+        drawLayer(vao_, dynamicBuffer_.buffer, retainedScene_.popupFrame, uColor_, {0.18f, 0.24f, 0.30f, 0.98f});
+        drawLayer(vao_, dynamicBuffer_.buffer, retainedScene_.popupAccent, uColor_, {1.0f, 0.62f, 0.31f, 1.0f});
+        drawLayer(vao_, dynamicBuffer_.buffer, retainedScene_.popupText, uColor_, {0.95f, 0.97f, 1.0f, 1.0f});
+    } else {
+        if (renderState.showHud) {
+            drawLayer(vao_, staticBuffer_.buffer, retainedScene_.panelFill, uColor_, {0.05f, 0.07f, 0.10f, 0.90f});
+            drawLayer(vao_, staticBuffer_.buffer, retainedScene_.panelFrame, uColor_, {0.18f, 0.24f, 0.30f, 0.98f});
+            drawLayer(
+                vao_,
+                staticBuffer_.buffer,
+                retainedScene_.accentFill,
+                uColor_,
+                renderState.frozenOverlay
+                    ? std::array<float, 4>{0.58f, 0.83f, 0.92f, 0.88f}
+                    : std::array<float, 4>{0.23f, 0.70f, 0.92f, 0.95f});
+            drawLayer(vao_, dynamicBuffer_.buffer, retainedScene_.textPrimary, uColor_, {1.0f, 1.0f, 1.0f, 1.0f});
+            drawLayer(vao_, staticBuffer_.buffer, retainedScene_.textMuted, uColor_, {0.74f, 0.80f, 0.86f, 0.98f});
+            drawLayer(
+                vao_,
+                dynamicBuffer_.buffer,
+                retainedScene_.statusText,
+                uColor_,
+                renderState.simFrozen
+                    ? std::array<float, 4>{0.74f, 0.91f, 1.0f, 1.0f}
+                    : std::array<float, 4>{0.48f, 0.88f, 0.54f, 1.0f});
+        }
+        if (renderState.showPathLines) {
+            drawLineLayer(
+                vao_,
+                dynamicBuffer_.buffer,
+                retainedScene_.pathLines,
+                uColor_,
+                renderState.frozenOverlay
+                    ? std::array<float, 4>{0.70f, 0.90f, 1.0f, 0.32f}
+                    : std::array<float, 4>{0.37f, 0.81f, 0.97f, 0.45f});
+        }
+        if (renderState.showCrosshair) {
+            drawLayer(
+                vao_,
+                staticBuffer_.buffer,
+                retainedScene_.crosshair,
+                uColor_,
+                renderState.frozenOverlay
+                    ? std::array<float, 4>{0.74f, 0.91f, 1.0f, 1.0f}
+                    : std::array<float, 4>{0.32f, 0.85f, 0.95f, 1.0f});
+        }
+        if (renderState.showTargetPopup) {
+            drawLayer(vao_, dynamicBuffer_.buffer, retainedScene_.popupBg, uColor_, {0.05f, 0.07f, 0.10f, 1.0f});
+            drawLayer(vao_, dynamicBuffer_.buffer, retainedScene_.popupFrame, uColor_, {0.18f, 0.24f, 0.30f, 0.98f});
+            drawLayer(vao_, dynamicBuffer_.buffer, retainedScene_.popupAccent, uColor_, {1.0f, 0.62f, 0.31f, 1.0f});
+            drawLayer(vao_, dynamicBuffer_.buffer, retainedScene_.popupText, uColor_, {0.95f, 0.97f, 1.0f, 1.0f});
+        }
+    }
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
@@ -777,7 +1070,7 @@ void drawTargetPopup(
     const float py = targetHud.yPx - popupH - 12.0f;
     pushQuadPx(buffers.popupBg, px, py, px + popupW, py + popupH);
     pushFramePx(buffers.popupFrame, px, py, px + popupW, py + popupH, 1.5f);
-    pushQuadPx(buffers.accentFill, px, py, px + popupW, py + 3.0f);
+    pushQuadPx(buffers.popupAccent, px, py, px + popupW, py + 3.0f);
     appendTextPx(buffers.popupText, px + 8.0f, py + 6.0f, baseScalePx, popup);
 }
 

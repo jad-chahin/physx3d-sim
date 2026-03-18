@@ -14,6 +14,7 @@ public:
         float xPx = 0.0f;
         float yPx = 0.0f;
         std::vector<std::string> lines;
+        bool operator==(const TargetHud&) const = default;
     };
 
     struct ScreenLine {
@@ -21,6 +22,7 @@ public:
         float y0 = 0.0f;
         float x1 = 0.0f;
         float y1 = 0.0f;
+        bool operator==(const ScreenLine&) const = default;
     };
 
     void init();
@@ -39,12 +41,156 @@ public:
         bool showCrosshair,
         const std::vector<std::string>& hudDebugLines) const;
 
+    enum class SceneLayer {
+        ScreenDim,
+        PanelFill,
+        PanelFrame,
+        AccentFill,
+        TextPrimary,
+        TextMuted,
+        TextAccent,
+        TextWarning,
+        StatusText,
+        Crosshair,
+        PathLines,
+        PopupBg,
+        PopupFrame,
+        PopupAccent,
+        PopupText,
+    };
+
+    enum class BufferClass {
+        Static,
+        Dynamic,
+    };
+
+    struct SceneNode {
+        SceneLayer layer;
+        BufferClass bufferClass;
+        std::vector<float> geometry;
+        bool uploadDirty = true;
+        std::size_t vertexOffset = 0;
+        std::size_t vertexCount = 0;
+    };
+
+    struct RetainedScene {
+        SceneNode screenDim{SceneLayer::ScreenDim, BufferClass::Static, {}};
+        SceneNode panelFill{SceneLayer::PanelFill, BufferClass::Static, {}};
+        SceneNode panelFrame{SceneLayer::PanelFrame, BufferClass::Static, {}};
+        SceneNode accentFill{SceneLayer::AccentFill, BufferClass::Static, {}};
+        SceneNode textPrimary{SceneLayer::TextPrimary, BufferClass::Dynamic, {}};
+        SceneNode textMuted{SceneLayer::TextMuted, BufferClass::Static, {}};
+        SceneNode textAccent{SceneLayer::TextAccent, BufferClass::Static, {}};
+        SceneNode textWarning{SceneLayer::TextWarning, BufferClass::Static, {}};
+        SceneNode statusText{SceneLayer::StatusText, BufferClass::Dynamic, {}};
+        SceneNode crosshair{SceneLayer::Crosshair, BufferClass::Static, {}};
+        SceneNode pathLines{SceneLayer::PathLines, BufferClass::Dynamic, {}};
+        SceneNode popupBg{SceneLayer::PopupBg, BufferClass::Dynamic, {}};
+        SceneNode popupFrame{SceneLayer::PopupFrame, BufferClass::Dynamic, {}};
+        SceneNode popupAccent{SceneLayer::PopupAccent, BufferClass::Dynamic, {}};
+        SceneNode popupText{SceneLayer::PopupText, BufferClass::Dynamic, {}};
+    };
+
+    struct GeometryKey {
+        int fbw = 0;
+        int fbh = 0;
+        float uiScale = 1.0f;
+        bool operator==(const GeometryKey&) const = default;
+    };
+
+    struct MenuSectionState {
+        GeometryKey geometry{};
+        ui::MenuView menu{};
+        bool operator==(const MenuSectionState&) const = default;
+    };
+
+    struct HudSectionState {
+        GeometryKey geometry{};
+        bool simFrozen = false;
+        double simSpeed = 1.0;
+        double fps = 0.0;
+        std::vector<std::string> hudDebugLines;
+        bool operator==(const HudSectionState&) const = default;
+    };
+
+    struct CrosshairSectionState {
+        GeometryKey geometry{};
+        bool simFrozen = false;
+        bool operator==(const CrosshairSectionState&) const = default;
+    };
+
+    struct PathSectionState {
+        std::vector<ScreenLine> pathLines;
+        bool operator==(const PathSectionState&) const = default;
+    };
+
+    struct PopupSectionState {
+        GeometryKey geometry{};
+        TargetHud targetHud{};
+        bool operator==(const PopupSectionState&) const = default;
+    };
+
+    struct SceneCache {
+        bool menuValid = false;
+        bool hudValid = false;
+        bool crosshairValid = false;
+        bool pathValid = false;
+        bool popupValid = false;
+        MenuSectionState menu{};
+        HudSectionState hud{};
+        CrosshairSectionState crosshair{};
+        PathSectionState path{};
+        PopupSectionState popup{};
+    };
+
+    struct GpuBatchBuffer {
+        GLuint buffer = 0;
+        std::size_t capacityFloats = 0;
+        bool uploadDirty = true;
+    };
+
+    struct FrameInput {
+        int fbw = 0;
+        int fbh = 0;
+        bool simFrozen = false;
+        double simSpeed = 1.0;
+        double fps = 0.0;
+        const ui::MenuView* menu = nullptr;
+        const TargetHud* targetHud = nullptr;
+        const std::vector<ScreenLine>* pathLines = nullptr;
+        float uiScale = 1.0f;
+        bool showHud = false;
+        bool showCrosshair = false;
+        const std::vector<std::string>* hudDebugLines = nullptr;
+    };
+
+    struct RenderPassState {
+        int fbw = 0;
+        int fbh = 0;
+        bool menuVisible = false;
+        bool showHud = false;
+        bool showCrosshair = false;
+        bool showPathLines = false;
+        bool showTargetPopup = false;
+        bool frozenOverlay = false;
+        bool simFrozen = false;
+    };
+
 private:
+    void updateCachedLayout(const FrameInput& input) const;
+    void uploadBatches() const;
+    void renderCachedLayout(const RenderPassState& renderState) const;
+
     GLuint program_ = 0;
     GLuint vao_ = 0;
-    GLuint vbo_ = 0;
     GLint uViewport_ = -1;
     GLint uColor_ = -1;
+    mutable RetainedScene retainedScene_{};
+    mutable SceneCache sceneCache_{};
+    mutable GpuBatchBuffer staticBuffer_{};
+    mutable GpuBatchBuffer dynamicBuffer_{};
+    mutable std::vector<float> staticUploadScratch_{};
+    mutable std::vector<float> dynamicUploadScratch_{};
 };
 
 #endif // PHYSICS3D_UI_OVERLAYRENDERER_H

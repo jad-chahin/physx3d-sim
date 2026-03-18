@@ -6,6 +6,7 @@
 namespace app_loop {
 namespace {
     constexpr double kHudMetricsUpdateInterval = 0.5;
+    constexpr std::size_t kHudMetricsSampleEverySteps = 4;
 
     void resetFixedStepState(RuntimeState& runtime) {
         runtime.simulation.fixedStep.lastFrameTime = glfwGetTime();
@@ -29,8 +30,18 @@ namespace {
         accum.manifoldActivePairs += metrics.manifoldActivePairs;
         accum.sanitizedBodies += metrics.sanitizedBodies;
         accum.sanitizedFields += metrics.sanitizedFields;
-        runtime.hudMetrics.elapsed += kFixedDt;
         ++runtime.hudMetrics.samples;
+    }
+
+    void maybeSampleHudMetrics(RuntimeState& runtime, const sim::World::Metrics& metrics) {
+        runtime.hudMetrics.elapsed += kFixedDt;
+        ++runtime.hudMetrics.stepsSinceSample;
+        if (runtime.hudMetrics.stepsSinceSample < kHudMetricsSampleEverySteps) {
+            return;
+        }
+
+        runtime.hudMetrics.stepsSinceSample = 0;
+        accumulateHudMetrics(runtime, metrics);
     }
 
     std::size_t averageMetric(const std::size_t total, const std::size_t samples) {
@@ -68,15 +79,6 @@ namespace {
     }
 } // namespace
 
-void applySimulationSettings(sim::World& world, const ui::SimulationSettings& simSettings) {
-    world.params().enableGravity = simSettings.gravityEnabled;
-    world.params().G = simSettings.gravityStrength;
-    world.params().enableCollisions = simSettings.collisionsEnabled;
-    world.params().velocityIterations = simSettings.velocityIterations;
-    world.params().positionIterations = simSettings.positionIterations;
-    world.params().restitution = simSettings.globalRestitution;
-}
-
 void updateFps(RuntimeState& runtime, const double frameTime) {
     runtime.fps.elapsed += frameTime;
     ++runtime.fps.frames;
@@ -87,26 +89,18 @@ void updateFps(RuntimeState& runtime, const double frameTime) {
     }
 }
 
-void syncPreviousState(sim::World& world) {
-    for (auto& body : world.bodies()) {
-        body.prevPosition = body.position;
-        body.prevOrientation = body.orientation;
-    }
-}
-
-void handleSimulationHotkeys(
+void SimulationController::handleHotkeys(
     GLFWwindow* window,
     const input::ControlBindings& controls,
     const ui::SimulationSettings& simSettings,
     const bool pauseMenuOpen,
-    RuntimeState& runtime,
-    sim::World& world)
+    RuntimeState& runtime)
 {
     const bool freezeDown = input::isBindingPressed(window, controls.freeze);
     if (!pauseMenuOpen && freezeDown && !runtime.simulation.freezeWasDown) {
         runtime.simulation.simFrozen = !runtime.simulation.simFrozen;
         resetFixedStepState(runtime);
-        syncPreviousState(world);
+        syncPreviousState_();
     }
     runtime.simulation.freezeWasDown = freezeDown;
 
@@ -173,7 +167,7 @@ void updateCamera(
     if (input::isBindingPressed(window, controls.moveDown)) cam.pos -= glm::vec3(0, 1, 0) * move;
 }
 
-void stepSimulation(sim::World& world, RuntimeState& runtime, const bool pauseMenuOpen, const double frameTime) {
+void SimulationController::step(RuntimeState& runtime, const bool pauseMenuOpen, const double frameTime) {
     auto& fixedStep = runtime.simulation.fixedStep;
     if (runtime.simulation.simFrozen || pauseMenuOpen) {
         fixedStep.accumulator = 0.0;
@@ -198,9 +192,11 @@ void stepSimulation(sim::World& world, RuntimeState& runtime, const bool pauseMe
 
     int steps = 0;
     while (fixedStep.accumulator >= kFixedDt && steps < kInternalMaxPhysicsStepsPerFrame) {
-        syncPreviousState(world);
-        world.step(kFixedDt);
-        accumulateHudMetrics(runtime, world.metrics());
+        syncPreviousState_();
+        world_.beginDiagnostics();
+        world_.step(kFixedDt);
+        world_.finalizeDiagnostics();
+        maybeSampleHudMetrics(runtime, world_.metrics());
         fixedStep.accumulator -= kFixedDt;
         ++steps;
     }

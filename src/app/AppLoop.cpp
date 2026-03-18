@@ -100,6 +100,14 @@ struct RenderResources {
     }
 };
 
+struct FrameRenderState {
+    ui::MenuView menuView{};
+    OverlayRenderer::TargetHud targetHud{};
+    std::vector<OverlayRenderer::ScreenLine> pathLines{};
+    std::vector<std::string> hudDebugLines{};
+    render_scene::SceneSnapshot sceneSnapshot{};
+};
+
 bool initRenderResources(RenderResources& resources) {
     std::vector<float> sphereVerts;
     std::vector<std::uint32_t> sphereIdx;
@@ -192,7 +200,7 @@ void updatePauseMenu(
     app_loop::RuntimeState& runtime,
     input::ControlBindings& controls,
     ui::PauseMenu& pauseMenu,
-    sim::World& world,
+    app_loop::SimulationController& simulation,
     const std::string& controlsConfigPath)
 {
     const int pressedKey = app_loop::consumeLastPressedKey(appState);
@@ -205,7 +213,7 @@ void updatePauseMenu(
         runtime.simulation.fixedStep.lastFrameTime,
         runtime.simulation.fixedStep.accumulator,
         runtime.simulation.fixedStep.alpha,
-        world.bodies());
+        simulation.mutableBodies());
     pauseMenu.handlePointerInput(window, controls, controlsConfigPath, scrollDeltaY);
     pauseMenu.handlePressedKey(window, pressedKey, controls, controlsConfigPath);
     pauseMenu.updateContinuousInput(window, controls);
@@ -213,7 +221,7 @@ void updatePauseMenu(
 
 void updateFrameState(
     GLFWwindow* window,
-    sim::World& world,
+    app_loop::SimulationController& simulation,
     const input::ControlBindings& controls,
     const ui::PauseMenu& pauseMenu,
     app_loop::RuntimeState& runtime,
@@ -222,9 +230,9 @@ void updateFrameState(
     const auto& simSettings = pauseMenu.simulationSettings();
     const auto& cameraSettings = pauseMenu.cameraSettings();
 
-    app_loop::applySimulationSettings(world, simSettings);
+    simulation.applySettings(simSettings);
     runtime.simulation.simSpeed = std::clamp(runtime.simulation.simSpeed, simSettings.minSimSpeed, simSettings.maxSimSpeed);
-    app_loop::handleSimulationHotkeys(window, controls, simSettings, pauseMenu.isOpen(), runtime, world);
+    simulation.handleHotkeys(window, controls, simSettings, pauseMenu.isOpen(), runtime);
 
     const double now = glfwGetTime();
     const double frameTime = std::max(0.0, now - runtime.simulation.fixedStep.lastFrameTime);
@@ -233,7 +241,7 @@ void updateFrameState(
 
     app_loop::updateFps(runtime, frameTime);
     app_loop::updateCamera(window, controls, cameraSettings, runtime, cameraFrameTime, cam);
-    app_loop::stepSimulation(world, runtime, pauseMenu.isOpen(), frameTime);
+    simulation.step(runtime, pauseMenu.isOpen(), frameTime);
 }
 
 void clearFrame(const app_loop::RuntimeState& runtime, const ui::PauseMenu& pauseMenu) {
@@ -243,6 +251,112 @@ void clearFrame(const app_loop::RuntimeState& runtime, const ui::PauseMenu& paus
         glClearColor(0.05f, 0.05f, 0.08f, 1.0f);
     }
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+}
+
+void processInputStage(
+    GLFWwindow* window,
+    app_loop::AppLoopState& appState,
+    app_loop::RuntimeState& runtime,
+    input::ControlBindings& controls,
+    ui::PauseMenu& pauseMenu,
+    app_loop::SimulationController& simulation,
+    const std::string& controlsConfigPath)
+{
+    glfwPollEvents();
+
+    updatePauseMenu(window, appState, runtime, controls, pauseMenu, simulation, controlsConfigPath);
+    if (pauseMenu.consumeResetWorldRequest()) {
+        simulation.reset(runtime, pauseMenu.simulationSettings());
+    }
+}
+
+void runSimulationStage(
+    GLFWwindow* window,
+    app_loop::SimulationController& simulation,
+    const input::ControlBindings& controls,
+    const ui::PauseMenu& pauseMenu,
+    app_loop::RuntimeState& runtime,
+    input::Camera& cam)
+{
+    updateFrameState(window, simulation, controls, pauseMenu, runtime, cam);
+    app_loop::updatePathHistory(simulation, runtime, pauseMenu.interfaceSettings());
+}
+
+void renderStage(
+    GLFWwindow* window,
+    const app_loop::AppLoopState& appState,
+    const app_loop::RuntimeState& runtime,
+    const ui::PauseMenu& pauseMenu,
+    const input::ControlBindings& controls,
+    const app_loop::SimulationController& simulation,
+    const input::Camera& cam,
+    const RenderResources& renderResources,
+    render_scene::InstanceBufferState& instanceBufferState,
+    OverlayRenderer& overlay,
+    FrameRenderState& frameRenderState)
+{
+    (void)window;
+
+    static render_scene::FramebufferSize appliedViewport{-1, -1};
+    if (appliedViewport.w != appState.framebufferSize.w || appliedViewport.h != appState.framebufferSize.h) {
+        glViewport(0, 0, appState.framebufferSize.w, appState.framebufferSize.h);
+        appliedViewport = appState.framebufferSize;
+    }
+
+    clearFrame(runtime, pauseMenu);
+    frameRenderState.menuView = pauseMenu.buildView(controls);
+    frameRenderState.targetHud = {};
+    frameRenderState.pathLines.clear();
+        app_loop::buildHudDebugLines(runtime, pauseMenu.interfaceSettings(), frameRenderState.hudDebugLines);
+
+    if (simulation.hasBodies()) {
+        app_loop::buildSceneSnapshot(simulation, runtime, runtime.simulation.fixedStep.alpha, frameRenderState.sceneSnapshot);
+        const render_scene::SceneView sceneView =
+            render_scene::buildSceneView(cam, pauseMenu.cameraSettings(), appState.framebufferSize);
+        render_scene::drawBodies(
+            renderResources.instanceVbo,
+            renderResources.program,
+            renderResources.uView,
+            renderResources.uProj,
+            renderResources.uLightDir,
+            renderResources.uBaseColor,
+            renderResources.uAmbient,
+            renderResources.sphereVao,
+            renderResources.sphereIndexCount,
+            sceneView,
+            instanceBufferState,
+            frameRenderState.sceneSnapshot);
+        app_loop::buildTargetHud(
+            frameRenderState.sceneSnapshot,
+            pauseMenu.interfaceSettings(),
+            cam,
+            sceneView,
+            appState.framebufferSize,
+            frameRenderState.targetHud);
+        app_loop::buildPathLines(
+            frameRenderState.sceneSnapshot,
+            sceneView,
+            appState.framebufferSize,
+            pauseMenu.interfaceSettings(),
+            frameRenderState.pathLines);
+    } else {
+        frameRenderState.sceneSnapshot.bodies.clear();
+        frameRenderState.sceneSnapshot.models.clear();
+        frameRenderState.sceneSnapshot.pathTrails = runtime.pathHistory;
+    }
+
+    app_loop::drawOverlay(
+        overlay,
+        appState.framebufferSize,
+        runtime,
+        frameRenderState.menuView,
+        frameRenderState.targetHud,
+        frameRenderState.pathLines,
+        pauseMenu.uiScale(),
+        pauseMenu.interfaceSettings(),
+        frameRenderState.hudDebugLines);
+
+    glfwSwapBuffers(window);
 }
 
 } // namespace
@@ -273,6 +387,7 @@ int runApp(sim::World world) {
     configureWindow(window, appState);
 
     input::Camera cam{};
+    app_loop::SimulationController simulation(std::move(world));
     app_loop::RuntimeState runtime{};
     input::ControlBindings controls{};
     const std::string controlsConfigPath = "controls.cfg";
@@ -300,70 +415,31 @@ int runApp(sim::World world) {
     overlay.init();
     runtime.simulation.fixedStep.lastFrameTime = glfwGetTime();
 
-    std::vector<glm::mat4> models;
-    std::vector<glm::vec3> renderPositions;
-    std::vector<OverlayRenderer::ScreenLine> pathLines;
-    std::vector<std::string> hudDebugLines;
-    app_loop::InstanceBufferState instanceBufferState{};
+    render_scene::InstanceBufferState instanceBufferState{};
+    FrameRenderState frameRenderState{};
 
     while (!glfwWindowShouldClose(window)) {
-        glfwPollEvents();
-        glViewport(0, 0, appState.framebufferSize.w, appState.framebufferSize.h);
-
-        updatePauseMenu(window, appState, runtime, controls, pauseMenu, world, controlsConfigPath);
-        if (pauseMenu.consumeResetWorldRequest()) {
-            app_loop::reloadDefaultWorld(world, runtime, pauseMenu.simulationSettings());
-        }
-        updateFrameState(window, world, controls, pauseMenu, runtime, cam);
-        clearFrame(runtime, pauseMenu);
-
-        const ui::MenuView menuView = pauseMenu.buildView(controls);
-        OverlayRenderer::TargetHud targetHud{};
-        pathLines.clear();
-        hudDebugLines = app_loop::buildHudDebugLines(runtime, pauseMenu.interfaceSettings());
-        app_loop::updatePathHistory(world, runtime, pauseMenu.interfaceSettings());
-        if (!world.bodies().empty()) {
-            const app_loop::SceneView sceneView =
-                app_loop::buildSceneView(cam, pauseMenu.cameraSettings(), appState.framebufferSize);
-            app_loop::buildRenderModels(world, runtime.simulation.fixedStep.alpha, models, renderPositions);
-            app_loop::drawBodies(
-                renderResources.instanceVbo,
-                renderResources.program,
-                renderResources.uView,
-                renderResources.uProj,
-                renderResources.uLightDir,
-                renderResources.uBaseColor,
-                renderResources.uAmbient,
-                renderResources.sphereVao,
-                renderResources.sphereIndexCount,
-                sceneView,
-                instanceBufferState,
-                models);
-            targetHud = app_loop::buildTargetHud(
-                world,
-                pauseMenu.interfaceSettings(),
-                cam,
-                sceneView,
-                appState.framebufferSize,
-                renderPositions);
-            pathLines = app_loop::buildPathLines(
-                runtime,
-                sceneView,
-                appState.framebufferSize,
-                pauseMenu.interfaceSettings());
-        }
-        app_loop::drawOverlay(
-            overlay,
-            appState.framebufferSize,
+        processInputStage(
+            window,
+            appState,
             runtime,
-            menuView,
-            targetHud,
-            pathLines,
-            pauseMenu.uiScale(),
-            pauseMenu.interfaceSettings(),
-            hudDebugLines);
-
-        glfwSwapBuffers(window);
+        controls,
+        pauseMenu,
+        simulation,
+        controlsConfigPath);
+        runSimulationStage(window, simulation, controls, pauseMenu, runtime, cam);
+        renderStage(
+            window,
+            appState,
+            runtime,
+            pauseMenu,
+            controls,
+            simulation,
+            cam,
+            renderResources,
+            instanceBufferState,
+            overlay,
+            frameRenderState);
     }
 
     overlay.shutdown();

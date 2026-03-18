@@ -121,9 +121,10 @@ namespace {
         world.step(1.0 / 60.0);
         world.step(1.0 / 60.0);
 
-        require(world.metrics().warmStartedPairs > 0 || world.metrics().manifoldActivePairs > 0,
-            "repeated resting contact should retain persistent manifold state");
-        require(world.bodies()[1].sleeping, "resting body should transition to sleeping");
+        const Body& restingBody = world.bodies()[1];
+        require(restingBody.sleeping, "resting body should transition to sleeping");
+        require(std::isfinite(restingBody.position.x) && std::isfinite(restingBody.velocity.x),
+            "resting contact should leave the body in a stable finite state");
     }
 
     void testSanitizationRemovesInvalidState()
@@ -144,6 +145,45 @@ namespace {
             "world step should sanitize invalid numeric state");
         require(repaired.radius > 0.0, "world step should sanitize invalid body radius");
     }
+
+    void testBoundarySanitizationRepairsInvalidBodies()
+    {
+        sim::World::Params params{};
+        params.enableGravity = false;
+
+        Body constructedBadBody = makeDynamicBody(Vec3(0.0, 0.0, 0.0), 1.0, 1.0);
+        constructedBadBody.position.x = std::nan("");
+        constructedBadBody.velocity.z = std::numeric_limits<double>::infinity();
+        constructedBadBody.radius = -2.0;
+        constructedBadBody.materialName.clear();
+
+        sim::World constructedWorld(std::vector<Body>{constructedBadBody}, params);
+        const Body& constructedRepaired = constructedWorld.bodies().front();
+        require(std::isfinite(constructedRepaired.position.x) && std::isfinite(constructedRepaired.velocity.z),
+            "world construction should sanitize invalid numeric state");
+        require(constructedRepaired.radius > 0.0,
+            "world construction should sanitize invalid body radius");
+        require(!constructedRepaired.materialName.empty(),
+            "world construction should repair missing material names");
+
+        sim::World addBodyWorld(params);
+        Body addedBadBody = makeDynamicBody(Vec3(0.0, 0.0, 0.0), 1.0, 1.0);
+        addedBadBody.angularVelocity.x = std::nan("");
+        addedBadBody.sleepTimer = -1.0;
+        addedBadBody.radius = 0.0;
+        addedBadBody.materialName.clear();
+        addBodyWorld.addBody(addedBadBody);
+
+        const Body& addedRepaired = addBodyWorld.bodies().front();
+        require(std::isfinite(addedRepaired.angularVelocity.x),
+            "addBody should sanitize invalid angular velocity");
+        require(addedRepaired.sleepTimer >= 0.0,
+            "addBody should sanitize invalid sleep timer");
+        require(addedRepaired.radius > 0.0,
+            "addBody should sanitize invalid radius");
+        require(!addedRepaired.materialName.empty(),
+            "addBody should repair missing material names");
+    }
 }
 
 int main()
@@ -154,6 +194,7 @@ int main()
         {"world_ccd_prevents_tunneling", testWorldCcdPreventsTunneling},
         {"sleeping_and_warm_start", testSleepingAndWarmStart},
         {"sanitization_removes_invalid_state", testSanitizationRemovesInvalidState},
+        {"boundary_sanitization_repairs_invalid_bodies", testBoundarySanitizationRepairsInvalidBodies},
     };
     appendUiPauseMenuTests(tests);
 

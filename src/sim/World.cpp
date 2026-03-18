@@ -48,23 +48,38 @@ namespace sim {
 
     void World::step(const double dt)
     {
-        metrics_ = {};
+        const bool manageDiagnosticsInternally = !diagnosticsManagedExternally_;
+        if (manageDiagnosticsInternally) {
+            beginDiagnostics();
+        }
         const int substeps = computeSubstepCount_(dt);
         const double substepDt = dt / static_cast<double>(substeps);
         for (int substep = 0; substep < substeps; ++substep) {
             stepSingle_(substepDt);
         }
+        if (manageDiagnosticsInternally) {
+            finalizeDiagnostics();
+        }
+    }
+
+    void World::beginDiagnostics()
+    {
+        diagnosticsManagedExternally_ = true;
+        metrics_ = {};
+    }
+
+    void World::finalizeDiagnostics()
+    {
         metrics_.manifoldActivePairs = contactCache_.size();
+        diagnosticsManagedExternally_ = false;
     }
 
     void World::stepSingle_(const double dt)
     {
         beginContactFrame_();
-        sanitizeBodies_();
         prepareForces_();
         computeForces_();
         integrateVelocities_(dt * 0.5);
-        sanitizeBodies_();
         moveBodiesWithCCD_(dt);
         sanitizeBodies_();
         prepareForces_();
@@ -84,6 +99,7 @@ namespace sim {
         bodies_.back().sleeping = false;
         bodies_.back().sleepTimer = 0.0;
         assignBodyId_(bodies_.back());
+        sanitizeBody_(bodies_.back());
     }
 
     void World::clear()
@@ -216,70 +232,75 @@ namespace sim {
         }
     }
 
-    void World::sanitizeBodies_()
+    void World::sanitizeBody_(Body& b)
     {
         const Material& fallbackMaterial = defaultMaterial();
 
+        bool bodySanitized = false;
+        const auto mark = [&]() {
+            ++metrics_.sanitizedFields;
+            bodySanitized = true;
+        };
+
+        if (!std::isfinite(b.position.x) || !std::isfinite(b.position.y) || !std::isfinite(b.position.z)) {
+            b.position = Vec3(0.0, 0.0, 0.0); mark();
+        }
+        if (!std::isfinite(b.prevPosition.x) || !std::isfinite(b.prevPosition.y) || !std::isfinite(b.prevPosition.z)) {
+            b.prevPosition = b.position; mark();
+        }
+        if (!std::isfinite(b.velocity.x) || !std::isfinite(b.velocity.y) || !std::isfinite(b.velocity.z)) {
+            b.velocity = Vec3(0.0, 0.0, 0.0); mark();
+        }
+        if (!std::isfinite(b.angularVelocity.x) || !std::isfinite(b.angularVelocity.y) || !std::isfinite(b.angularVelocity.z)) {
+            b.angularVelocity = Vec3(0.0, 0.0, 0.0); mark();
+        }
+        if (!std::isfinite(b.torque.x) || !std::isfinite(b.torque.y) || !std::isfinite(b.torque.z)) {
+            b.torque = Vec3(0.0, 0.0, 0.0); mark();
+        }
+        if (!std::isfinite(b.invMass) || b.invMass < 0.0) { b.invMass = 0.0; mark(); }
+        if (!std::isfinite(b.invInertia) || b.invInertia < 0.0) { b.invInertia = 0.0; mark(); }
+        if (!std::isfinite(b.radius) || b.radius <= 0.0) { b.radius = 1.0; mark(); }
+        if (b.materialName.empty()) {
+            assignMaterial(b, kDefaultMaterialName);
+            mark();
+        }
+        if (!std::isfinite(b.restitution)) { b.restitution = fallbackMaterial.restitution; mark(); }
+        const double oldRest = b.restitution;
+        b.restitution = std::clamp(b.restitution, 0.0, 1.0);
+        if (b.restitution != oldRest) mark();
+        if (!std::isfinite(b.staticFriction) || b.staticFriction < 0.0) { b.staticFriction = fallbackMaterial.staticFriction; mark(); }
+        if (!std::isfinite(b.dynamicFriction) || b.dynamicFriction < 0.0) { b.dynamicFriction = fallbackMaterial.dynamicFriction; mark(); }
+        if (b.dynamicFriction > b.staticFriction) { b.dynamicFriction = b.staticFriction; mark(); }
+        if (!std::isfinite(b.orientation.w) || !std::isfinite(b.orientation.x) || !std::isfinite(b.orientation.y) || !std::isfinite(b.orientation.z)) {
+            b.orientation = {}; mark();
+        } else {
+            normalizeQuat(b.orientation);
+        }
+        if (!std::isfinite(b.prevOrientation.w) || !std::isfinite(b.prevOrientation.x) ||
+            !std::isfinite(b.prevOrientation.y) || !std::isfinite(b.prevOrientation.z))
+        {
+            b.prevOrientation = b.orientation; mark();
+        } else {
+            normalizeQuat(b.prevOrientation);
+        }
+        if (b.invMass <= 0.0) {
+            b.sleeping = false;
+            b.sleepTimer = 0.0;
+        } else if (!std::isfinite(b.sleepTimer) || b.sleepTimer < 0.0) {
+            b.sleepTimer = 0.0;
+            b.sleeping = false;
+            mark();
+        }
+
+        if (bodySanitized) {
+            ++metrics_.sanitizedBodies;
+        }
+    }
+
+    void World::sanitizeBodies_()
+    {
         for (auto& b : bodies_) {
-            bool bodySanitized = false;
-            const auto mark = [&]() {
-                ++metrics_.sanitizedFields;
-                bodySanitized = true;
-            };
-
-            if (!std::isfinite(b.position.x) || !std::isfinite(b.position.y) || !std::isfinite(b.position.z)) {
-                b.position = Vec3(0.0, 0.0, 0.0); mark();
-            }
-            if (!std::isfinite(b.prevPosition.x) || !std::isfinite(b.prevPosition.y) || !std::isfinite(b.prevPosition.z)) {
-                b.prevPosition = b.position; mark();
-            }
-            if (!std::isfinite(b.velocity.x) || !std::isfinite(b.velocity.y) || !std::isfinite(b.velocity.z)) {
-                b.velocity = Vec3(0.0, 0.0, 0.0); mark();
-            }
-            if (!std::isfinite(b.angularVelocity.x) || !std::isfinite(b.angularVelocity.y) || !std::isfinite(b.angularVelocity.z)) {
-                b.angularVelocity = Vec3(0.0, 0.0, 0.0); mark();
-            }
-            if (!std::isfinite(b.torque.x) || !std::isfinite(b.torque.y) || !std::isfinite(b.torque.z)) {
-                b.torque = Vec3(0.0, 0.0, 0.0); mark();
-            }
-            if (!std::isfinite(b.invMass) || b.invMass < 0.0) { b.invMass = 0.0; mark(); }
-            if (!std::isfinite(b.invInertia) || b.invInertia < 0.0) { b.invInertia = 0.0; mark(); }
-            if (!std::isfinite(b.radius) || b.radius <= 0.0) { b.radius = 1.0; mark(); }
-            if (b.materialName.empty()) {
-                assignMaterial(b, kDefaultMaterialName);
-                mark();
-            }
-            if (!std::isfinite(b.restitution)) { b.restitution = fallbackMaterial.restitution; mark(); }
-            const double oldRest = b.restitution;
-            b.restitution = std::clamp(b.restitution, 0.0, 1.0);
-            if (b.restitution != oldRest) mark();
-            if (!std::isfinite(b.staticFriction) || b.staticFriction < 0.0) { b.staticFriction = fallbackMaterial.staticFriction; mark(); }
-            if (!std::isfinite(b.dynamicFriction) || b.dynamicFriction < 0.0) { b.dynamicFriction = fallbackMaterial.dynamicFriction; mark(); }
-            if (b.dynamicFriction > b.staticFriction) { b.dynamicFriction = b.staticFriction; mark(); }
-            if (!std::isfinite(b.orientation.w) || !std::isfinite(b.orientation.x) || !std::isfinite(b.orientation.y) || !std::isfinite(b.orientation.z)) {
-                b.orientation = {}; mark();
-            } else {
-                normalizeQuat(b.orientation);
-            }
-            if (!std::isfinite(b.prevOrientation.w) || !std::isfinite(b.prevOrientation.x) ||
-                !std::isfinite(b.prevOrientation.y) || !std::isfinite(b.prevOrientation.z))
-            {
-                b.prevOrientation = b.orientation; mark();
-            } else {
-                normalizeQuat(b.prevOrientation);
-            }
-            if (b.invMass <= 0.0) {
-                b.sleeping = false;
-                b.sleepTimer = 0.0;
-            } else if (!std::isfinite(b.sleepTimer) || b.sleepTimer < 0.0) {
-                b.sleepTimer = 0.0;
-                b.sleeping = false;
-                mark();
-            }
-
-            if (bodySanitized) {
-                ++metrics_.sanitizedBodies;
-            }
+            sanitizeBody_(b);
         }
     }
 
@@ -297,6 +318,7 @@ namespace sim {
             body.sleeping = false;
             body.sleepTimer = 0.0;
             assignBodyId_(body);
+            sanitizeBody_(body);
         }
     }
 
