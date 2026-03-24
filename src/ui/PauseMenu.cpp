@@ -117,8 +117,41 @@ std::string formatPercent(const double value) {
 
 bool isDisabledReasonMessage(const std::string& message) {
     return message == "ENABLE SHOW HUD FIRST" ||
+        message == "ENABLE SHOW MINIMAP FIRST" ||
         message == "ENABLE DRAW PATH FIRST" ||
         message == "ENABLE OBJECT INFO FIRST";
+}
+
+bool interfacePageSettingsEqual(const InterfaceSettings& lhs, const InterfaceSettings& rhs) {
+    return lhs.uiScaleIndex == rhs.uiScaleIndex &&
+        lhs.minimapZoomIndex == rhs.minimapZoomIndex &&
+        lhs.showHud == rhs.showHud &&
+        lhs.showMinimap == rhs.showMinimap &&
+        lhs.showCoordinates == rhs.showCoordinates &&
+        lhs.showCrosshair == rhs.showCrosshair &&
+        lhs.objectInfo == rhs.objectInfo &&
+        lhs.objectInfoMaterial == rhs.objectInfoMaterial &&
+        lhs.objectInfoVelocity == rhs.objectInfoVelocity &&
+        lhs.objectInfoMass == rhs.objectInfoMass &&
+        lhs.objectInfoRadius == rhs.objectInfoRadius &&
+        lhs.objectInfoAngularSpeed == rhs.objectInfoAngularSpeed &&
+        lhs.objectInfoBodyType == rhs.objectInfoBodyType;
+}
+
+void applyInterfacePageSettings(InterfaceSettings& dst, const InterfaceSettings& src) {
+    dst.uiScaleIndex = src.uiScaleIndex;
+    dst.minimapZoomIndex = src.minimapZoomIndex;
+    dst.showHud = src.showHud;
+    dst.showMinimap = src.showMinimap;
+    dst.showCoordinates = src.showCoordinates;
+    dst.showCrosshair = src.showCrosshair;
+    dst.objectInfo = src.objectInfo;
+    dst.objectInfoMaterial = src.objectInfoMaterial;
+    dst.objectInfoVelocity = src.objectInfoVelocity;
+    dst.objectInfoMass = src.objectInfoMass;
+    dst.objectInfoRadius = src.objectInfoRadius;
+    dst.objectInfoAngularSpeed = src.objectInfoAngularSpeed;
+    dst.objectInfoBodyType = src.objectInfoBodyType;
 }
 
 template <typename T, std::size_t N> void adjustChoice(const std::array<T, N>& choices, T& value, const int delta) { int idx = closestChoiceIndex(choices, value); idx = std::clamp(idx + delta, 0, static_cast<int>(choices.size()) - 1); value = choices[static_cast<std::size_t>(idx)]; }
@@ -274,7 +307,7 @@ constexpr std::array<RowDescriptor<CameraSettings>, 4> kCameraRows{{
     },
 }};
 
-constexpr std::array<RowDescriptor<InterfaceSettings>, 12> kInterfaceRows{{
+constexpr std::array<RowDescriptor<InterfaceSettings>, 13> kInterfaceRows{{
     {
         "UI SCALE",
         RowKind::Choice,
@@ -285,20 +318,21 @@ constexpr std::array<RowDescriptor<InterfaceSettings>, 12> kInterfaceRows{{
         },
     },
     {"SHOW HUD", RowKind::Toggle, [](const InterfaceSettings& s) { return formatToggle(s.showHud); }, [](const InterfaceSettings& s) { return s.showHud; }, [](InterfaceSettings& s, int) { s.showHud = !s.showHud; }},
-    {"CROSSHAIR", RowKind::Toggle, [](const InterfaceSettings& s) { return formatToggle(s.showCrosshair); }, [](const InterfaceSettings& s) { return s.showCrosshair; }, [](InterfaceSettings& s, int) { s.showCrosshair = !s.showCrosshair; }},
-    {"DRAW PATH", RowKind::Toggle, [](const InterfaceSettings& s) { return formatToggle(s.drawPath); }, [](const InterfaceSettings& s) { return s.drawPath; }, [](InterfaceSettings& s, int) { s.drawPath = !s.drawPath; }},
+    {"SHOW MINIMAP", RowKind::Toggle, [](const InterfaceSettings& s) { return formatToggle(s.showMinimap); }, [](const InterfaceSettings& s) { return s.showMinimap; }, [](InterfaceSettings& s, int) { s.showMinimap = !s.showMinimap; }},
     {
-        "PATH LENGTH",
+        "MINIMAP ZOOM",
         RowKind::Choice,
         [](const InterfaceSettings& settings) {
-            return std::to_string(kPathLengthChoices[static_cast<std::size_t>(settings.pathLengthIndex)]);
+            return formatFloat(kMinimapZoomChoices[static_cast<std::size_t>(settings.minimapZoomIndex)], "M");
         },
         nullptr,
         [](InterfaceSettings& settings, int delta) {
-            settings.pathLengthIndex =
-                std::clamp(settings.pathLengthIndex + delta, 0, static_cast<int>(kPathLengthChoices.size()) - 1);
+            settings.minimapZoomIndex =
+                std::clamp(settings.minimapZoomIndex + delta, 0, static_cast<int>(kMinimapZoomChoices.size()) - 1);
         },
     },
+    {"SHOW COORDS", RowKind::Toggle, [](const InterfaceSettings& s) { return formatToggle(s.showCoordinates); }, [](const InterfaceSettings& s) { return s.showCoordinates; }, [](InterfaceSettings& s, int) { s.showCoordinates = !s.showCoordinates; }},
+    {"CROSSHAIR", RowKind::Toggle, [](const InterfaceSettings& s) { return formatToggle(s.showCrosshair); }, [](const InterfaceSettings& s) { return s.showCrosshair; }, [](InterfaceSettings& s, int) { s.showCrosshair = !s.showCrosshair; }},
     {"OBJECT INFO", RowKind::Toggle, [](const InterfaceSettings& s) { return formatToggle(s.objectInfo); }, [](const InterfaceSettings& s) { return s.objectInfo; }, [](InterfaceSettings& s, int) { s.objectInfo = !s.objectInfo; }},
     {"INFO MATERIAL", RowKind::Toggle, [](const InterfaceSettings& s) { return formatToggle(s.objectInfoMaterial); }, [](const InterfaceSettings& s) { return s.objectInfoMaterial; }, [](InterfaceSettings& s, int) { s.objectInfoMaterial = !s.objectInfoMaterial; }},
     {"INFO VELOCITY", RowKind::Toggle, [](const InterfaceSettings& s) { return formatToggle(s.objectInfoVelocity); }, [](const InterfaceSettings& s) { return s.objectInfoVelocity; }, [](InterfaceSettings& s, int) { s.objectInfoVelocity = !s.objectInfoVelocity; }},
@@ -396,6 +430,8 @@ void PauseMenu::normalizeSettings() {
     snapChoice(kFovChoices, applied_.camera.fovDegrees);
     applied_.interface.uiScaleIndex =
         std::clamp(applied_.interface.uiScaleIndex, 0, static_cast<int>(kUiScaleChoices.size()) - 1);
+    applied_.interface.minimapZoomIndex =
+        std::clamp(applied_.interface.minimapZoomIndex, 0, static_cast<int>(kMinimapZoomChoices.size()) - 1);
     applied_.interface.pathLengthIndex =
         std::clamp(applied_.interface.pathLengthIndex, 0, static_cast<int>(kPathLengthChoices.size()) - 1);
     if (applied_.simulation.maxSimSpeed < applied_.simulation.minSimSpeed) {
@@ -461,6 +497,13 @@ void PauseMenu::loadSettings(const std::string& path) {
             parseFloat(value, applied_.camera.fovDegrees);
         } else if (key == "UI_SCALE_INDEX") {
             parseInt(value, applied_.interface.uiScaleIndex);
+        } else if (key == "MINIMAP_ZOOM_INDEX") {
+            parseInt(value, applied_.interface.minimapZoomIndex);
+        } else if (key == "MINIMAP_RANGE") {
+            float minimapRange = 0.0f;
+            if (parseFloat(value, minimapRange)) {
+                applied_.interface.minimapZoomIndex = closestChoiceIndex(kMinimapZoomChoices, minimapRange);
+            }
         } else if (key == "PATH_LENGTH_INDEX") {
             parseInt(value, applied_.interface.pathLengthIndex);
         } else if (key == "PATH_LENGTH") {
@@ -470,6 +513,10 @@ void PauseMenu::loadSettings(const std::string& path) {
             }
         } else if (key == "SHOW_HUD") {
             parseBool(value, applied_.interface.showHud);
+        } else if (key == "SHOW_MINIMAP") {
+            parseBool(value, applied_.interface.showMinimap);
+        } else if (key == "SHOW_COORDINATES") {
+            parseBool(value, applied_.interface.showCoordinates);
         } else if (key == "SHOW_CROSSHAIR") {
             parseBool(value, applied_.interface.showCrosshair);
         } else if (key == "DRAW_PATH") {
@@ -524,8 +571,11 @@ void PauseMenu::saveSettings() const {
     out << "INVERT_Y=" << formatToggle(applied_.camera.invertY) << '\n';
     out << "FOV_DEGREES=" << applied_.camera.fovDegrees << '\n';
     out << "UI_SCALE_INDEX=" << applied_.interface.uiScaleIndex << '\n';
+    out << "MINIMAP_ZOOM_INDEX=" << applied_.interface.minimapZoomIndex << '\n';
     out << "PATH_LENGTH_INDEX=" << applied_.interface.pathLengthIndex << '\n';
     out << "SHOW_HUD=" << formatToggle(applied_.interface.showHud) << '\n';
+    out << "SHOW_MINIMAP=" << formatToggle(applied_.interface.showMinimap) << '\n';
+    out << "SHOW_COORDINATES=" << formatToggle(applied_.interface.showCoordinates) << '\n';
     out << "SHOW_CROSSHAIR=" << formatToggle(applied_.interface.showCrosshair) << '\n';
     out << "DRAW_PATH=" << formatToggle(applied_.interface.drawPath) << '\n';
     out << "OBJECT_INFO=" << formatToggle(applied_.interface.objectInfo) << '\n';
@@ -590,7 +640,7 @@ void PauseMenu::applyCurrentDisplaySettings(GLFWwindow* window) {
 int PauseMenu::rowCount() const {
     switch (page_) {
         case SettingsPage::Display: return static_cast<int>(kDisplayRows.size());
-        case SettingsPage::Simulation: return static_cast<int>(kSimulationRows.size());
+        case SettingsPage::Simulation: return static_cast<int>(kSimulationRows.size()) + 2;
         case SettingsPage::Camera: return static_cast<int>(kCameraRows.size());
         case SettingsPage::Interface: return static_cast<int>(kInterfaceRows.size());
         case SettingsPage::Controls: return static_cast<int>(input::rebindActions().size());
@@ -601,42 +651,52 @@ int PauseMenu::rowCount() const {
 bool PauseMenu::pageDirty(const SettingsPage page) const {
     switch (page) {
         case SettingsPage::Display: return draft_.display != applied_.display;
-        case SettingsPage::Simulation: return draft_.simulation != applied_.simulation;
+        case SettingsPage::Simulation:
+            return draft_.simulation != applied_.simulation ||
+                draft_.interface.drawPath != applied_.interface.drawPath ||
+                draft_.interface.pathLengthIndex != applied_.interface.pathLengthIndex;
         case SettingsPage::Camera: return draft_.camera != applied_.camera;
-        case SettingsPage::Interface: return draft_.interface != applied_.interface;
+        case SettingsPage::Interface: return !interfacePageSettingsEqual(draft_.interface, applied_.interface);
         case SettingsPage::Controls: return false;
     }
     return false;
 }
 
 bool PauseMenu::fieldDisabled(const int row) const {
-    if (page_ != SettingsPage::Interface) {
-        return false;
+    if (page_ == SettingsPage::Simulation) {
+        return row == static_cast<int>(kSimulationRows.size()) + 1 && !draft_.interface.drawPath;
     }
-    if ((row == 2 || row == 3) && !draft_.interface.showHud) {
-        return true;
-    }
-    if (row == 4 && !draft_.interface.drawPath) {
-        return true;
-    }
-    if (row >= 6 && row <= 11 && !draft_.interface.objectInfo) {
-        return true;
+    if (page_ == SettingsPage::Interface) {
+        if ((row == 2 || row == 3 || row == 4) && !draft_.interface.showHud) {
+            return true;
+        }
+        if (row == 3 && !draft_.interface.showMinimap) {
+            return true;
+        }
+        if (row >= 7 && row <= 12 && !draft_.interface.objectInfo) {
+            return true;
+        }
     }
     return false;
 }
 
 std::string PauseMenu::disabledReason(const int row) const {
-    if (page_ != SettingsPage::Interface) {
+    if (page_ == SettingsPage::Simulation) {
+        if (row == static_cast<int>(kSimulationRows.size()) + 1 && !draft_.interface.drawPath) {
+            return "ENABLE DRAW PATH FIRST";
+        }
         return "";
     }
-    if ((row == 2 || row == 3) && !draft_.interface.showHud) {
-        return "ENABLE SHOW HUD FIRST";
-    }
-    if (row == 4 && !draft_.interface.drawPath) {
-        return "ENABLE DRAW PATH FIRST";
-    }
-    if (row >= 6 && row <= 11 && !draft_.interface.objectInfo) {
-        return "ENABLE OBJECT INFO FIRST";
+    if (page_ == SettingsPage::Interface) {
+        if ((row == 2 || row == 3 || row == 4) && !draft_.interface.showHud) {
+            return "ENABLE SHOW HUD FIRST";
+        }
+        if (row == 3 && !draft_.interface.showMinimap) {
+            return "ENABLE SHOW MINIMAP FIRST";
+        }
+        if (row >= 7 && row <= 12 && !draft_.interface.objectInfo) {
+            return "ENABLE OBJECT INFO FIRST";
+        }
     }
     return "";
 }
@@ -884,7 +944,14 @@ void PauseMenu::adjustCurrentPageRow(const int delta) {
             adjustRowFromDescriptors(kDisplayRows, draft_.display, selectedRow_, delta);
             break;
         case SettingsPage::Simulation:
-            adjustRowFromDescriptors(kSimulationRows, draft_.simulation, selectedRow_, delta);
+            if (selectedRow_ < static_cast<int>(kSimulationRows.size())) {
+                adjustRowFromDescriptors(kSimulationRows, draft_.simulation, selectedRow_, delta);
+            } else if (selectedRow_ == static_cast<int>(kSimulationRows.size())) {
+                draft_.interface.drawPath = !draft_.interface.drawPath;
+            } else if (selectedRow_ == static_cast<int>(kSimulationRows.size()) + 1) {
+                draft_.interface.pathLengthIndex =
+                    std::clamp(draft_.interface.pathLengthIndex + delta, 0, static_cast<int>(kPathLengthChoices.size()) - 1);
+            }
             break;
         case SettingsPage::Camera:
             adjustRowFromDescriptors(kCameraRows, draft_.camera, selectedRow_, delta);
@@ -904,9 +971,10 @@ bool PauseMenu::selectedRowActsAsToggle() const {
 
     switch (page_) {
         case SettingsPage::Display: return selectedRow_ == 1;
-        case SettingsPage::Simulation: return selectedRow_ == 2 || selectedRow_ == 4;
+        case SettingsPage::Simulation:
+            return selectedRow_ == 2 || selectedRow_ == 4 || selectedRow_ == static_cast<int>(kSimulationRows.size());
         case SettingsPage::Camera: return selectedRow_ == 2;
-        case SettingsPage::Interface: return selectedRow_ >= 1 && selectedRow_ != 4;
+        case SettingsPage::Interface: return selectedRow_ >= 1 && selectedRow_ != 3;
         case SettingsPage::Controls: return false;
     }
     return false;
@@ -966,12 +1034,14 @@ void PauseMenu::applyCurrentPage(GLFWwindow* window) {
             break;
         case SettingsPage::Simulation:
             applied_.simulation = draft_.simulation;
+            applied_.interface.drawPath = draft_.interface.drawPath;
+            applied_.interface.pathLengthIndex = draft_.interface.pathLengthIndex;
             break;
         case SettingsPage::Camera:
             applied_.camera = draft_.camera;
             break;
         case SettingsPage::Interface:
-            applied_.interface = draft_.interface;
+            applyInterfacePageSettings(applied_.interface, draft_.interface);
             break;
         case SettingsPage::Controls:
             return;
@@ -1417,6 +1487,23 @@ void PauseMenu::appendCurrentPageRows(MenuView& view, const input::ControlBindin
             return;
         case SettingsPage::Simulation:
             appendRows(kSimulationRows, draft_.simulation);
+            view.rows.push_back(ViewRow{
+                .label = "DRAW PATH",
+                .value = formatToggle(draft_.interface.drawPath),
+                .kind = RowKind::Toggle,
+                .disabled = fieldDisabled(static_cast<int>(kSimulationRows.size())),
+                .selected = focusArea_ == FocusArea::Rows && static_cast<int>(kSimulationRows.size()) == selectedRow_,
+                .boolValue = draft_.interface.drawPath,
+            });
+            view.rows.push_back(ViewRow{
+                .label = "PATH LENGTH",
+                .value = std::to_string(kPathLengthChoices[static_cast<std::size_t>(draft_.interface.pathLengthIndex)]),
+                .kind = RowKind::Choice,
+                .disabled = fieldDisabled(static_cast<int>(kSimulationRows.size()) + 1),
+                .selected = focusArea_ == FocusArea::Rows &&
+                    static_cast<int>(kSimulationRows.size()) + 1 == selectedRow_,
+                .boolValue = false,
+            });
             return;
         case SettingsPage::Camera:
             appendRows(kCameraRows, draft_.camera);

@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "app/ScenePresentation.h"
+#include "app/SpatialHud.h"
 #include "input/Bindings.h"
 #include "input/Camera.h"
 #include "render/SceneRenderer.h"
@@ -140,6 +141,7 @@ void drawOverlay(
     const render_scene::FramebufferSize& framebufferSize,
     const RuntimeState& runtime,
     const ui::MenuView& menuView,
+    const OverlayRenderer::SpatialHud& spatialHud,
     const OverlayRenderer::TargetHud& targetHud,
     const std::vector<OverlayRenderer::ScreenLine>& pathLines,
     float uiScale,

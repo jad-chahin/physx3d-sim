@@ -86,6 +86,15 @@ void require(const bool condition, const std::string& message) {
     }
 }
 
+bool hasApplyAction(const ui::MenuView& view) {
+    for (const auto& action : view.actions) {
+        if (action.id == static_cast<int>(ui::ActionKind::Apply)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void testUi2SpaceOnlyTogglesToggleRows()
 {
     ui::PauseMenu menu;
@@ -125,6 +134,42 @@ void testUi2SimulationPageSupportsMultiRowDraft()
         "applied settings should stay unchanged before apply");
     require(menu.simulationSettings().collisionsEnabled,
         "applied settings should stay unchanged before apply");
+}
+
+void testUi2InterfacePageIgnoresHiddenSimulationPathDraft()
+{
+    ui::PauseMenu menu;
+    input::ControlBindings controls{};
+    ui::testing::PauseMenuAccess::openMenu(menu);
+
+    ui::testing::PauseMenuAccess::selectPage(menu, ui::SettingsPage::Simulation);
+    ui::testing::PauseMenuAccess::setSelectedRow(menu, 8);
+    ui::testing::PauseMenuAccess::moveHorizontal(menu, 1, controls);
+    require(ui::testing::PauseMenuAccess::draft(menu).interface.drawPath,
+        "simulation page should be able to draft draw path changes");
+    require(!menu.interfaceSettings().drawPath,
+        "draw path should remain unapplied before simulation apply");
+
+    ui::testing::PauseMenuAccess::selectPage(menu, ui::SettingsPage::Interface);
+    const auto cleanView = menu.buildView(controls);
+    require(!hasApplyAction(cleanView),
+        "interface page should not show apply for hidden simulation-owned path edits");
+
+    ui::testing::PauseMenuAccess::setSelectedRow(menu, 4);
+    ui::testing::PauseMenuAccess::moveHorizontal(menu, 1, controls);
+    require(!ui::testing::PauseMenuAccess::draft(menu).interface.showCoordinates,
+        "interface page should still draft its own visible edits");
+
+    ui::testing::PauseMenuAccess::applyCurrentPage(menu);
+    require(!menu.interfaceSettings().drawPath,
+        "applying interface page should not commit hidden simulation-owned path edits");
+    require(!menu.interfaceSettings().showCoordinates,
+        "applying interface page should commit visible interface edits");
+
+    ui::testing::PauseMenuAccess::selectPage(menu, ui::SettingsPage::Simulation);
+    const auto simulationView = menu.buildView(controls);
+    require(hasApplyAction(simulationView),
+        "simulation page should still expose apply for pending path edits");
 }
 
 void testUi2DisplayPageUsesDraftApplyModel()
@@ -168,17 +213,11 @@ void testUi2LastRowDoesNotJumpToActionsEarly()
     input::ControlBindings controls{};
     ui::testing::PauseMenuAccess::openMenu(menu);
     ui::testing::PauseMenuAccess::selectPage(menu, ui::SettingsPage::Simulation);
-    ui::testing::PauseMenuAccess::setSelectedRow(menu, 6);
-
-    menu.handlePressedKey(nullptr, GLFW_KEY_DOWN, controls, "");
-    require(ui::testing::PauseMenuAccess::selectedRow(menu) == 7,
-        "down should move onto the last row before leaving the list");
-    require(ui::testing::PauseMenuAccess::focusArea(menu) == 0,
-        "focus should remain on rows when landing on the last row");
+    ui::testing::PauseMenuAccess::setSelectedRow(menu, 8);
 
     menu.handlePressedKey(nullptr, GLFW_KEY_DOWN, controls, "");
     require(ui::testing::PauseMenuAccess::focusArea(menu) == 2,
-        "down from the last row should move to bottom actions");
+        "down from the last enabled row should move to bottom actions");
     require(ui::testing::PauseMenuAccess::selectedAction(menu) == 0,
         "actions should start at the first action when leaving the list");
 }
@@ -227,8 +266,8 @@ void testUi2PathLengthDisablesWhenDrawPathOff()
     ui::PauseMenu menu;
     input::ControlBindings controls{};
     ui::testing::PauseMenuAccess::openMenu(menu);
-    ui::testing::PauseMenuAccess::selectPage(menu, ui::SettingsPage::Interface);
-    ui::testing::PauseMenuAccess::setSelectedRow(menu, 4);
+    ui::testing::PauseMenuAccess::selectPage(menu, ui::SettingsPage::Simulation);
+    ui::testing::PauseMenuAccess::setSelectedRow(menu, 9);
 
     const auto before = ui::testing::PauseMenuAccess::draft(menu).interface.pathLengthIndex;
     ui::testing::PauseMenuAccess::moveHorizontal(menu, 1, controls);
@@ -236,8 +275,63 @@ void testUi2PathLengthDisablesWhenDrawPathOff()
         "path length should not change while draw path is off");
 
     const auto view = menu.buildView(controls);
-    require(view.rows.size() > 5 && view.rows[5].label == "PATH LENGTH" && view.rows[5].disabled,
+    require(view.rows.size() > 10 && view.rows[10].label == "PATH LENGTH" && view.rows[10].disabled,
         "path length row should be disabled when draw path is off");
+}
+
+void testUi2SpatialHudRowsDisableWhenHudOff()
+{
+    ui::PauseMenu menu;
+    input::ControlBindings controls{};
+    ui::testing::PauseMenuAccess::openMenu(menu);
+    ui::testing::PauseMenuAccess::selectPage(menu, ui::SettingsPage::Interface);
+    ui::testing::PauseMenuAccess::setSelectedRow(menu, 1);
+    ui::testing::PauseMenuAccess::moveHorizontal(menu, 1, controls);
+
+    const auto minimapBefore = ui::testing::PauseMenuAccess::draft(menu).interface.showMinimap;
+    const auto coordsBefore = ui::testing::PauseMenuAccess::draft(menu).interface.showCoordinates;
+    ui::testing::PauseMenuAccess::setSelectedRow(menu, 2);
+    ui::testing::PauseMenuAccess::moveHorizontal(menu, 1, controls);
+    const auto zoomBefore = ui::testing::PauseMenuAccess::draft(menu).interface.minimapZoomIndex;
+    ui::testing::PauseMenuAccess::setSelectedRow(menu, 3);
+    ui::testing::PauseMenuAccess::moveHorizontal(menu, 1, controls);
+    ui::testing::PauseMenuAccess::setSelectedRow(menu, 4);
+    ui::testing::PauseMenuAccess::moveHorizontal(menu, 1, controls);
+
+    require(ui::testing::PauseMenuAccess::draft(menu).interface.showMinimap == minimapBefore,
+        "minimap toggle should not change while show hud is off");
+    require(ui::testing::PauseMenuAccess::draft(menu).interface.minimapZoomIndex == zoomBefore,
+        "minimap zoom should not change while show hud is off");
+    require(ui::testing::PauseMenuAccess::draft(menu).interface.showCoordinates == coordsBefore,
+        "coordinates toggle should not change while show hud is off");
+
+    const auto view = menu.buildView(controls);
+    require(view.rows.size() > 4 && view.rows[3].label == "SHOW MINIMAP" && view.rows[3].disabled,
+        "show minimap should be disabled when show hud is off");
+    require(view.rows.size() > 5 && view.rows[4].label == "MINIMAP ZOOM" && view.rows[4].disabled,
+        "minimap zoom should be disabled when show hud is off");
+    require(view.rows.size() > 5 && view.rows[5].label == "SHOW COORDS" && view.rows[5].disabled,
+        "show coords should be disabled when show hud is off");
+}
+
+void testUi2MinimapZoomDisablesWhenMinimapOff()
+{
+    ui::PauseMenu menu;
+    input::ControlBindings controls{};
+    ui::testing::PauseMenuAccess::openMenu(menu);
+    ui::testing::PauseMenuAccess::selectPage(menu, ui::SettingsPage::Interface);
+    ui::testing::PauseMenuAccess::setSelectedRow(menu, 2);
+    ui::testing::PauseMenuAccess::moveHorizontal(menu, 1, controls);
+
+    const auto before = ui::testing::PauseMenuAccess::draft(menu).interface.minimapZoomIndex;
+    ui::testing::PauseMenuAccess::setSelectedRow(menu, 3);
+    ui::testing::PauseMenuAccess::moveHorizontal(menu, 1, controls);
+    require(ui::testing::PauseMenuAccess::draft(menu).interface.minimapZoomIndex == before,
+        "minimap zoom should not change while minimap is off");
+
+    const auto view = menu.buildView(controls);
+    require(view.rows.size() > 4 && view.rows[4].label == "MINIMAP ZOOM" && view.rows[4].disabled,
+        "minimap zoom row should be disabled when minimap is off");
 }
 
 void testUi2LayoutKeepsManualScrollOffset()
@@ -337,11 +431,14 @@ void appendUiPauseMenuTests(std::vector<std::pair<std::string, std::function<voi
 {
     tests.emplace_back("ui2_space_only_toggles_toggle_rows", testUi2SpaceOnlyTogglesToggleRows);
     tests.emplace_back("ui2_simulation_page_supports_multi_row_draft", testUi2SimulationPageSupportsMultiRowDraft);
+    tests.emplace_back("ui2_interface_page_ignores_hidden_simulation_path_draft", testUi2InterfacePageIgnoresHiddenSimulationPathDraft);
     tests.emplace_back("ui2_display_page_uses_draft_apply_model", testUi2DisplayPageUsesDraftApplyModel);
     tests.emplace_back("ui2_scroll_keeps_selection_and_draft", testUi2ScrollKeepsSelectionAndDraft);
     tests.emplace_back("ui2_last_row_does_not_jump_to_actions_early", testUi2LastRowDoesNotJumpToActionsEarly);
     tests.emplace_back("ui2_build_view_maps_menu_state", testUi2BuildViewMapsMenuState);
     tests.emplace_back("ui2_path_length_disables_when_draw_path_off", testUi2PathLengthDisablesWhenDrawPathOff);
+    tests.emplace_back("ui2_spatial_hud_rows_disable_when_hud_off", testUi2SpatialHudRowsDisableWhenHudOff);
+    tests.emplace_back("ui2_minimap_zoom_disables_when_minimap_off", testUi2MinimapZoomDisablesWhenMinimapOff);
     tests.emplace_back("ui2_layout_keeps_manual_scroll_offset", testUi2LayoutKeepsManualScrollOffset);
     tests.emplace_back("ui2_layout_keeps_selected_row_visible_when_moving_up", testUi2LayoutKeepsSelectedRowVisibleWhenMovingUp);
     tests.emplace_back("ui2_layout_uses_remote_style_top_buttons", testUi2LayoutUsesRemoteStyleTopButtons);

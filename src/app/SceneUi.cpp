@@ -76,6 +76,7 @@ void drawOverlay(
     const render_scene::FramebufferSize& framebufferSize,
     const RuntimeState& runtime,
     const ui::MenuView& menuView,
+    const OverlayRenderer::SpatialHud& spatialHud,
     const OverlayRenderer::TargetHud& targetHud,
     const std::vector<OverlayRenderer::ScreenLine>& pathLines,
     const float uiScale,
@@ -90,10 +91,13 @@ void drawOverlay(
         runtime.simulation.simSpeed,
         runtime.fps.displayed,
         menuView,
+        spatialHud,
         targetHud,
         pathLines,
         uiScale,
         interfaceSettings.showHud,
+        interfaceSettings.showMinimap,
+        interfaceSettings.showCoordinates,
         interfaceSettings.showCrosshair);
     glEnable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);

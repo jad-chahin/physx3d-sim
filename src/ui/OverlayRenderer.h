@@ -25,6 +25,29 @@ public:
         bool operator==(const ScreenLine&) const = default;
     };
 
+    struct MinimapMarker {
+        float xNorm = 0.0f;
+        float yNorm = 0.0f;
+        float heightNorm = 0.0f;
+        bool highlighted = false;
+        bool dynamicBody = false;
+        bool aboveCamera = false;
+        bool edgeClamped = false;
+        bool operator==(const MinimapMarker&) const = default;
+    };
+
+    struct SpatialHud {
+        float worldX = 0.0f;
+        float worldY = 0.0f;
+        float worldZ = 0.0f;
+        float rangeMeters = 40.0f;
+        float forwardX = 0.0f;
+        float forwardY = -1.0f;
+        float lookPitch = 0.0f;
+        std::vector<MinimapMarker> markers;
+        bool operator==(const SpatialHud&) const = default;
+    };
+
     void init();
     void shutdown();
     void draw(
@@ -34,10 +57,13 @@ public:
         double simSpeed,
         double fps,
         const ui::MenuView& menu,
+        const SpatialHud& spatialHud,
         const TargetHud& targetHud,
         const std::vector<ScreenLine>& pathLines,
         float uiScale,
         bool showHud,
+        bool showMinimap,
+        bool showCoordinates,
         bool showCrosshair) const;
 
     enum class SceneLayer {
@@ -112,6 +138,9 @@ public:
         bool simFrozen = false;
         double simSpeed = 1.0;
         double fps = 0.0;
+        SpatialHud spatialHud{};
+        bool showMinimap = false;
+        bool showCoordinates = false;
         bool operator==(const HudSectionState&) const = default;
     };
 
@@ -158,10 +187,13 @@ public:
         double simSpeed = 1.0;
         double fps = 0.0;
         const ui::MenuView* menu = nullptr;
+        const SpatialHud* spatialHud = nullptr;
         const TargetHud* targetHud = nullptr;
         const std::vector<ScreenLine>* pathLines = nullptr;
         float uiScale = 1.0f;
         bool showHud = false;
+        bool showMinimap = false;
+        bool showCoordinates = false;
         bool showCrosshair = false;
     };
 

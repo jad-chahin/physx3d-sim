@@ -13,6 +13,7 @@
 #include "sim/World.h"
 
 void appendUiPauseMenuTests(std::vector<std::pair<std::string, std::function<void()>>>& tests);
+void appendMinimapTests(std::vector<std::pair<std::string, std::function<void()>>>& tests);
 
 namespace {
     using sim::Body;
@@ -197,6 +198,7 @@ int main()
         {"boundary_sanitization_repairs_invalid_bodies", testBoundarySanitizationRepairsInvalidBodies},
     };
     appendUiPauseMenuTests(tests);
+    appendMinimapTests(tests);
 
     int failures = 0;
     for (const auto& [name, test] : tests) {

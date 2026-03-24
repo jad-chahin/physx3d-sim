@@ -1,4 +1,5 @@
 #include "ui/OverlayRenderer.h"
+#include "ui/MinimapLayout.h"
 #include "ui/OverlayRendererDrawShared.h"
 
 #include <algorithm>
@@ -98,6 +99,9 @@ void drawHud(
     bool simFrozen,
     double simSpeed,
     double fps,
+    const OverlayRenderer::SpatialHud& spatialHud,
+    bool showMinimap,
+    bool showCoordinates,
     const Buffers& buffers);
 void drawFrozenIndicator(const Geometry& geometry, const Buffers& buffers);
 void drawCrosshair(const Geometry& geometry, bool simFrozen, const Buffers& buffers);
@@ -329,10 +333,13 @@ void OverlayRenderer::draw(
     double simSpeed,
     double fps,
     const ui::MenuView& menu,
+    const SpatialHud& spatialHud,
     const TargetHud& targetHud,
     const std::vector<ScreenLine>& pathLines,
     float uiScale,
     bool showHud,
+    bool showMinimap,
+    bool showCoordinates,
     bool showCrosshair) const
 {
     const FrameInput input{
@@ -342,10 +349,13 @@ void OverlayRenderer::draw(
         simSpeed,
         fps,
         &menu,
+        &spatialHud,
         &targetHud,
         &pathLines,
         uiScale,
         showHud,
+        showMinimap,
+        showCoordinates,
         showCrosshair,
     };
     const RenderPassState renderState{
@@ -406,11 +416,16 @@ void OverlayRenderer::updateCachedLayout(const FrameInput& input) const {
         }
     } else {
         if (input.showHud) {
+            OverlayRenderer::SpatialHud cachedHudState = *input.spatialHud;
+            cachedHudState.lookPitch = 0.0f;
             const HudSectionState nextHudState{
                 geometryKey,
                 input.simFrozen,
                 input.simSpeed,
                 input.fps,
+                cachedHudState,
+                input.showMinimap,
+                input.showCoordinates,
             };
             if (!sceneCache_.hudValid || !(sceneCache_.hud == nextHudState)) {
                 overlay_renderer::resetHudSection(retainedScene_);
@@ -419,6 +434,9 @@ void OverlayRenderer::updateCachedLayout(const FrameInput& input) const {
                     input.simFrozen,
                     input.simSpeed,
                     input.fps,
+                    *input.spatialHud,
+                    input.showMinimap,
+                    input.showCoordinates,
                     buffers);
                 overlay_renderer::markBatchDirty(staticBuffer_, dynamicBuffer_, BufferClass::Static);
                 overlay_renderer::markBatchDirty(staticBuffer_, dynamicBuffer_, BufferClass::Dynamic);
@@ -592,6 +610,43 @@ namespace overlay_renderer {
 using namespace draw_shared;
 
 namespace {
+
+void pushTrianglePx(
+    std::vector<float>& v,
+    const float x0,
+    const float y0,
+    const float x1,
+    const float y1,
+    const float x2,
+    const float y2)
+{
+    v.insert(v.end(), {x0, y0, x1, y1, x2, y2});
+}
+
+void pushDiscPx(
+    std::vector<float>& v,
+    const float cx,
+    const float cy,
+    const float radius,
+    const int segments = 12)
+{
+    if (radius <= 0.0f || segments < 3) {
+        return;
+    }
+    constexpr float kTau = 6.28318530717958647692f;
+    for (int i = 0; i < segments; ++i) {
+        const float a0 = kTau * static_cast<float>(i) / static_cast<float>(segments);
+        const float a1 = kTau * static_cast<float>(i + 1) / static_cast<float>(segments);
+        pushTrianglePx(
+            v,
+            cx,
+            cy,
+            cx + std::cos(a0) * radius,
+            cy + std::sin(a0) * radius,
+            cx + std::cos(a1) * radius,
+            cy + std::sin(a1) * radius);
+    }
+}
 
 void drawActionButtons(
     const ui::MenuView& menu,
@@ -974,6 +1029,9 @@ void drawHud(
     const bool simFrozen,
     const double simSpeed,
     const double fps,
+    const OverlayRenderer::SpatialHud& spatialHud,
+    const bool showMinimap,
+    const bool showCoordinates,
     const Buffers& buffers)
 {
     const float baseScalePx = kBaseScalePx * geometry.uiScale;
@@ -1006,6 +1064,166 @@ void drawHud(
     appendTextPx(buffers.textMuted, hudTextX, hudTextY0 + hudRowStep, baseScalePx, "ESC: MENU");
     appendTextPx(buffers.textPrimary, hudTextX, hudTextY0 + hudRowStep * 2.0f, baseScalePx, speedLine);
     appendTextPx(buffers.textPrimary, hudTextX, hudTextY0 + hudRowStep * 3.0f, baseScalePx, fpsLine);
+
+    const float coordsScalePx = baseScalePx * 0.9f;
+    if (showCoordinates) {
+        char coordXLine[64];
+        char coordYLine[64];
+        char coordZLine[64];
+        std::snprintf(coordXLine, sizeof(coordXLine), "X: %.2f", spatialHud.worldX);
+        std::snprintf(coordYLine, sizeof(coordYLine), "Y: %.2f", spatialHud.worldY);
+        std::snprintf(coordZLine, sizeof(coordZLine), "Z: %.2f", spatialHud.worldZ);
+
+        const float coordsX0 = hudX0;
+        const float coordsY0 = hudY1 + 14.0f * geometry.uiScale;
+        const float coordsTextX = coordsX0 + 10.0f;
+        const float coordsTextY = coordsY0 + 9.0f;
+        const float coordsWidth = std::max(
+            {measureMaxLinePx(coordXLine, coordsScalePx),
+             measureMaxLinePx(coordYLine, coordsScalePx),
+             measureMaxLinePx(coordZLine, coordsScalePx)}) + 20.0f;
+        const float coordsX1 = coordsX0 + coordsWidth + 10.0f;
+        const float coordsY1 = coordsY0 + 12.0f + 3.0f * 18.0f * geometry.uiScale;
+        pushQuadPx(buffers.panelFill, coordsX0, coordsY0, coordsX1, coordsY1);
+        pushFramePx(buffers.panelFrame, coordsX0, coordsY0, coordsX1, coordsY1, 1.2f);
+        appendTextPx(buffers.textPrimary, coordsTextX, coordsTextY, coordsScalePx, coordXLine);
+        appendTextPx(buffers.textPrimary, coordsTextX, coordsTextY + 18.0f * geometry.uiScale, coordsScalePx, coordYLine);
+        appendTextPx(buffers.textPrimary, coordsTextX, coordsTextY + 36.0f * geometry.uiScale, coordsScalePx, coordZLine);
+    }
+
+    if (showMinimap) {
+        const float mapSize = 148.0f * geometry.uiScale;
+        const float mapMargin = 16.0f * geometry.uiScale;
+        const float mapX1 = geometry.width - mapMargin;
+        const float mapY1 = geometry.height - mapMargin;
+        const float mapX0 = mapX1 - mapSize;
+        const float mapY0 = mapY1 - mapSize;
+        const float mapCenterX = (mapX0 + mapX1) * 0.5f;
+        const float mapCenterY = (mapY0 + mapY1) * 0.5f;
+        const float mapInnerPad = 10.0f * geometry.uiScale;
+        const float mapInnerX0 = mapX0 + mapInnerPad;
+        const float mapInnerY0 = mapY0 + mapInnerPad;
+        const float mapInnerX1 = mapX1 - mapInnerPad;
+        const float mapInnerY1 = mapY1 - mapInnerPad;
+        const float mapHalfSpanX = (mapInnerX1 - mapInnerX0) * 0.5f;
+        const float mapHalfSpanY = (mapInnerY1 - mapInnerY0) * 0.5f;
+        pushQuadPx(buffers.panelFill, mapX0, mapY0, mapX1, mapY1);
+        pushFramePx(buffers.panelFrame, mapX0, mapY0, mapX1, mapY1, 1.5f);
+        const float forwardLen = 10.0f * geometry.uiScale;
+        const float baseBack = 5.0f * geometry.uiScale;
+        const float halfWidth = 4.0f * geometry.uiScale;
+        const float dirX = spatialHud.forwardX;
+        const float dirY = spatialHud.forwardY;
+        const float sideX = -dirY;
+        const float sideY = dirX;
+        const float tipX = mapCenterX + dirX * forwardLen;
+        const float tipY = mapCenterY + dirY * forwardLen;
+        const float baseX = mapCenterX - dirX * baseBack;
+        const float baseY = mapCenterY - dirY * baseBack;
+        const float leftX = baseX + sideX * halfWidth;
+        const float leftY = baseY + sideY * halfWidth;
+        const float rightX = baseX - sideX * halfWidth;
+        const float rightY = baseY - sideY * halfWidth;
+        pushTrianglePx(buffers.statusText, tipX, tipY, leftX, leftY, rightX, rightY);
+        pushThickLinePx(
+            buffers.panelFrame,
+            leftX,
+            leftY,
+            tipX,
+            tipY,
+            std::max(1.0f, geometry.uiScale));
+        pushThickLinePx(
+            buffers.panelFrame,
+            rightX,
+            rightY,
+            tipX,
+            tipY,
+            std::max(1.0f, geometry.uiScale));
+        pushThickLinePx(
+            buffers.panelFrame,
+            leftX,
+            leftY,
+            rightX,
+            rightY,
+            std::max(1.0f, geometry.uiScale));
+        for (const auto& marker : spatialHud.markers) {
+            const float projectedX = mapCenterX + marker.xNorm * mapHalfSpanX;
+            const float projectedY = mapCenterY + marker.yNorm * mapHalfSpanY;
+            const float markerClampPad = 6.0f * geometry.uiScale;
+            const ui::minimap::MarkerLayout markerLayout = ui::minimap::computeMarkerLayout(
+                projectedX,
+                projectedY,
+                mapInnerX0,
+                mapInnerY0,
+                mapInnerX1,
+                mapInnerY1,
+                markerClampPad,
+                marker.heightNorm,
+                marker.edgeClamped);
+            std::vector<float>& markerBuffer =
+                marker.highlighted ? buffers.statusText : (marker.dynamicBody ? buffers.textPrimary : buffers.textMuted);
+            float markerX = markerLayout.markerX;
+            float markerY = markerLayout.markerY;
+            float markerRadius = (marker.dynamicBody ? 2.7f : 2.1f) * geometry.uiScale;
+            if (marker.highlighted) {
+                const float outerRadius = 5.0f * geometry.uiScale;
+                const float innerRadius = 2.5f * geometry.uiScale;
+                markerRadius = outerRadius;
+                if (markerLayout.showHeightCue) {
+                    markerY = ui::minimap::clampMarkerYForCue(
+                        markerY,
+                        mapInnerY0,
+                        mapInnerY1,
+                        markerRadius,
+                        2.0f * geometry.uiScale,
+                        3.6f * geometry.uiScale,
+                        marker.aboveCamera);
+                }
+                pushDiscPx(buffers.statusText, markerX, markerY, outerRadius);
+                pushDiscPx(buffers.panelFill, markerX, markerY, innerRadius);
+            } else {
+                if (markerLayout.visualEdgeClamped) {
+                    markerRadius = (marker.dynamicBody ? 2.9f : 2.3f) * geometry.uiScale;
+                }
+                if (markerLayout.showHeightCue) {
+                    markerY = ui::minimap::clampMarkerYForCue(
+                        markerY,
+                        mapInnerY0,
+                        mapInnerY1,
+                        markerRadius,
+                        2.0f * geometry.uiScale,
+                        3.6f * geometry.uiScale,
+                        marker.aboveCamera);
+                }
+                pushDiscPx(markerBuffer, markerX, markerY, markerRadius);
+            }
+
+            if (markerLayout.showHeightCue) {
+                const float symbolGap = 2.0f * geometry.uiScale;
+                const float symbolHalfWidth = 2.2f * geometry.uiScale;
+                const float symbolHeight = 3.6f * geometry.uiScale;
+                const float symbolCenterY = std::clamp(
+                    markerY + (marker.aboveCamera ? -(markerRadius + symbolGap + symbolHeight * 0.5f)
+                                                  : (markerRadius + symbolGap + symbolHeight * 0.5f)),
+                    mapInnerY0 + symbolHeight * 0.5f,
+                    mapInnerY1 - symbolHeight * 0.5f);
+                const float tipY = marker.aboveCamera
+                    ? symbolCenterY - symbolHeight * 0.5f
+                    : symbolCenterY + symbolHeight * 0.5f;
+                const float baseY = marker.aboveCamera
+                    ? symbolCenterY + symbolHeight * 0.5f
+                    : symbolCenterY - symbolHeight * 0.5f;
+                pushTrianglePx(
+                    markerBuffer,
+                    markerX,
+                    tipY,
+                    markerX - symbolHalfWidth,
+                    baseY,
+                    markerX + symbolHalfWidth,
+                    baseY);
+            }
+        }
+    }
 }
 
 void drawFrozenIndicator(const Geometry& geometry, const Buffers& buffers) {

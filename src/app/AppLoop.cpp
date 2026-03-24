@@ -110,6 +110,7 @@ struct RenderResources {
 
 struct FrameRenderState {
     ui::MenuView menuView{};
+    OverlayRenderer::SpatialHud spatialHud{};
     OverlayRenderer::TargetHud targetHud{};
     std::vector<OverlayRenderer::ScreenLine> pathLines{};
     render_scene::SceneSnapshot sceneSnapshot{};
@@ -362,13 +363,14 @@ void renderStage(
 
     clearFrame(runtime, pauseMenu);
     frameRenderState.menuView = pauseMenu.buildView(controls);
+    frameRenderState.spatialHud = {};
     frameRenderState.targetHud = {};
     frameRenderState.pathLines.clear();
+    const render_scene::SceneView sceneView =
+        render_scene::buildSceneView(cam, pauseMenu.cameraSettings(), appState.framebufferSize);
 
     if (simulation.hasBodies()) {
         app_loop::buildSceneSnapshot(simulation, runtime, runtime.simulation.fixedStep.alpha, frameRenderState.sceneSnapshot);
-        const render_scene::SceneView sceneView =
-            render_scene::buildSceneView(cam, pauseMenu.cameraSettings(), appState.framebufferSize);
         render_scene::drawBodies(
             renderResources.instanceVbo,
             renderResources.program,
@@ -409,12 +411,19 @@ void renderStage(
         frameRenderState.sceneSnapshot.models.clear();
         frameRenderState.sceneSnapshot.pathTrails = runtime.pathHistory;
     }
+    app_loop::buildSpatialHud(
+        frameRenderState.sceneSnapshot,
+        pauseMenu.interfaceSettings(),
+        cam,
+        sceneView,
+        frameRenderState.spatialHud);
 
     app_loop::drawOverlay(
         overlay,
         appState.framebufferSize,
         runtime,
         frameRenderState.menuView,
+        frameRenderState.spatialHud,
         frameRenderState.targetHud,
         frameRenderState.pathLines,
         pauseMenu.uiScale(),

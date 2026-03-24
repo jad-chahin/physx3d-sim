@@ -64,6 +64,7 @@ add_executable(physics3d
         src/app/FixedStepRunner.cpp
         src/app/SceneUi.cpp
         src/app/ScenePresentation.cpp
+        src/app/SpatialHud.cpp
         src/third_party/glad/src/glad.c
         src/ui/OverlayRenderer.cpp
         src/ui/PauseMenu.cpp
@@ -101,7 +102,9 @@ enable_testing()
 
 add_executable(physics3d_tests
         tests/PhysicsRegressionTests.cpp
+        tests/MinimapTests.cpp
         tests/UiPauseMenuTests.cpp
+        src/app/SpatialHud.cpp
         src/input/Bindings.cpp
         src/ui/PauseMenu.cpp
         src/ui/PauseMenuLayout.cpp
@@ -110,7 +113,11 @@ target_include_directories(physics3d_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/glad/include
 )
-target_link_libraries(physics3d_tests PRIVATE physics3d_sim glfw)
+if (TARGET glm::glm)
+    target_link_libraries(physics3d_tests PRIVATE physics3d_sim glfw glm::glm)
+else()
+    target_link_libraries(physics3d_tests PRIVATE physics3d_sim glfw glm)
+endif()
 if (MSVC)
     target_compile_options(physics3d_tests PRIVATE /W4 /permissive-)
 else()
