@@ -65,7 +65,6 @@ struct PauseMenuLayout {
 };
 
 struct PopupButtonsLayout {
-    bool singleAcknowledge = false;
     float buttonScalePx = 0.0f;
     float buttonPadX = 0.0f;
     float buttonPadY = 0.0f;

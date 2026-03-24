@@ -5,77 +5,10 @@
 
 namespace app_loop {
 namespace {
-    constexpr double kHudMetricsUpdateInterval = 0.5;
-    constexpr std::size_t kHudMetricsSampleEverySteps = 4;
-
     void resetFixedStepState(RuntimeState& runtime) {
         runtime.simulation.fixedStep.lastFrameTime = glfwGetTime();
         runtime.simulation.fixedStep.accumulator = 0.0;
         runtime.simulation.fixedStep.alpha = 0.0;
-    }
-
-    void accumulateHudMetrics(RuntimeState& runtime, const sim::World::Metrics& metrics) {
-        auto& accum = runtime.hudMetrics.accumulated;
-        accum.gravityBodies += metrics.gravityBodies;
-        accum.gravityPairs += metrics.gravityPairs;
-        accum.broadphaseCandidatesDiscrete += metrics.broadphaseCandidatesDiscrete;
-        accum.broadphaseCandidatesSwept += metrics.broadphaseCandidatesSwept;
-        accum.pairsVisited += metrics.pairsVisited;
-        accum.pairsImpulseApplied += metrics.pairsImpulseApplied;
-        accum.ccdEvents += metrics.ccdEvents;
-        accum.ccdZeroTimePairsResolved += metrics.ccdZeroTimePairsResolved;
-        accum.ccdIterations += metrics.ccdIterations;
-        accum.ccdBudgetExhaustions += metrics.ccdBudgetExhaustions;
-        accum.warmStartedPairs += metrics.warmStartedPairs;
-        accum.manifoldActivePairs += metrics.manifoldActivePairs;
-        accum.sanitizedBodies += metrics.sanitizedBodies;
-        accum.sanitizedFields += metrics.sanitizedFields;
-        ++runtime.hudMetrics.samples;
-    }
-
-    void maybeSampleHudMetrics(RuntimeState& runtime, const sim::World::Metrics& metrics) {
-        runtime.hudMetrics.elapsed += kFixedDt;
-        ++runtime.hudMetrics.stepsSinceSample;
-        if (runtime.hudMetrics.stepsSinceSample < kHudMetricsSampleEverySteps) {
-            return;
-        }
-
-        runtime.hudMetrics.stepsSinceSample = 0;
-        accumulateHudMetrics(runtime, metrics);
-    }
-
-    std::size_t averageMetric(const std::size_t total, const std::size_t samples) {
-        if (samples == 0) {
-            return 0;
-        }
-        return (total + samples / 2) / samples;
-    }
-
-    void refreshDisplayedHudMetrics(RuntimeState& runtime) {
-        if (runtime.hudMetrics.samples == 0 || runtime.hudMetrics.elapsed < kHudMetricsUpdateInterval) {
-            return;
-        }
-
-        const auto& accum = runtime.hudMetrics.accumulated;
-        auto& displayed = runtime.hudMetrics.displayed;
-        const std::size_t samples = runtime.hudMetrics.samples;
-
-        displayed.broadphaseCandidatesDiscrete = averageMetric(accum.broadphaseCandidatesDiscrete, samples);
-        displayed.broadphaseCandidatesSwept = averageMetric(accum.broadphaseCandidatesSwept, samples);
-        displayed.gravityBodies = averageMetric(accum.gravityBodies, samples);
-        displayed.gravityPairs = averageMetric(accum.gravityPairs, samples);
-        displayed.pairsVisited = averageMetric(accum.pairsVisited, samples);
-        displayed.pairsImpulseApplied = averageMetric(accum.pairsImpulseApplied, samples);
-        displayed.ccdEvents = averageMetric(accum.ccdEvents, samples);
-        displayed.ccdZeroTimePairsResolved = averageMetric(accum.ccdZeroTimePairsResolved, samples);
-        displayed.warmStartedPairs = averageMetric(accum.warmStartedPairs, samples);
-        displayed.manifoldActivePairs = averageMetric(accum.manifoldActivePairs, samples);
-        displayed.sanitizedBodies = averageMetric(accum.sanitizedBodies, samples);
-        displayed.sanitizedFields = averageMetric(accum.sanitizedFields, samples);
-
-        runtime.hudMetrics.accumulated = {};
-        runtime.hudMetrics.elapsed = 0.0;
-        runtime.hudMetrics.samples = 0;
     }
 } // namespace
 
@@ -193,16 +126,12 @@ void SimulationController::step(RuntimeState& runtime, const bool pauseMenuOpen,
     int steps = 0;
     while (fixedStep.accumulator >= kFixedDt && steps < kInternalMaxPhysicsStepsPerFrame) {
         syncPreviousState_();
-        world_.beginDiagnostics();
         world_.step(kFixedDt);
-        world_.finalizeDiagnostics();
-        maybeSampleHudMetrics(runtime, world_.metrics());
         fixedStep.accumulator -= kFixedDt;
         ++steps;
     }
 
     fixedStep.alpha = std::clamp(fixedStep.accumulator / kFixedDt, 0.0, 1.0);
-    refreshDisplayedHudMetrics(runtime);
 }
 
 } // namespace app_loop

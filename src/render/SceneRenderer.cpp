@@ -128,4 +128,79 @@ void drawBodies(
     glBindVertexArray(0);
 }
 
+void drawPathTrails(
+    const GLuint pathVao,
+    const GLuint pathVbo,
+    const GLuint program,
+    const GLint uViewProj,
+    const GLint uColor,
+    const SceneView& sceneView,
+    PathBufferState& pathBufferState,
+    std::vector<glm::vec3>& scratchPoints,
+    std::vector<GLint>& drawStarts,
+    std::vector<GLsizei>& drawCounts,
+    const std::span<const PathTrail> pathTrails,
+    const bool simFrozen)
+{
+    scratchPoints.clear();
+    drawStarts.clear();
+    drawCounts.clear();
+
+    for (const PathTrail& trail : pathTrails) {
+        if (trail.count < 2 || trail.points.empty()) {
+            continue;
+        }
+
+        drawStarts.push_back(static_cast<GLint>(scratchPoints.size()));
+        drawCounts.push_back(static_cast<GLsizei>(trail.count));
+        for (std::size_t i = 0; i < trail.count; ++i) {
+            const std::size_t index = (trail.start + i) % trail.points.size();
+            const sim::Vec3& point = trail.points[index];
+            scratchPoints.emplace_back(
+                static_cast<float>(point.x),
+                static_cast<float>(point.y),
+                static_cast<float>(point.z));
+        }
+    }
+
+    if (scratchPoints.empty()) {
+        return;
+    }
+
+    glBindBuffer(GL_ARRAY_BUFFER, pathVbo);
+    if (scratchPoints.size() > pathBufferState.capacity) {
+        pathBufferState.capacity = scratchPoints.size();
+        glBufferData(
+            GL_ARRAY_BUFFER,
+            static_cast<GLsizeiptr>(pathBufferState.capacity * sizeof(glm::vec3)),
+            nullptr,
+            GL_DYNAMIC_DRAW);
+    }
+    glBufferSubData(
+        GL_ARRAY_BUFFER,
+        0,
+        static_cast<GLsizeiptr>(scratchPoints.size() * sizeof(glm::vec3)),
+        scratchPoints.data());
+
+    glUseProgram(program);
+    glUniformMatrix4fv(uViewProj, 1, GL_FALSE, &sceneView.viewProj[0][0]);
+    if (simFrozen) {
+        glUniform4f(uColor, 0.70f, 0.90f, 1.0f, 0.55f);
+    } else {
+        glUniform4f(uColor, 0.37f, 0.81f, 0.97f, 0.75f);
+    }
+
+    glBindVertexArray(pathVao);
+    glDisable(GL_CULL_FACE);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDepthMask(GL_FALSE);
+    for (std::size_t i = 0; i < drawStarts.size(); ++i) {
+        glDrawArrays(GL_LINE_STRIP, drawStarts[i], drawCounts[i]);
+    }
+    glDepthMask(GL_TRUE);
+    glEnable(GL_CULL_FACE);
+    glBindVertexArray(0);
+}
+
 } // namespace render_scene

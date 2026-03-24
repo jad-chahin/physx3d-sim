@@ -308,7 +308,6 @@ PauseMenuLayout buildPauseMenuLayout(
 
 PopupButtonsLayout buildPopupButtonsLayout(const PauseMenuLayout& layout, const ViewPopup& popup) {
     PopupButtonsLayout buttons{};
-    buttons.singleAcknowledge = popup.singleAction;
     buttons.buttonScalePx = layout.baseScalePx * 0.92f;
     buttons.buttonPadX = 16.0f * layout.menuScale;
     buttons.buttonPadY = 8.0f * layout.menuScale;
@@ -320,16 +319,6 @@ PopupButtonsLayout buildPopupButtonsLayout(const PauseMenuLayout& layout, const 
         (static_cast<float>(kFontH) + 2.0f) * buttons.buttonScalePx + buttons.buttonPadY * 2.0f;
     const float y1 = layout.popupRect.y1 - 14.0f * layout.menuScale;
     const float y0 = y1 - buttonHeight;
-
-    if (buttons.singleAcknowledge) {
-        buttons.yesButton = {
-            layout.popupRect.x0 + ((layout.popupRect.x1 - layout.popupRect.x0) - yesWidth) * 0.5f,
-            y0,
-            layout.popupRect.x0 + ((layout.popupRect.x1 - layout.popupRect.x0) - yesWidth) * 0.5f + yesWidth,
-            y1,
-        };
-        return buttons;
-    }
 
     const float noWidth = measureMaxLinePx(buttons.noLabel, buttons.buttonScalePx) + buttons.buttonPadX * 2.0f;
     buttons.noButton = {

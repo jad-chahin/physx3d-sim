@@ -13,10 +13,6 @@ const std::vector<sim::Body>& SimulationController::bodies() const {
     return world_.bodies();
 }
 
-const sim::World::Metrics& SimulationController::metrics() const {
-    return world_.metrics();
-}
-
 bool SimulationController::hasBodies() const {
     return !world_.bodies().empty();
 }
@@ -95,7 +91,6 @@ void SimulationController::reset(
     runtime.simulation.speedDownWasDown = false;
     runtime.simulation.speedUpWasDown = false;
     runtime.simulation.speedResetWasDown = false;
-    runtime.hudMetrics = {};
     runtime.pathHistory.clear();
     syncPreviousState_();
 }

@@ -14,11 +14,6 @@ namespace app_loop {
 struct RuntimeState;
 class SimulationController;
 
-void buildHudDebugLines(
-    const RuntimeState& runtime,
-    const ui::InterfaceSettings& interfaceSettings,
-    std::vector<std::string>& lines);
-
 void updatePathHistory(
     const SimulationController& simulation,
     RuntimeState& runtime,

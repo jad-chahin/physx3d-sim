@@ -36,11 +36,9 @@ namespace sim {
 
         while (remaining > timeTol) {
             ++ccdIterations;
-            ++metrics_.ccdIterations;
             if (ccdIterations > maxCcdIterations) {
                 advancePositions_(remaining);
                 broadphase::discretePairs(bodies_, overlapPairs);
-                metrics_.broadphaseCandidatesDiscrete += overlapPairs.size();
                 zeroTimeOverlapPairs.clear();
                 zeroTimeOverlapPairs.reserve(overlapPairs.size());
                 for (const auto& [i, j] : overlapPairs) {
@@ -50,14 +48,11 @@ namespace sim {
                 }
                 if (!zeroTimeOverlapPairs.empty()) {
                     collidePairs_(zeroTimeOverlapPairs, params_.velocityIterations, params_.positionIterations);
-                    metrics_.ccdZeroTimePairsResolved += zeroTimeOverlapPairs.size();
                 }
-                ++metrics_.ccdBudgetExhaustions;
                 break;
             }
 
             broadphase::sweptPairs(bodies_, remaining, sweptPairs);
-            metrics_.broadphaseCandidatesSwept += sweptPairs.size();
 
             bool found = false;
             double tHit = std::numeric_limits<double>::infinity();
@@ -112,8 +107,6 @@ namespace sim {
 
             const auto toiStats = collision::solveCollisionPair(
                 bodies_[toiI], bodies_[toiJ], solveParamsForPair_(toiI, toiJ), true);
-            metrics_.pairsVisited += toiStats.visited ? 1 : 0;
-            metrics_.pairsImpulseApplied += toiStats.impulseApplied ? 1 : 0;
             if (toiStats.impulseApplied) {
                 wakeBody_(bodies_[toiI]);
                 wakeBody_(bodies_[toiJ]);
@@ -137,10 +130,7 @@ namespace sim {
                 contactTouchedBodies_[toiI] = true;
                 contactTouchedBodies_[toiJ] = true;
             }
-            ++metrics_.ccdEvents;
-
             broadphase::discretePairs(bodies_, overlapPairs);
-            metrics_.broadphaseCandidatesDiscrete += overlapPairs.size();
             zeroTimeOverlapPairs.clear();
             zeroTimeOverlapPairs.reserve(overlapPairs.size());
             for (const auto& [i, j] : overlapPairs) {
@@ -156,10 +146,6 @@ namespace sim {
 
             if (!zeroTimeOverlapPairs.empty()) {
                 collidePairs_(zeroTimeOverlapPairs, params_.velocityIterations, params_.positionIterations);
-                ++metrics_.ccdEvents;
-                if (params_.velocityIterations > 0 || params_.positionIterations > 0) {
-                    metrics_.ccdZeroTimePairsResolved += zeroTimeOverlapPairs.size();
-                }
             }
 
             if (!advancedToToi) {
@@ -211,9 +197,8 @@ namespace sim {
                 positionParams.applyVelocityImpulse = false;
                 positionParams.applyFrictionImpulse = false;
                 positionParams.applyPositionCorrection = true;
-                const auto stats = collision::solveCollisionPair(
+                collision::solveCollisionPair(
                     bodies_[pair.i], bodies_[pair.j], positionParams, false);
-                metrics_.pairsVisited += stats.visited ? 1 : 0;
             }
         }
 
@@ -225,8 +210,6 @@ namespace sim {
                 velocityParams.applyFrictionImpulse = true;
                 const auto stats = collision::solveCollisionPair(
                     bodies_[pair.i], bodies_[pair.j], velocityParams, false);
-                metrics_.pairsVisited += stats.visited ? 1 : 0;
-                metrics_.pairsImpulseApplied += stats.impulseApplied ? 1 : 0;
                 if (stats.hasNormal && stats.normalImpulse > 0.0) {
                     pair.accumulatedImpulse += stats.normalImpulse;
                 }
@@ -349,7 +332,6 @@ namespace sim {
             manifold.staleFrames = 0;
             contactTouchedBodies_[pair.i] = true;
             contactTouchedBodies_[pair.j] = true;
-            ++metrics_.warmStartedPairs;
         }
     }
 

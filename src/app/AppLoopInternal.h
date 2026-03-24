@@ -10,7 +10,6 @@
 #include "input/Camera.h"
 #include "render/SceneRenderer.h"
 #include "sim/DefaultWorld.h"
-#include "sim/World.h"
 #include "ui/OverlayRenderer.h"
 #include "ui/PauseMenu.h"
 
@@ -59,18 +58,9 @@ struct RuntimeState {
         int frames = 0;
     };
 
-    struct SmoothedHudMetrics {
-        sim::World::Metrics accumulated{};
-        sim::World::Metrics displayed{};
-        double elapsed = 0.0;
-        std::size_t samples = 0;
-        std::size_t stepsSinceSample = 0;
-    };
-
     InputRuntime input{};
     SimulationRuntime simulation{};
     FpsRuntime fps{};
-    SmoothedHudMetrics hudMetrics{};
     std::vector<render_scene::PathTrail> pathHistory{};
 };
 
@@ -80,7 +70,6 @@ public:
 
     std::vector<sim::Body>& mutableBodies();
     [[nodiscard]] const std::vector<sim::Body>& bodies() const;
-    [[nodiscard]] const sim::World::Metrics& metrics() const;
     [[nodiscard]] bool hasBodies() const;
 
     void applySettings(const ui::SimulationSettings& simSettings);
@@ -154,8 +143,7 @@ void drawOverlay(
     const OverlayRenderer::TargetHud& targetHud,
     const std::vector<OverlayRenderer::ScreenLine>& pathLines,
     float uiScale,
-    const ui::InterfaceSettings& interfaceSettings,
-    const std::vector<std::string>& hudDebugLines);
+    const ui::InterfaceSettings& interfaceSettings);
 
 } // namespace app_loop
 

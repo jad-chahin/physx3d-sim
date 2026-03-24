@@ -48,30 +48,11 @@ namespace sim {
 
     void World::step(const double dt)
     {
-        const bool manageDiagnosticsInternally = !diagnosticsManagedExternally_;
-        if (manageDiagnosticsInternally) {
-            beginDiagnostics();
-        }
         const int substeps = computeSubstepCount_(dt);
         const double substepDt = dt / static_cast<double>(substeps);
         for (int substep = 0; substep < substeps; ++substep) {
             stepSingle_(substepDt);
         }
-        if (manageDiagnosticsInternally) {
-            finalizeDiagnostics();
-        }
-    }
-
-    void World::beginDiagnostics()
-    {
-        diagnosticsManagedExternally_ = true;
-        metrics_ = {};
-    }
-
-    void World::finalizeDiagnostics()
-    {
-        metrics_.manifoldActivePairs = contactCache_.size();
-        diagnosticsManagedExternally_ = false;
     }
 
     void World::stepSingle_(const double dt)
@@ -104,7 +85,6 @@ namespace sim {
 
     void World::clear()
     {
-        metrics_ = {};
         bodies_.clear();
         forces_.clear();
         contactTouchedBodies_.clear();
@@ -116,7 +96,6 @@ namespace sim {
     const std::vector<Body>& World::bodies() const { return bodies_; }
     World::Params& World::params() { return params_; }
     const World::Params& World::params() const { return params_; }
-    const World::Metrics& World::metrics() const { return metrics_; }
 
     void World::prepareForces_()
     {
@@ -160,8 +139,6 @@ namespace sim {
                 dynamicBodies.push_back(i);
             }
         }
-        metrics_.gravityBodies += dynamicBodies.size();
-
         if (dynamicBodies.size() < 2) {
             return;
         }
@@ -169,7 +146,6 @@ namespace sim {
         for (std::size_t a = 0; a + 1 < dynamicBodies.size(); ++a) {
             const std::size_t i = dynamicBodies[a];
             for (std::size_t b = a + 1; b < dynamicBodies.size(); ++b) {
-                ++metrics_.gravityPairs;
                 applyGravityPair_(i, dynamicBodies[b]);
             }
         }
@@ -238,7 +214,6 @@ namespace sim {
 
         bool bodySanitized = false;
         const auto mark = [&]() {
-            ++metrics_.sanitizedFields;
             bodySanitized = true;
         };
 
@@ -292,9 +267,7 @@ namespace sim {
             mark();
         }
 
-        if (bodySanitized) {
-            ++metrics_.sanitizedBodies;
-        }
+        (void)bodySanitized;
     }
 
     void World::sanitizeBodies_()

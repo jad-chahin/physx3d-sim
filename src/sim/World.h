@@ -14,24 +14,6 @@ namespace sim {
 
     class World {
     public:
-        struct Metrics {
-            // Lightweight per-step counters surfaced through the optional HUD diagnostics.
-            std::size_t gravityBodies = 0;
-            std::size_t gravityPairs = 0;
-            std::size_t broadphaseCandidatesDiscrete = 0;
-            std::size_t broadphaseCandidatesSwept = 0;
-            std::size_t pairsVisited = 0;
-            std::size_t pairsImpulseApplied = 0;
-            std::size_t ccdEvents = 0;
-            std::size_t ccdZeroTimePairsResolved = 0;
-            std::size_t ccdIterations = 0;
-            std::size_t ccdBudgetExhaustions = 0;
-            std::size_t warmStartedPairs = 0;
-            std::size_t manifoldActivePairs = 0;
-            std::size_t sanitizedBodies = 0;
-            std::size_t sanitizedFields = 0;
-        };
-
         struct Params {
             static constexpr double kDefaultG = 6.6743e-11;
             static constexpr double kDefaultRestitution = 0.5;
@@ -71,8 +53,6 @@ namespace sim {
         World(std::vector<Body> bodies, const Params& params);
 
         void step(double dt);
-        void beginDiagnostics();
-        void finalizeDiagnostics();
 
         void addBody(const Body& b);
         void clear();
@@ -82,7 +62,6 @@ namespace sim {
 
         Params& params();
         [[nodiscard]] const Params& params() const;
-        [[nodiscard]] const Metrics& metrics() const;
 
     private:
         using ContactKey = std::pair<std::uint64_t, std::uint64_t>;
@@ -108,11 +87,9 @@ namespace sim {
         };
 
         Params params_;
-        Metrics metrics_{};
         std::vector<Body> bodies_{};
         std::unordered_map<ContactKey, ContactManifold, PairHash> contactCache_{};
         std::uint64_t nextBodyId_ = 1;
-        bool diagnosticsManagedExternally_ = false;
 
         std::vector<Vec3> forces_{};
         std::vector<bool> contactTouchedBodies_{};

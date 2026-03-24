@@ -83,6 +83,37 @@ inline void pushQuadPx(std::vector<float>& v, const float x0, const float y0, co
 inline void pushLinePx(std::vector<float>& v, const float x0, const float y0, const float x1, const float y1) {
     v.insert(v.end(), {x0,y0,x1,y1});
 }
+inline void pushThickLinePx(
+    std::vector<float>& v,
+    const float x0,
+    const float y0,
+    const float x1,
+    const float y1,
+    const float thicknessPx)
+{
+    const float dx = x1 - x0;
+    const float dy = y1 - y0;
+    const float lenSq = dx * dx + dy * dy;
+    if (lenSq <= 1e-6f) {
+        const float half = std::max(0.5f, thicknessPx * 0.5f);
+        pushQuadPx(v, x0 - half, y0 - half, x0 + half, y0 + half);
+        return;
+    }
+
+    const float invLen = 1.0f / std::sqrt(lenSq);
+    const float nx = -dy * invLen;
+    const float ny = dx * invLen;
+    const float half = std::max(0.5f, thicknessPx * 0.5f);
+    const float ox = nx * half;
+    const float oy = ny * half;
+    v.insert(v.end(), {
+        x0 - ox, y0 - oy,
+        x1 - ox, y1 - oy,
+        x1 + ox, y1 + oy,
+        x0 - ox, y0 - oy,
+        x1 + ox, y1 + oy,
+        x0 + ox, y0 + oy});
+}
 inline void pushFramePx(std::vector<float>& v, const float x0, const float y0, const float x1, const float y1, const float t) {
     pushQuadPx(v,x0,y0,x1,y0+t);
     pushQuadPx(v,x0,y1-t,x1,y1);

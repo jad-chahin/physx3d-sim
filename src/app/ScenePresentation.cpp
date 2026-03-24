@@ -2,16 +2,51 @@
 
 #include "app/AppLoopInternal.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <limits>
 
 namespace app_loop {
 namespace {
 
-constexpr std::size_t kMaxPathPoints = 128;
+constexpr double kPathSampleSpacing = 0.2;
 
-void pushPathPoint(render_scene::PathTrail& trail, const sim::Vec3& position) {
-    if (trail.points.size() < kMaxPathPoints) {
+void resizePathTrail(render_scene::PathTrail& trail, const std::size_t maxPathPoints) {
+    if (maxPathPoints == 0 || trail.count == 0 || trail.points.empty()) {
+        if (maxPathPoints == 0) {
+            trail = {};
+        }
+        return;
+    }
+
+    const bool needsTrim = trail.points.size() > maxPathPoints || trail.count > maxPathPoints;
+    const bool needsLinearizeForGrowth = trail.start != 0 && trail.points.size() < maxPathPoints;
+    if (!needsTrim && !needsLinearizeForGrowth) {
+        return;
+    }
+
+    const std::size_t keepCount = std::min({trail.count, trail.points.size(), maxPathPoints});
+    std::vector<sim::Vec3> recentPoints;
+    recentPoints.reserve(keepCount);
+    const std::size_t keepStart = (trail.start + trail.count - keepCount) % trail.points.size();
+    for (std::size_t i = 0; i < keepCount; ++i) {
+        recentPoints.push_back(trail.points[(keepStart + i) % trail.points.size()]);
+    }
+
+    trail.points = std::move(recentPoints);
+    trail.start = 0;
+    trail.count = trail.points.size();
+}
+
+void pushPathPoint(render_scene::PathTrail& trail, const sim::Vec3& position, const std::size_t maxPathPoints) {
+    if (maxPathPoints == 0) {
+        trail = {};
+        return;
+    }
+
+    resizePathTrail(trail, maxPathPoints);
+
+    if (trail.points.size() < maxPathPoints) {
         trail.points.push_back(position);
         trail.count = trail.points.size();
         return;
@@ -23,6 +58,37 @@ void pushPathPoint(render_scene::PathTrail& trail, const sim::Vec3& position) {
         ++trail.count;
     } else {
         trail.start = (trail.start + 1) % trail.points.size();
+    }
+}
+
+void appendPathSamples(
+    render_scene::PathTrail& trail,
+    const sim::Vec3& position,
+    const double sampleSpacing,
+    const std::size_t maxPathPoints)
+{
+    if (trail.count == 0) {
+        pushPathPoint(trail, position, maxPathPoints);
+        return;
+    }
+
+    const std::size_t lastIndex = (trail.start + trail.count - 1) % trail.points.size();
+    const sim::Vec3 origin = trail.points[lastIndex];
+    const sim::Vec3 delta = position - origin;
+    const double distanceSq = delta.dot(delta);
+    if (distanceSq <= 1e-12) {
+        return;
+    }
+
+    const double distance = std::sqrt(distanceSq);
+    if (distance < sampleSpacing) {
+        return;
+    }
+
+    const sim::Vec3 direction = delta * (1.0 / distance);
+    const std::size_t sampleCount = static_cast<std::size_t>(distance / sampleSpacing);
+    for (std::size_t sample = 1; sample <= sampleCount; ++sample) {
+        pushPathPoint(trail, origin + direction * (sampleSpacing * static_cast<double>(sample)), maxPathPoints);
     }
 }
 
@@ -57,48 +123,6 @@ int findTargetBodyIndex(
 
 } // namespace
 
-void buildHudDebugLines(
-    const RuntimeState& runtime,
-    const ui::InterfaceSettings& interfaceSettings,
-    std::vector<std::string>& lines)
-{
-    lines.clear();
-    if (!interfaceSettings.showPhysicsStats) {
-        return;
-    }
-
-    const sim::World::Metrics& metrics = runtime.hudMetrics.displayed;
-    lines.reserve(5);
-
-    char line[96];
-    std::snprintf(line, sizeof(line), "GRAV B:%zu P:%zu", metrics.gravityBodies, metrics.gravityPairs);
-    lines.emplace_back(line);
-
-    std::snprintf(
-        line,
-        sizeof(line),
-        "BP D:%zu S:%zu  VIS:%zu",
-        metrics.broadphaseCandidatesDiscrete,
-        metrics.broadphaseCandidatesSwept,
-        metrics.pairsVisited);
-    lines.emplace_back(line);
-
-    std::snprintf(
-        line,
-        sizeof(line),
-        "IMP:%zu  WARM:%zu  MAN:%zu",
-        metrics.pairsImpulseApplied,
-        metrics.warmStartedPairs,
-        metrics.manifoldActivePairs);
-    lines.emplace_back(line);
-
-    std::snprintf(line, sizeof(line), "CCD:%zu  ZERO:%zu", metrics.ccdEvents, metrics.ccdZeroTimePairsResolved);
-    lines.emplace_back(line);
-
-    std::snprintf(line, sizeof(line), "SAN B:%zu  F:%zu", metrics.sanitizedBodies, metrics.sanitizedFields);
-    lines.emplace_back(line);
-}
-
 void updatePathHistory(
     const SimulationController& simulation,
     RuntimeState& runtime,
@@ -111,19 +135,16 @@ void updatePathHistory(
 
     const auto& bodies = simulation.bodies();
     runtime.pathHistory.resize(bodies.size());
+    const int pathLengthIndex =
+        std::clamp(interfaceSettings.pathLengthIndex, 0, static_cast<int>(ui::kPathLengthChoices.size()) - 1);
+    const std::size_t maxPathPoints =
+        static_cast<std::size_t>(ui::kPathLengthChoices[static_cast<std::size_t>(pathLengthIndex)]);
 
     for (std::size_t i = 0; i < bodies.size(); ++i) {
         auto& history = runtime.pathHistory[i];
-        const sim::Vec3& position = bodies[i].position;
-        if (history.count == 0) {
-            pushPathPoint(history, position);
-            continue;
-        }
-        const std::size_t lastIndex = (history.start + history.count - 1) % history.points.size();
-        const sim::Vec3 delta = position - history.points[lastIndex];
-        if (delta.dot(delta) > 1e-8) {
-            pushPathPoint(history, position);
-        }
+        resizePathTrail(history, maxPathPoints);
+        const double spacing = std::max(kPathSampleSpacing, bodies[i].radius * 0.2);
+        appendPathSamples(history, bodies[i].position, spacing, maxPathPoints);
     }
 }
 
@@ -216,7 +237,7 @@ void buildPathLines(
         return;
     }
 
-    pathLines.reserve(snapshot.pathTrails.size() * (kMaxPathPoints - 1));
+    pathLines.reserve(snapshot.pathTrails.size() * (ui::kPathLengthChoices.back() - 1));
     for (const auto& history : snapshot.pathTrails) {
         if (history.count < 2 || history.points.empty()) {
             continue;

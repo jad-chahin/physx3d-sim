@@ -28,7 +28,7 @@ constexpr std::array<const char*, 2> kWindowModes{{
 template <typename Settings> struct RowDescriptor { const char* label; RowKind kind; std::string (*value)(const Settings&); bool (*boolValue)(const Settings&); void (*adjust)(Settings&, int); };
 enum class ActionSection { Top, Bottom };
 struct ActionDefinition { ActionKind kind; const char* label; ActionSection section; bool (*visible)(SettingsPage, bool, const input::ControlBindings&); };
-struct PopupDefinition { PauseMenu::PopupKind kind; const char* title; const char* body; const char* confirmLabel; const char* cancelLabel; bool singleAction; };
+struct PopupDefinition { PauseMenu::PopupKind kind; const char* title; const char* body; const char* confirmLabel; const char* cancelLabel; };
 
 template <typename T, std::size_t N>
 int closestChoiceIndex(const std::array<T, N>& choices, const T value) {
@@ -115,6 +115,12 @@ std::string formatPercent(const double value) {
     return buffer;
 }
 
+bool isDisabledReasonMessage(const std::string& message) {
+    return message == "ENABLE SHOW HUD FIRST" ||
+        message == "ENABLE DRAW PATH FIRST" ||
+        message == "ENABLE OBJECT INFO FIRST";
+}
+
 template <typename T, std::size_t N> void adjustChoice(const std::array<T, N>& choices, T& value, const int delta) { int idx = closestChoiceIndex(choices, value); idx = std::clamp(idx + delta, 0, static_cast<int>(choices.size()) - 1); value = choices[static_cast<std::size_t>(idx)]; }
 
 template <typename Settings, std::size_t N>
@@ -125,15 +131,14 @@ bool adjustRowFromDescriptors(
     const int delta)
 { if (row < 0 || row >= static_cast<int>(descriptors.size())) return false; descriptors[static_cast<std::size_t>(row)].adjust(settings, delta); return true; }
 
-template <typename Settings, std::size_t N, typename DisabledFn, typename DisabledReasonFn>
+template <typename Settings, std::size_t N, typename DisabledFn>
 void appendRowsFromDescriptors(
     MenuView& view,
     const std::array<RowDescriptor<Settings>, N>& descriptors,
     const Settings& settings,
     const int selectedRow,
     const bool rowsFocused,
-    DisabledFn&& disabledFn,
-    DisabledReasonFn&&)
+    DisabledFn&& disabledFn)
 {
     for (std::size_t i = 0; i < descriptors.size(); ++i) {
         const auto& descriptor = descriptors[i];
@@ -281,8 +286,19 @@ constexpr std::array<RowDescriptor<InterfaceSettings>, 12> kInterfaceRows{{
     },
     {"SHOW HUD", RowKind::Toggle, [](const InterfaceSettings& s) { return formatToggle(s.showHud); }, [](const InterfaceSettings& s) { return s.showHud; }, [](InterfaceSettings& s, int) { s.showHud = !s.showHud; }},
     {"CROSSHAIR", RowKind::Toggle, [](const InterfaceSettings& s) { return formatToggle(s.showCrosshair); }, [](const InterfaceSettings& s) { return s.showCrosshair; }, [](InterfaceSettings& s, int) { s.showCrosshair = !s.showCrosshair; }},
-    {"DEBUG STATS", RowKind::Toggle, [](const InterfaceSettings& s) { return formatToggle(s.showPhysicsStats); }, [](const InterfaceSettings& s) { return s.showPhysicsStats; }, [](InterfaceSettings& s, int) { s.showPhysicsStats = !s.showPhysicsStats; }},
     {"DRAW PATH", RowKind::Toggle, [](const InterfaceSettings& s) { return formatToggle(s.drawPath); }, [](const InterfaceSettings& s) { return s.drawPath; }, [](InterfaceSettings& s, int) { s.drawPath = !s.drawPath; }},
+    {
+        "PATH LENGTH",
+        RowKind::Choice,
+        [](const InterfaceSettings& settings) {
+            return std::to_string(kPathLengthChoices[static_cast<std::size_t>(settings.pathLengthIndex)]);
+        },
+        nullptr,
+        [](InterfaceSettings& settings, int delta) {
+            settings.pathLengthIndex =
+                std::clamp(settings.pathLengthIndex + delta, 0, static_cast<int>(kPathLengthChoices.size()) - 1);
+        },
+    },
     {"OBJECT INFO", RowKind::Toggle, [](const InterfaceSettings& s) { return formatToggle(s.objectInfo); }, [](const InterfaceSettings& s) { return s.objectInfo; }, [](InterfaceSettings& s, int) { s.objectInfo = !s.objectInfo; }},
     {"INFO MATERIAL", RowKind::Toggle, [](const InterfaceSettings& s) { return formatToggle(s.objectInfoMaterial); }, [](const InterfaceSettings& s) { return s.objectInfoMaterial; }, [](InterfaceSettings& s, int) { s.objectInfoMaterial = !s.objectInfoMaterial; }},
     {"INFO VELOCITY", RowKind::Toggle, [](const InterfaceSettings& s) { return formatToggle(s.objectInfoVelocity); }, [](const InterfaceSettings& s) { return s.objectInfoVelocity; }, [](InterfaceSettings& s, int) { s.objectInfoVelocity = !s.objectInfoVelocity; }},
@@ -306,12 +322,11 @@ constexpr std::array<ActionDefinition, 6> kActionDefinitions{{
     {ActionKind::Apply, "APPLY CHANGES", ActionSection::Bottom, actionApplyVisible},
 }};
 
-constexpr std::array<PopupDefinition, 5> kPopupDefinitions{{
-    {PauseMenu::PopupKind::ResetSettings, "ARE YOU SURE?", "RESET ALL SETTINGS", "RESET", "CANCEL", false},
-    {PauseMenu::PopupKind::ResetWorld, "ARE YOU SURE?", "RESET WORLD", "RESET", "CANCEL", false},
-    {PauseMenu::PopupKind::ResetControls, "ARE YOU SURE?", "RESET CONTROLS TO DEFAULTS", "RESET", "CANCEL", false},
-    {PauseMenu::PopupKind::ExitToHome, "ARE YOU SURE?", "EXIT TO HOME", "EXIT", "CANCEL", false},
-    {PauseMenu::PopupKind::EnableDrawPath, "WARNING", "MAY IMPACT PERFORMANCE", "I UNDERSTAND", "", true},
+constexpr std::array<PopupDefinition, 4> kPopupDefinitions{{
+    {PauseMenu::PopupKind::ResetSettings, "ARE YOU SURE?", "RESET ALL SETTINGS", "RESET", "CANCEL"},
+    {PauseMenu::PopupKind::ResetWorld, "ARE YOU SURE?", "RESET WORLD", "RESET", "CANCEL"},
+    {PauseMenu::PopupKind::ResetControls, "ARE YOU SURE?", "RESET CONTROLS TO DEFAULTS", "RESET", "CANCEL"},
+    {PauseMenu::PopupKind::ExitToHome, "ARE YOU SURE?", "EXIT TO HOME", "EXIT", "CANCEL"},
 }};
 
 std::vector<const ActionDefinition*> visibleActionsForSection(
@@ -381,6 +396,8 @@ void PauseMenu::normalizeSettings() {
     snapChoice(kFovChoices, applied_.camera.fovDegrees);
     applied_.interface.uiScaleIndex =
         std::clamp(applied_.interface.uiScaleIndex, 0, static_cast<int>(kUiScaleChoices.size()) - 1);
+    applied_.interface.pathLengthIndex =
+        std::clamp(applied_.interface.pathLengthIndex, 0, static_cast<int>(kPathLengthChoices.size()) - 1);
     if (applied_.simulation.maxSimSpeed < applied_.simulation.minSimSpeed) {
         applied_.simulation.maxSimSpeed = applied_.simulation.minSimSpeed;
     }
@@ -444,12 +461,17 @@ void PauseMenu::loadSettings(const std::string& path) {
             parseFloat(value, applied_.camera.fovDegrees);
         } else if (key == "UI_SCALE_INDEX") {
             parseInt(value, applied_.interface.uiScaleIndex);
+        } else if (key == "PATH_LENGTH_INDEX") {
+            parseInt(value, applied_.interface.pathLengthIndex);
+        } else if (key == "PATH_LENGTH") {
+            int pathLength = 0;
+            if (parseInt(value, pathLength)) {
+                applied_.interface.pathLengthIndex = closestChoiceIndex(kPathLengthChoices, pathLength);
+            }
         } else if (key == "SHOW_HUD") {
             parseBool(value, applied_.interface.showHud);
         } else if (key == "SHOW_CROSSHAIR") {
             parseBool(value, applied_.interface.showCrosshair);
-        } else if (key == "SHOW_PHYSICS_STATS" || key == "SHOW_DEBUG_STATS") {
-            parseBool(value, applied_.interface.showPhysicsStats);
         } else if (key == "DRAW_PATH") {
             parseBool(value, applied_.interface.drawPath);
         } else if (key == "OBJECT_INFO") {
@@ -502,9 +524,9 @@ void PauseMenu::saveSettings() const {
     out << "INVERT_Y=" << formatToggle(applied_.camera.invertY) << '\n';
     out << "FOV_DEGREES=" << applied_.camera.fovDegrees << '\n';
     out << "UI_SCALE_INDEX=" << applied_.interface.uiScaleIndex << '\n';
+    out << "PATH_LENGTH_INDEX=" << applied_.interface.pathLengthIndex << '\n';
     out << "SHOW_HUD=" << formatToggle(applied_.interface.showHud) << '\n';
     out << "SHOW_CROSSHAIR=" << formatToggle(applied_.interface.showCrosshair) << '\n';
-    out << "SHOW_PHYSICS_STATS=" << formatToggle(applied_.interface.showPhysicsStats) << '\n';
     out << "DRAW_PATH=" << formatToggle(applied_.interface.drawPath) << '\n';
     out << "OBJECT_INFO=" << formatToggle(applied_.interface.objectInfo) << '\n';
     out << "OBJECT_INFO_MATERIAL=" << formatToggle(applied_.interface.objectInfoMaterial) << '\n';
@@ -591,7 +613,10 @@ bool PauseMenu::fieldDisabled(const int row) const {
     if (page_ != SettingsPage::Interface) {
         return false;
     }
-    if ((row == 2 || row == 3 || row == 4) && !draft_.interface.showHud) {
+    if ((row == 2 || row == 3) && !draft_.interface.showHud) {
+        return true;
+    }
+    if (row == 4 && !draft_.interface.drawPath) {
         return true;
     }
     if (row >= 6 && row <= 11 && !draft_.interface.objectInfo) {
@@ -604,8 +629,11 @@ std::string PauseMenu::disabledReason(const int row) const {
     if (page_ != SettingsPage::Interface) {
         return "";
     }
-    if ((row == 2 || row == 3 || row == 4) && !draft_.interface.showHud) {
+    if ((row == 2 || row == 3) && !draft_.interface.showHud) {
         return "ENABLE SHOW HUD FIRST";
+    }
+    if (row == 4 && !draft_.interface.drawPath) {
+        return "ENABLE DRAW PATH FIRST";
     }
     if (row >= 6 && row <= 11 && !draft_.interface.objectInfo) {
         return "ENABLE OBJECT INFO FIRST";
@@ -641,6 +669,15 @@ void PauseMenu::moveSelectionVertical(const int delta, const input::ControlBindi
     const auto visibleActions = [&](const ActionSection section) {
         return visibleActionsForSection(page_, pageDirty(page_), section, controls);
     };
+    const auto findEnabledRow = [&](const int start, const int step) {
+        const int count = rowCount();
+        for (int row = start; row >= 0 && row < count; row += step) {
+            if (!fieldDisabled(row)) {
+                return row;
+            }
+        }
+        return -1;
+    };
 
     if (focusArea_ == FocusArea::Rows) {
         const int count = rowCount();
@@ -652,8 +689,8 @@ void PauseMenu::moveSelectionVertical(const int delta, const input::ControlBindi
             }
             return;
         }
-        const int nextRow = selectedRow_ + delta;
-        if (nextRow < 0) {
+        const int nextRow = findEnabledRow(selectedRow_ + delta, delta < 0 ? -1 : 1);
+        if (nextRow < 0 && delta < 0) {
             const auto actions = visibleActions(ActionSection::Top);
             if (!actions.empty()) {
                 focusArea_ = FocusArea::TopActions;
@@ -662,7 +699,7 @@ void PauseMenu::moveSelectionVertical(const int delta, const input::ControlBindi
             selectedRow_ = std::clamp(selectedRow_, 0, count - 1);
             return;
         }
-        if (nextRow >= count) {
+        if (nextRow < 0) {
             const auto actions = visibleActions(ActionSection::Bottom);
             if (!actions.empty()) {
                 focusArea_ = FocusArea::BottomActions;
@@ -679,16 +716,24 @@ void PauseMenu::moveSelectionVertical(const int delta, const input::ControlBindi
         const auto actions = visibleActions(ActionSection::Top);
         const int count = static_cast<int>(actions.size());
         if (count <= 0) {
-            focusArea_ = FocusArea::Rows;
-            selectedRow_ = 0;
+            const int firstEnabledRow = findEnabledRow(0, 1);
+            if (firstEnabledRow >= 0) {
+                focusArea_ = FocusArea::Rows;
+                selectedRow_ = firstEnabledRow;
+            }
             return;
         }
         if (delta > 0) {
             const int nextAction = selectedAction_ + delta;
             if (nextAction >= count) {
-                focusArea_ = FocusArea::Rows;
-                selectedRow_ = 0;
-                selectedAction_ = 0;
+                const int firstEnabledRow = findEnabledRow(0, 1);
+                if (firstEnabledRow >= 0) {
+                    focusArea_ = FocusArea::Rows;
+                    selectedRow_ = firstEnabledRow;
+                    selectedAction_ = 0;
+                } else {
+                    selectedAction_ = count - 1;
+                }
                 return;
             }
             selectedAction_ = std::clamp(nextAction, 0, count - 1);
@@ -702,16 +747,24 @@ void PauseMenu::moveSelectionVertical(const int delta, const input::ControlBindi
         const auto actions = visibleActions(ActionSection::Bottom);
         const int count = static_cast<int>(actions.size());
         if (count <= 0) {
-            focusArea_ = FocusArea::Rows;
-            selectedRow_ = std::max(0, rowCount() - 1);
-            selectedAction_ = 0;
+            const int lastEnabledRow = findEnabledRow(rowCount() - 1, -1);
+            if (lastEnabledRow >= 0) {
+                focusArea_ = FocusArea::Rows;
+                selectedRow_ = lastEnabledRow;
+                selectedAction_ = 0;
+            }
             return;
         }
         const int nextAction = selectedAction_ + delta;
         if (nextAction < 0) {
-            focusArea_ = FocusArea::Rows;
-            selectedRow_ = std::max(0, rowCount() - 1);
-            selectedAction_ = 0;
+            const int lastEnabledRow = findEnabledRow(rowCount() - 1, -1);
+            if (lastEnabledRow >= 0) {
+                focusArea_ = FocusArea::Rows;
+                selectedRow_ = lastEnabledRow;
+                selectedAction_ = 0;
+            } else {
+                selectedAction_ = 0;
+            }
             return;
         }
         selectedAction_ = std::clamp(nextAction, 0, count - 1);
@@ -809,10 +862,6 @@ void PauseMenu::confirmPopup(GLFWwindow* window, input::ControlBindings& control
             }
             closePopup();
             return;
-        case PopupKind::EnableDrawPath:
-            draft_.interface.drawPath = true;
-            closePopup();
-            return;
         case PopupKind::None:
             return;
     }
@@ -820,7 +869,7 @@ void PauseMenu::confirmPopup(GLFWwindow* window, input::ControlBindings& control
 
 void PauseMenu::adjustCurrentPageRow(const int delta) {
     if (popup_ != PopupKind::None) {
-        popupConfirmSelected_ = popup_ == PopupKind::EnableDrawPath || delta <= 0;
+        popupConfirmSelected_ = delta <= 0;
         return;
     }
 
@@ -841,14 +890,6 @@ void PauseMenu::adjustCurrentPageRow(const int delta) {
             adjustRowFromDescriptors(kCameraRows, draft_.camera, selectedRow_, delta);
             break;
         case SettingsPage::Interface:
-            if (selectedRow_ == 4) {
-                if (!draft_.interface.drawPath && delta != 0) {
-                    openPopup(PopupKind::EnableDrawPath);
-                } else {
-                    draft_.interface.drawPath = false;
-                }
-                break;
-            }
             adjustRowFromDescriptors(kInterfaceRows, draft_.interface, selectedRow_, delta);
             break;
         case SettingsPage::Controls:
@@ -865,7 +906,7 @@ bool PauseMenu::selectedRowActsAsToggle() const {
         case SettingsPage::Display: return selectedRow_ == 1;
         case SettingsPage::Simulation: return selectedRow_ == 2 || selectedRow_ == 4;
         case SettingsPage::Camera: return selectedRow_ == 2;
-        case SettingsPage::Interface: return selectedRow_ >= 1;
+        case SettingsPage::Interface: return selectedRow_ >= 1 && selectedRow_ != 4;
         case SettingsPage::Controls: return false;
     }
     return false;
@@ -1193,14 +1234,14 @@ void PauseMenu::handlePointerInput(
     if (popup_ != PopupKind::None) {
         const auto popupButtons = ui::pause_menu_layout::buildPopupButtonsLayout(layout, view.popup);
         hoverPopupConfirm_ = popupButtons.yesButton.contains(xPx, yPx);
-        hoverPopupCancel_ = !popupButtons.singleAcknowledge && popupButtons.noButton.contains(xPx, yPx);
+        hoverPopupCancel_ = popupButtons.noButton.contains(xPx, yPx);
         if (!clickPressed) {
             return;
         }
         if (popupButtons.yesButton.contains(xPx, yPx)) {
             popupConfirmSelected_ = true;
             confirmPopup(window, controls, controlsConfigPath);
-        } else if (!popupButtons.singleAcknowledge && popupButtons.noButton.contains(xPx, yPx)) {
+        } else if (popupButtons.noButton.contains(xPx, yPx)) {
             popupConfirmSelected_ = false;
             closePopup();
         }
@@ -1281,7 +1322,9 @@ void PauseMenu::handlePointerInput(
     lastClickAt_ = clickAt;
 
     if (fieldDisabled(clickedRow)) {
-        statusMessage_ = disabledReason(clickedRow);
+        if (isDisabledReasonMessage(statusMessage_)) {
+            statusMessage_.clear();
+        }
         return;
     }
 
@@ -1365,8 +1408,7 @@ void PauseMenu::appendCurrentPageRows(MenuView& view, const input::ControlBindin
             settings,
             selectedRow_,
             focusArea_ == FocusArea::Rows,
-            [&](const int row) { return fieldDisabled(row); },
-            [&](const int row) { return disabledReason(row); });
+            [&](const int row) { return fieldDisabled(row); });
     };
 
     switch (page_) {
@@ -1414,9 +1456,14 @@ MenuView PauseMenu::buildView(const input::ControlBindings& controls) const {
     view.hoveredRowIndex = hoveredRow_;
     view.firstVisibleLineIndex = firstVisibleLine_;
     view.keepSelectedVisible = !manualScroll_;
-    view.statusLine = statusMessage_.empty() && fieldDisabled(selectedRow_) ? disabledReason(selectedRow_) : statusMessage_;
+    const int contextRow = hoveredRow_ >= 0 ? hoveredRow_ : selectedRow_;
+    const std::string contextDisabledReason =
+        fieldDisabled(contextRow) ? disabledReason(contextRow) : "";
+    view.statusLine = isDisabledReasonMessage(statusMessage_) ? "" : statusMessage_;
     view.statusWarning = awaitingRebind_;
-    view.footerHint = "ESC CLOSE  TAB PAGE  ARROWS NAVIGATE  ENTER APPLY/ACTIVATE";
+    view.footerHint = contextDisabledReason.empty()
+        ? "ESC CLOSE  TAB PAGE  ARROWS NAVIGATE  ENTER APPLY/ACTIVATE"
+        : contextDisabledReason;
     view.rows.reserve(static_cast<std::size_t>(rowCount()) + 1);
     view.rows.push_back(ViewRow{
         .label = kPageNames[static_cast<std::size_t>(page_)],
@@ -1452,7 +1499,6 @@ MenuView PauseMenu::buildView(const input::ControlBindings& controls) const {
             view.popup.body = popupDefinition->body;
             view.popup.confirmLabel = popupDefinition->confirmLabel;
             view.popup.cancelLabel = popupDefinition->cancelLabel;
-            view.popup.singleAction = popupDefinition->singleAction;
             view.popup.hoverConfirm = hoverPopupConfirm_;
             view.popup.hoverCancel = hoverPopupCancel_;
         }

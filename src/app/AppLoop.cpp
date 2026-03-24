@@ -89,9 +89,17 @@ struct RenderResources {
     GLuint sphereVbo = 0;
     GLuint sphereEbo = 0;
     GLuint instanceVbo = 0;
+    GLuint pathProgram = 0;
+    GLint pathUViewProj = -1;
+    GLint pathUColor = -1;
+    GLuint pathVao = 0;
+    GLuint pathVbo = 0;
     GLsizei sphereIndexCount = 0;
 
     ~RenderResources() {
+        if (pathVbo) glDeleteBuffers(1, &pathVbo);
+        if (pathVao) glDeleteVertexArrays(1, &pathVao);
+        if (pathProgram) glDeleteProgram(pathProgram);
         if (instanceVbo) glDeleteBuffers(1, &instanceVbo);
         if (sphereEbo) glDeleteBuffers(1, &sphereEbo);
         if (sphereVbo) glDeleteBuffers(1, &sphereVbo);
@@ -104,9 +112,29 @@ struct FrameRenderState {
     ui::MenuView menuView{};
     OverlayRenderer::TargetHud targetHud{};
     std::vector<OverlayRenderer::ScreenLine> pathLines{};
-    std::vector<std::string> hudDebugLines{};
     render_scene::SceneSnapshot sceneSnapshot{};
+    std::vector<glm::vec3> pathPointsScratch{};
+    std::vector<GLint> pathDrawStarts{};
+    std::vector<GLsizei> pathDrawCounts{};
 };
+
+constexpr auto kPathVertSrc = R"GLSL(
+#version 330 core
+layout (location = 0) in vec3 aWorldPos;
+uniform mat4 uViewProj;
+void main() {
+    gl_Position = uViewProj * vec4(aWorldPos, 1.0);
+}
+)GLSL";
+
+constexpr auto kPathFragSrc = R"GLSL(
+#version 330 core
+out vec4 FragColor;
+uniform vec4 uColor;
+void main() {
+    FragColor = uColor;
+}
+)GLSL";
 
 bool initRenderResources(RenderResources& resources) {
     std::vector<float> sphereVerts;
@@ -140,10 +168,30 @@ bool initRenderResources(RenderResources& resources) {
         std::cerr << "Missing uniform(s). Check shader names match exactly.\n";
     }
 
+    const GLuint pathVs = compileShader(GL_VERTEX_SHADER, kPathVertSrc);
+    const GLuint pathFs = compileShader(GL_FRAGMENT_SHADER, kPathFragSrc);
+    if (pathVs == 0 || pathFs == 0) {
+        std::cerr << "Path shader compile failed; exiting.\n";
+        return false;
+    }
+
+    resources.pathProgram = linkProgram(pathVs, pathFs);
+    glDeleteShader(pathVs);
+    glDeleteShader(pathFs);
+    if (resources.pathProgram == 0) {
+        std::cerr << "Path program link failed; exiting.\n";
+        return false;
+    }
+
+    resources.pathUViewProj = glGetUniformLocation(resources.pathProgram, "uViewProj");
+    resources.pathUColor = glGetUniformLocation(resources.pathProgram, "uColor");
+
     glGenVertexArrays(1, &resources.sphereVao);
     glGenBuffers(1, &resources.sphereVbo);
     glGenBuffers(1, &resources.sphereEbo);
     glGenBuffers(1, &resources.instanceVbo);
+    glGenVertexArrays(1, &resources.pathVao);
+    glGenBuffers(1, &resources.pathVbo);
 
     glBindVertexArray(resources.sphereVao);
 
@@ -183,6 +231,14 @@ bool initRenderResources(RenderResources& resources) {
         glVertexAttribDivisor(2 + attrib, 1);
     }
 
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+
+    glBindVertexArray(resources.pathVao);
+    glBindBuffer(GL_ARRAY_BUFFER, resources.pathVbo);
+    glBufferData(GL_ARRAY_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, static_cast<GLsizei>(sizeof(glm::vec3)), nullptr);
+    glEnableVertexAttribArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
     return true;
@@ -292,6 +348,7 @@ void renderStage(
     const input::Camera& cam,
     const RenderResources& renderResources,
     render_scene::InstanceBufferState& instanceBufferState,
+    render_scene::PathBufferState& pathBufferState,
     OverlayRenderer& overlay,
     FrameRenderState& frameRenderState)
 {
@@ -307,7 +364,6 @@ void renderStage(
     frameRenderState.menuView = pauseMenu.buildView(controls);
     frameRenderState.targetHud = {};
     frameRenderState.pathLines.clear();
-        app_loop::buildHudDebugLines(runtime, pauseMenu.interfaceSettings(), frameRenderState.hudDebugLines);
 
     if (simulation.hasBodies()) {
         app_loop::buildSceneSnapshot(simulation, runtime, runtime.simulation.fixedStep.alpha, frameRenderState.sceneSnapshot);
@@ -326,6 +382,21 @@ void renderStage(
             sceneView,
             instanceBufferState,
             frameRenderState.sceneSnapshot);
+        if (pauseMenu.interfaceSettings().drawPath) {
+            render_scene::drawPathTrails(
+                renderResources.pathVao,
+                renderResources.pathVbo,
+                renderResources.pathProgram,
+                renderResources.pathUViewProj,
+                renderResources.pathUColor,
+                sceneView,
+                pathBufferState,
+                frameRenderState.pathPointsScratch,
+                frameRenderState.pathDrawStarts,
+                frameRenderState.pathDrawCounts,
+                frameRenderState.sceneSnapshot.pathTrails,
+                runtime.simulation.simFrozen);
+        }
         app_loop::buildTargetHud(
             frameRenderState.sceneSnapshot,
             pauseMenu.interfaceSettings(),
@@ -333,12 +404,6 @@ void renderStage(
             sceneView,
             appState.framebufferSize,
             frameRenderState.targetHud);
-        app_loop::buildPathLines(
-            frameRenderState.sceneSnapshot,
-            sceneView,
-            appState.framebufferSize,
-            pauseMenu.interfaceSettings(),
-            frameRenderState.pathLines);
     } else {
         frameRenderState.sceneSnapshot.bodies.clear();
         frameRenderState.sceneSnapshot.models.clear();
@@ -353,8 +418,7 @@ void renderStage(
         frameRenderState.targetHud,
         frameRenderState.pathLines,
         pauseMenu.uiScale(),
-        pauseMenu.interfaceSettings(),
-        frameRenderState.hudDebugLines);
+        pauseMenu.interfaceSettings());
 
     glfwSwapBuffers(window);
 }
@@ -416,6 +480,7 @@ int runApp(sim::World world) {
     runtime.simulation.fixedStep.lastFrameTime = glfwGetTime();
 
     render_scene::InstanceBufferState instanceBufferState{};
+    render_scene::PathBufferState pathBufferState{};
     FrameRenderState frameRenderState{};
 
     while (!glfwWindowShouldClose(window)) {
@@ -438,6 +503,7 @@ int runApp(sim::World world) {
             cam,
             renderResources,
             instanceBufferState,
+            pathBufferState,
             overlay,
             frameRenderState);
     }

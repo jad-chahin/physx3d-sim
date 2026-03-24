@@ -20,7 +20,7 @@ enum class WindowMode { Borderless = 0, Windowed = 1 };
 struct DisplaySettings { WindowMode windowMode = WindowMode::Borderless; bool vsync = true; int windowedX = 120, windowedY = 120, windowedWidth = 1920, windowedHeight = 1080; bool operator==(const DisplaySettings&) const = default; };
 struct SimulationSettings { double minSimSpeed = 1.0 / 64.0, maxSimSpeed = 64.0, gravityStrength = sim::World::Params::kDefaultG, globalRestitution = sim::World::Params::kDefaultRestitution; bool gravityEnabled = true, collisionsEnabled = true; int velocityIterations = sim::World::Params::kDefaultVelocityIterations, positionIterations = sim::World::Params::kDefaultPositionIterations; bool operator==(const SimulationSettings&) const = default; };
 struct CameraSettings { float lookSensitivity = 0.0025f, baseMoveSpeed = 40.0f, fovDegrees = 60.0f; bool invertY = false; bool operator==(const CameraSettings&) const = default; };
-struct InterfaceSettings { int uiScaleIndex = 2; bool showHud = true, showCrosshair = true, showPhysicsStats = false, drawPath = false, objectInfo = true, objectInfoMaterial = false, objectInfoVelocity = true, objectInfoMass = true, objectInfoRadius = true, objectInfoAngularSpeed = false, objectInfoBodyType = false; bool operator==(const InterfaceSettings&) const = default; };
+struct InterfaceSettings { int uiScaleIndex = 2, pathLengthIndex = 3; bool showHud = true, showCrosshair = true, drawPath = false, objectInfo = true, objectInfoMaterial = false, objectInfoVelocity = true, objectInfoMass = true, objectInfoRadius = true, objectInfoAngularSpeed = false, objectInfoBodyType = false; bool operator==(const InterfaceSettings&) const = default; };
 struct SettingsBundle { DisplaySettings display{}; SimulationSettings simulation{}; CameraSettings camera{}; InterfaceSettings interface{}; bool operator==(const SettingsBundle&) const = default; };
 
 enum class SettingsPage { Display = 0, Simulation = 1, Camera = 2, Interface = 3, Controls = 4 };
@@ -28,6 +28,7 @@ enum class RowKind { Header = 0, Toggle, Choice, Rebind };
 enum class ActionPlacement { Top = 0, Bottom };
 
 inline constexpr std::array<float, 7> kUiScaleChoices{{0.75f, 0.85f, 1.00f, 1.15f, 1.30f, 1.40f, 1.50f}};
+inline constexpr std::array<int, 5> kPathLengthChoices{{256, 512, 1024, 2048, 4096}};
 inline constexpr std::array<double, 9> kMinSpeedChoices{{1.0 / 256.0, 1.0 / 128.0, 1.0 / 64.0, 1.0 / 32.0, 1.0 / 16.0, 1.0 / 8.0, 1.0 / 4.0, 1.0 / 2.0, 1.0}};
 inline constexpr std::array<double, 9> kMaxSpeedChoices{{1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0, 256.0}};
 inline constexpr double kDefaultGravityStrength = sim::World::Params::kDefaultG;
@@ -63,7 +64,6 @@ struct ViewPopup {
     std::string body;
     std::string confirmLabel;
     std::string cancelLabel;
-    bool singleAction = false;
     bool confirmSelected = true;
     bool hoverConfirm = false;
     bool hoverCancel = false;
@@ -95,7 +95,7 @@ enum class ActionKind { Apply = 0, ResetWorld, ResetControls, ResetSettings, Clo
 class PauseMenu {
 public:
     friend class testing::PauseMenuAccess;
-    enum class PopupKind { None = 0, ResetSettings, ResetWorld, ResetControls, ExitToHome, EnableDrawPath };
+    enum class PopupKind { None = 0, ResetSettings, ResetWorld, ResetControls, ExitToHome };
 
     [[nodiscard]] bool isOpen() const { return open_; }
     [[nodiscard]] float uiScale() const;

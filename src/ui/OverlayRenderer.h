@@ -38,8 +38,7 @@ public:
         const std::vector<ScreenLine>& pathLines,
         float uiScale,
         bool showHud,
-        bool showCrosshair,
-        const std::vector<std::string>& hudDebugLines) const;
+        bool showCrosshair) const;
 
     enum class SceneLayer {
         ScreenDim,
@@ -50,7 +49,9 @@ public:
         TextMuted,
         TextAccent,
         TextWarning,
+        DisabledOverlay,
         StatusText,
+        FrozenIndicator,
         Crosshair,
         PathLines,
         PopupBg,
@@ -82,7 +83,9 @@ public:
         SceneNode textMuted{SceneLayer::TextMuted, BufferClass::Static, {}};
         SceneNode textAccent{SceneLayer::TextAccent, BufferClass::Static, {}};
         SceneNode textWarning{SceneLayer::TextWarning, BufferClass::Static, {}};
+        SceneNode disabledOverlay{SceneLayer::DisabledOverlay, BufferClass::Static, {}};
         SceneNode statusText{SceneLayer::StatusText, BufferClass::Dynamic, {}};
+        SceneNode frozenIndicator{SceneLayer::FrozenIndicator, BufferClass::Dynamic, {}};
         SceneNode crosshair{SceneLayer::Crosshair, BufferClass::Static, {}};
         SceneNode pathLines{SceneLayer::PathLines, BufferClass::Dynamic, {}};
         SceneNode popupBg{SceneLayer::PopupBg, BufferClass::Dynamic, {}};
@@ -109,7 +112,6 @@ public:
         bool simFrozen = false;
         double simSpeed = 1.0;
         double fps = 0.0;
-        std::vector<std::string> hudDebugLines;
         bool operator==(const HudSectionState&) const = default;
     };
 
@@ -161,7 +163,6 @@ public:
         float uiScale = 1.0f;
         bool showHud = false;
         bool showCrosshair = false;
-        const std::vector<std::string>* hudDebugLines = nullptr;
     };
 
     struct RenderPassState {
@@ -172,6 +173,7 @@ public:
         bool showCrosshair = false;
         bool showPathLines = false;
         bool showTargetPopup = false;
+        bool showFrozenIndicator = false;
         bool frozenOverlay = false;
         bool simFrozen = false;
     };

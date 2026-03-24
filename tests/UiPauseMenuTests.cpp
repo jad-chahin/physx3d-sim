@@ -193,7 +193,7 @@ void testUi2BuildViewMapsMenuState()
     ui::testing::PauseMenuAccess::moveHorizontal(menu, 1, controls);
     ui::testing::PauseMenuAccess::focusBottomAction(menu, 0);
     ui::testing::PauseMenuAccess::setStatus(menu, "STATUS", true);
-    ui::testing::PauseMenuAccess::showPopup(menu, ui::PauseMenu::PopupKind::EnableDrawPath);
+    ui::testing::PauseMenuAccess::showPopup(menu, ui::PauseMenu::PopupKind::ResetWorld);
 
     const auto view = menu.buildView(controls);
     require(view.visible, "view should preserve visibility");
@@ -216,10 +216,28 @@ void testUi2BuildViewMapsMenuState()
 
     require(view.statusLine == "STATUS" && view.statusWarning,
         "view should preserve warning status messages");
-    require(view.popup.visible && view.popup.singleAction,
-        "view should preserve single-action popup state");
-    require(view.popup.title == "WARNING",
+    require(view.popup.visible,
+        "view should preserve popup state");
+    require(view.popup.title == "ARE YOU SURE?",
         "view should preserve popup title");
+}
+
+void testUi2PathLengthDisablesWhenDrawPathOff()
+{
+    ui::PauseMenu menu;
+    input::ControlBindings controls{};
+    ui::testing::PauseMenuAccess::openMenu(menu);
+    ui::testing::PauseMenuAccess::selectPage(menu, ui::SettingsPage::Interface);
+    ui::testing::PauseMenuAccess::setSelectedRow(menu, 4);
+
+    const auto before = ui::testing::PauseMenuAccess::draft(menu).interface.pathLengthIndex;
+    ui::testing::PauseMenuAccess::moveHorizontal(menu, 1, controls);
+    require(ui::testing::PauseMenuAccess::draft(menu).interface.pathLengthIndex == before,
+        "path length should not change while draw path is off");
+
+    const auto view = menu.buildView(controls);
+    require(view.rows.size() > 5 && view.rows[5].label == "PATH LENGTH" && view.rows[5].disabled,
+        "path length row should be disabled when draw path is off");
 }
 
 void testUi2LayoutKeepsManualScrollOffset()
@@ -323,6 +341,7 @@ void appendUiPauseMenuTests(std::vector<std::pair<std::string, std::function<voi
     tests.emplace_back("ui2_scroll_keeps_selection_and_draft", testUi2ScrollKeepsSelectionAndDraft);
     tests.emplace_back("ui2_last_row_does_not_jump_to_actions_early", testUi2LastRowDoesNotJumpToActionsEarly);
     tests.emplace_back("ui2_build_view_maps_menu_state", testUi2BuildViewMapsMenuState);
+    tests.emplace_back("ui2_path_length_disables_when_draw_path_off", testUi2PathLengthDisablesWhenDrawPathOff);
     tests.emplace_back("ui2_layout_keeps_manual_scroll_offset", testUi2LayoutKeepsManualScrollOffset);
     tests.emplace_back("ui2_layout_keeps_selected_row_visible_when_moving_up", testUi2LayoutKeepsSelectedRowVisibleWhenMovingUp);
     tests.emplace_back("ui2_layout_uses_remote_style_top_buttons", testUi2LayoutUsesRemoteStyleTopButtons);

@@ -32,6 +32,10 @@ struct InstanceBufferState {
     std::size_t capacity = 0;
 };
 
+struct PathBufferState {
+    std::size_t capacity = 0;
+};
+
 struct PathTrail {
     std::vector<sim::Vec3> points{};
     std::size_t start = 0;
@@ -87,6 +91,20 @@ void drawBodies(
     const SceneView& sceneView,
     InstanceBufferState& instanceBufferState,
     const SceneSnapshot& snapshot);
+
+void drawPathTrails(
+    GLuint pathVao,
+    GLuint pathVbo,
+    GLuint program,
+    GLint uViewProj,
+    GLint uColor,
+    const SceneView& sceneView,
+    PathBufferState& pathBufferState,
+    std::vector<glm::vec3>& scratchPoints,
+    std::vector<GLint>& drawStarts,
+    std::vector<GLsizei>& drawCounts,
+    std::span<const PathTrail> pathTrails,
+    bool simFrozen);
 
 } // namespace render_scene
 
