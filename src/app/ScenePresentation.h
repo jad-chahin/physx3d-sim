@@ -1,7 +1,6 @@
 #ifndef PHYSICS3D_APP_SCENEPRESENTATION_H
 #define PHYSICS3D_APP_SCENEPRESENTATION_H
 
-#include <string>
 #include <vector>
 
 #include "input/Camera.h"
@@ -14,6 +13,11 @@ namespace app_loop {
 struct RuntimeState;
 class SimulationController;
 
+[[nodiscard]] int findTargetBodyIndex(
+    const render_scene::SceneSnapshot& snapshot,
+    const input::Camera& cam,
+    const render_scene::SceneView& sceneView);
+
 void updatePathHistory(
     const SimulationController& simulation,
     RuntimeState& runtime,
@@ -22,17 +26,10 @@ void updatePathHistory(
 void buildTargetHud(
     const render_scene::SceneSnapshot& snapshot,
     const ui::InterfaceSettings& interfaceSettings,
-    const input::Camera& cam,
     const render_scene::SceneView& sceneView,
     const render_scene::FramebufferSize& framebufferSize,
+    int targetBodyIndex,
     OverlayRenderer::TargetHud& targetHud);
-
-void buildPathLines(
-    const render_scene::SceneSnapshot& snapshot,
-    const render_scene::SceneView& sceneView,
-    const render_scene::FramebufferSize& framebufferSize,
-    const ui::InterfaceSettings& interfaceSettings,
-    std::vector<OverlayRenderer::ScreenLine>& pathLines);
 
 } // namespace app_loop
 

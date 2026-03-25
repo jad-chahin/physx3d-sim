@@ -67,7 +67,6 @@ void testMinimapCueClampKeepsTopAndBottomSymbolsVisible()
 void testSpatialHudRetainsCameraStateWithoutBodies()
 {
     ui::InterfaceSettings interfaceSettings{};
-    interfaceSettings.showHud = true;
     interfaceSettings.showMinimap = true;
     interfaceSettings.showCoordinates = true;
     interfaceSettings.minimapZoomIndex = 2;
@@ -79,7 +78,8 @@ void testSpatialHudRetainsCameraStateWithoutBodies()
     render_scene::SceneView sceneView{};
     sceneView.forward = glm::normalize(glm::vec3(0.62f, 0.45f, -0.64f));
     OverlayRenderer::SpatialHud spatialHud{};
-    app_loop::buildSpatialHud(snapshot, interfaceSettings, cam, sceneView, spatialHud);
+    app_loop::SpatialHudScratch scratch{};
+    app_loop::buildSpatialHud(snapshot, interfaceSettings, cam, sceneView, -1, scratch, spatialHud);
 
     const glm::vec2 flatForward(sceneView.forward.x, -sceneView.forward.z);
     const glm::vec2 normalizedForward = glm::normalize(flatForward);
@@ -100,7 +100,6 @@ void testSpatialHudRetainsCameraStateWithoutBodies()
 void testSpatialHudKeepsVerticallyStackedBodiesSeparate()
 {
     ui::InterfaceSettings interfaceSettings{};
-    interfaceSettings.showHud = true;
     interfaceSettings.showMinimap = true;
     interfaceSettings.showCoordinates = false;
 
@@ -128,7 +127,8 @@ void testSpatialHudKeepsVerticallyStackedBodiesSeparate()
     render_scene::SceneView sceneView{};
     sceneView.forward = glm::vec3(0.0f, 0.0f, -1.0f);
     OverlayRenderer::SpatialHud spatialHud{};
-    app_loop::buildSpatialHud(snapshot, interfaceSettings, cam, sceneView, spatialHud);
+    app_loop::SpatialHudScratch scratch{};
+    app_loop::buildSpatialHud(snapshot, interfaceSettings, cam, sceneView, -1, scratch, spatialHud);
 
     require(spatialHud.markers.size() == 2, "stacked bodies should survive minimap dedup as separate markers");
     require(spatialHud.markers[0].aboveCamera != spatialHud.markers[1].aboveCamera,
@@ -138,7 +138,6 @@ void testSpatialHudKeepsVerticallyStackedBodiesSeparate()
 void testSpatialHudKeepsSameCellBodiesWhenUnderMarkerCap()
 {
     ui::InterfaceSettings interfaceSettings{};
-    interfaceSettings.showHud = true;
     interfaceSettings.showMinimap = true;
     interfaceSettings.showCoordinates = false;
 
@@ -166,7 +165,8 @@ void testSpatialHudKeepsSameCellBodiesWhenUnderMarkerCap()
     render_scene::SceneView sceneView{};
     sceneView.forward = glm::vec3(0.0f, 0.0f, -1.0f);
     OverlayRenderer::SpatialHud spatialHud{};
-    app_loop::buildSpatialHud(snapshot, interfaceSettings, cam, sceneView, spatialHud);
+    app_loop::SpatialHudScratch scratch{};
+    app_loop::buildSpatialHud(snapshot, interfaceSettings, cam, sceneView, -1, scratch, spatialHud);
 
     require(spatialHud.markers.size() == 2,
         "same-cell bodies should both remain visible when under the minimap marker cap");

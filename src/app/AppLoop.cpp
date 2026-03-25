@@ -1,5 +1,7 @@
 #include "app/AppLoop.h"
 #include "app/AppLoopInternal.h"
+#include "app/ScenePresentation.h"
+#include "app/SpatialHud.h"
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -10,10 +12,9 @@
 
 #include "input/Bindings.h"
 #include "input/Camera.h"
+#include "render/FrameRenderer.h"
 #include "render/ShaderUtil.h"
-#include "render/SphereMesh.h"
 #include "sim/DefaultWorld.h"
-#include "ui/OverlayRenderer.h"
 #include "ui/PauseMenu.h"
 
 namespace {
@@ -78,172 +79,16 @@ void configureOpenGl() {
     glFrontFace(GL_CCW);
 }
 
-struct RenderResources {
-    GLuint program = 0;
-    GLint uView = -1;
-    GLint uProj = -1;
-    GLint uLightDir = -1;
-    GLint uBaseColor = -1;
-    GLint uAmbient = -1;
-    GLuint sphereVao = 0;
-    GLuint sphereVbo = 0;
-    GLuint sphereEbo = 0;
-    GLuint instanceVbo = 0;
-    GLuint pathProgram = 0;
-    GLint pathUViewProj = -1;
-    GLint pathUColor = -1;
-    GLuint pathVao = 0;
-    GLuint pathVbo = 0;
-    GLsizei sphereIndexCount = 0;
-
-    ~RenderResources() {
-        if (pathVbo) glDeleteBuffers(1, &pathVbo);
-        if (pathVao) glDeleteVertexArrays(1, &pathVao);
-        if (pathProgram) glDeleteProgram(pathProgram);
-        if (instanceVbo) glDeleteBuffers(1, &instanceVbo);
-        if (sphereEbo) glDeleteBuffers(1, &sphereEbo);
-        if (sphereVbo) glDeleteBuffers(1, &sphereVbo);
-        if (sphereVao) glDeleteVertexArrays(1, &sphereVao);
-        if (program) glDeleteProgram(program);
-    }
-};
-
 struct FrameRenderState {
     ui::MenuView menuView{};
     OverlayRenderer::SpatialHud spatialHud{};
     OverlayRenderer::TargetHud targetHud{};
-    std::vector<OverlayRenderer::ScreenLine> pathLines{};
+    app_loop::SpatialHudScratch spatialHudScratch{};
     render_scene::SceneSnapshot sceneSnapshot{};
-    std::vector<glm::vec3> pathPointsScratch{};
-    std::vector<GLint> pathDrawStarts{};
-    std::vector<GLsizei> pathDrawCounts{};
+    std::uint64_t sceneSnapshotRevisionCounter = 0;
+    std::uint64_t cachedStaticSceneRevision = 0;
+    bool cachedStaticScene = false;
 };
-
-constexpr auto kPathVertSrc = R"GLSL(
-#version 330 core
-layout (location = 0) in vec3 aWorldPos;
-uniform mat4 uViewProj;
-void main() {
-    gl_Position = uViewProj * vec4(aWorldPos, 1.0);
-}
-)GLSL";
-
-constexpr auto kPathFragSrc = R"GLSL(
-#version 330 core
-out vec4 FragColor;
-uniform vec4 uColor;
-void main() {
-    FragColor = uColor;
-}
-)GLSL";
-
-bool initRenderResources(RenderResources& resources) {
-    std::vector<float> sphereVerts;
-    std::vector<std::uint32_t> sphereIdx;
-    buildSphereMesh(16, 32, sphereVerts, sphereIdx);
-    resources.sphereIndexCount = static_cast<GLsizei>(sphereIdx.size());
-
-    const GLuint vs = compileShader(GL_VERTEX_SHADER, kVertSrc);
-    const GLuint fs = compileShader(GL_FRAGMENT_SHADER, kFragSrc);
-    if (vs == 0 || fs == 0) {
-        std::cerr << "Shader compile failed; exiting.\n";
-        return false;
-    }
-
-    resources.program = linkProgram(vs, fs);
-    glDeleteShader(vs);
-    glDeleteShader(fs);
-    if (resources.program == 0) {
-        std::cerr << "Program link failed; exiting.\n";
-        return false;
-    }
-
-    resources.uView = glGetUniformLocation(resources.program, "uView");
-    resources.uProj = glGetUniformLocation(resources.program, "uProj");
-    resources.uLightDir = glGetUniformLocation(resources.program, "uLightDir");
-    resources.uBaseColor = glGetUniformLocation(resources.program, "uBaseColor");
-    resources.uAmbient = glGetUniformLocation(resources.program, "uAmbient");
-    if (resources.uView < 0 || resources.uProj < 0 || resources.uLightDir < 0 ||
-        resources.uBaseColor < 0 || resources.uAmbient < 0)
-    {
-        std::cerr << "Missing uniform(s). Check shader names match exactly.\n";
-    }
-
-    const GLuint pathVs = compileShader(GL_VERTEX_SHADER, kPathVertSrc);
-    const GLuint pathFs = compileShader(GL_FRAGMENT_SHADER, kPathFragSrc);
-    if (pathVs == 0 || pathFs == 0) {
-        std::cerr << "Path shader compile failed; exiting.\n";
-        return false;
-    }
-
-    resources.pathProgram = linkProgram(pathVs, pathFs);
-    glDeleteShader(pathVs);
-    glDeleteShader(pathFs);
-    if (resources.pathProgram == 0) {
-        std::cerr << "Path program link failed; exiting.\n";
-        return false;
-    }
-
-    resources.pathUViewProj = glGetUniformLocation(resources.pathProgram, "uViewProj");
-    resources.pathUColor = glGetUniformLocation(resources.pathProgram, "uColor");
-
-    glGenVertexArrays(1, &resources.sphereVao);
-    glGenBuffers(1, &resources.sphereVbo);
-    glGenBuffers(1, &resources.sphereEbo);
-    glGenBuffers(1, &resources.instanceVbo);
-    glGenVertexArrays(1, &resources.pathVao);
-    glGenBuffers(1, &resources.pathVbo);
-
-    glBindVertexArray(resources.sphereVao);
-
-    glBindBuffer(GL_ARRAY_BUFFER, resources.sphereVbo);
-    glBufferData(
-        GL_ARRAY_BUFFER,
-        static_cast<GLsizeiptr>(sphereVerts.size() * sizeof(float)),
-        sphereVerts.data(),
-        GL_STATIC_DRAW);
-
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, resources.sphereEbo);
-    glBufferData(
-        GL_ELEMENT_ARRAY_BUFFER,
-        static_cast<GLsizeiptr>(sphereIdx.size() * sizeof(std::uint32_t)),
-        sphereIdx.data(),
-        GL_STATIC_DRAW);
-
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), reinterpret_cast<void*>(0));
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), reinterpret_cast<void*>(3 * sizeof(float)));
-    glEnableVertexAttribArray(1);
-
-    glBindBuffer(GL_ARRAY_BUFFER, resources.instanceVbo);
-    glBufferData(GL_ARRAY_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
-
-    constexpr std::size_t vec4Size = 4 * sizeof(float);
-    constexpr std::size_t mat4Size = 4 * vec4Size;
-    for (GLuint attrib = 0; attrib < 4; ++attrib) {
-        glEnableVertexAttribArray(2 + attrib);
-        glVertexAttribPointer(
-            2 + attrib,
-            4,
-            GL_FLOAT,
-            GL_FALSE,
-            static_cast<GLsizei>(mat4Size),
-            reinterpret_cast<void*>(attrib * vec4Size));
-        glVertexAttribDivisor(2 + attrib, 1);
-    }
-
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glBindVertexArray(0);
-
-    glBindVertexArray(resources.pathVao);
-    glBindBuffer(GL_ARRAY_BUFFER, resources.pathVbo);
-    glBufferData(GL_ARRAY_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, static_cast<GLsizei>(sizeof(glm::vec3)), nullptr);
-    glEnableVertexAttribArray(0);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glBindVertexArray(0);
-    return true;
-}
 
 void printGlInfo() {
     std::cout << "Vendor:   " << glGetString(GL_VENDOR) << "\n";
@@ -301,15 +146,6 @@ void updateFrameState(
     simulation.step(runtime, pauseMenu.isOpen(), frameTime);
 }
 
-void clearFrame(const app_loop::RuntimeState& runtime, const ui::PauseMenu& pauseMenu) {
-    if (runtime.simulation.simFrozen && !pauseMenu.isOpen()) {
-        glClearColor(0.035f, 0.055f, 0.075f, 1.0f);
-    } else {
-        glClearColor(0.05f, 0.05f, 0.08f, 1.0f);
-    }
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-}
-
 void processInputStage(
     GLFWwindow* window,
     app_loop::AppLoopState& appState,
@@ -347,87 +183,85 @@ void renderStage(
     const input::ControlBindings& controls,
     const app_loop::SimulationController& simulation,
     const input::Camera& cam,
-    const RenderResources& renderResources,
-    render_scene::InstanceBufferState& instanceBufferState,
-    render_scene::PathBufferState& pathBufferState,
-    OverlayRenderer& overlay,
+    render_scene::FrameRenderer& frameRenderer,
     FrameRenderState& frameRenderState)
 {
-    (void)window;
-
-    static render_scene::FramebufferSize appliedViewport{-1, -1};
-    if (appliedViewport.w != appState.framebufferSize.w || appliedViewport.h != appState.framebufferSize.h) {
-        glViewport(0, 0, appState.framebufferSize.w, appState.framebufferSize.h);
-        appliedViewport = appState.framebufferSize;
-    }
-
-    clearFrame(runtime, pauseMenu);
     frameRenderState.menuView = pauseMenu.buildView(controls);
     frameRenderState.spatialHud = {};
     frameRenderState.targetHud = {};
-    frameRenderState.pathLines.clear();
     const render_scene::SceneView sceneView =
         render_scene::buildSceneView(cam, pauseMenu.cameraSettings(), appState.framebufferSize);
+    const ui::InterfaceSettings& interfaceSettings = pauseMenu.interfaceSettings();
+    const bool staticScene = runtime.simulation.simFrozen || pauseMenu.isOpen();
 
     if (simulation.hasBodies()) {
-        app_loop::buildSceneSnapshot(simulation, runtime, runtime.simulation.fixedStep.alpha, frameRenderState.sceneSnapshot);
-        render_scene::drawBodies(
-            renderResources.instanceVbo,
-            renderResources.program,
-            renderResources.uView,
-            renderResources.uProj,
-            renderResources.uLightDir,
-            renderResources.uBaseColor,
-            renderResources.uAmbient,
-            renderResources.sphereVao,
-            renderResources.sphereIndexCount,
-            sceneView,
-            instanceBufferState,
-            frameRenderState.sceneSnapshot);
-        if (pauseMenu.interfaceSettings().drawPath) {
-            render_scene::drawPathTrails(
-                renderResources.pathVao,
-                renderResources.pathVbo,
-                renderResources.pathProgram,
-                renderResources.pathUViewProj,
-                renderResources.pathUColor,
-                sceneView,
-                pathBufferState,
-                frameRenderState.pathPointsScratch,
-                frameRenderState.pathDrawStarts,
-                frameRenderState.pathDrawCounts,
-                frameRenderState.sceneSnapshot.pathTrails,
-                runtime.simulation.simFrozen);
+        const bool canReuseStaticSnapshot =
+            staticScene &&
+            frameRenderState.cachedStaticScene &&
+            frameRenderState.cachedStaticSceneRevision == runtime.simulation.sceneRevision &&
+            frameRenderState.sceneSnapshot.bodies.size() == simulation.bodies().size();
+        if (!canReuseStaticSnapshot) {
+            app_loop::buildSceneSnapshot(
+                simulation,
+                runtime,
+                runtime.simulation.fixedStep.alpha,
+                frameRenderState.sceneSnapshot);
+            frameRenderState.sceneSnapshot.instanceRevision = ++frameRenderState.sceneSnapshotRevisionCounter;
         }
-        app_loop::buildTargetHud(
-            frameRenderState.sceneSnapshot,
-            pauseMenu.interfaceSettings(),
-            cam,
-            sceneView,
-            appState.framebufferSize,
-            frameRenderState.targetHud);
+        frameRenderState.cachedStaticScene = staticScene;
+        frameRenderState.cachedStaticSceneRevision = runtime.simulation.sceneRevision;
+        frameRenderState.sceneSnapshot.pathTrails = runtime.pathHistory;
+        frameRenderState.sceneSnapshot.pathTrailsRevision = runtime.pathHistoryRevision;
     } else {
         frameRenderState.sceneSnapshot.bodies.clear();
         frameRenderState.sceneSnapshot.models.clear();
         frameRenderState.sceneSnapshot.pathTrails = runtime.pathHistory;
+        frameRenderState.sceneSnapshot.instanceRevision = ++frameRenderState.sceneSnapshotRevisionCounter;
+        frameRenderState.sceneSnapshot.pathTrailsRevision = runtime.pathHistoryRevision;
+        frameRenderState.cachedStaticScene = staticScene;
+        frameRenderState.cachedStaticSceneRevision = runtime.simulation.sceneRevision;
     }
+    const bool needsTargetIndex = (interfaceSettings.objectInfo || interfaceSettings.showMinimap) &&
+        !frameRenderState.sceneSnapshot.bodies.empty();
+    const int targetIndex = needsTargetIndex
+        ? app_loop::findTargetBodyIndex(frameRenderState.sceneSnapshot, cam, sceneView)
+        : -1;
+    app_loop::buildTargetHud(
+        frameRenderState.sceneSnapshot,
+        interfaceSettings,
+        sceneView,
+        appState.framebufferSize,
+        targetIndex,
+        frameRenderState.targetHud);
     app_loop::buildSpatialHud(
         frameRenderState.sceneSnapshot,
-        pauseMenu.interfaceSettings(),
+        interfaceSettings,
         cam,
         sceneView,
+        targetIndex,
+        frameRenderState.spatialHudScratch,
         frameRenderState.spatialHud);
 
-    app_loop::drawOverlay(
-        overlay,
-        appState.framebufferSize,
-        runtime,
-        frameRenderState.menuView,
-        frameRenderState.spatialHud,
-        frameRenderState.targetHud,
-        frameRenderState.pathLines,
+    const render_scene::OverlayPassInput overlayInput{
+        &frameRenderState.menuView,
+        &frameRenderState.spatialHud,
+        &frameRenderState.targetHud,
         pauseMenu.uiScale(),
-        pauseMenu.interfaceSettings());
+        &interfaceSettings,
+    };
+    const render_scene::FrameInput frameInput{
+        appState.framebufferSize,
+        runtime.simulation.simFrozen,
+        runtime.simulation.simSpeed,
+        runtime.simulation.elapsedTime,
+        runtime.fps.displayed,
+        interfaceSettings.drawPath,
+        interfaceSettings.pathColorIndex,
+        &sceneView,
+        &frameRenderState.sceneSnapshot,
+        &overlayInput,
+    };
+    frameRenderer.render(frameInput);
 
     glfwSwapBuffers(window);
 }
@@ -475,21 +309,14 @@ int runApp(sim::World world) {
         return 1;
     }
 
-    glViewport(0, 0, appState.framebufferSize.w, appState.framebufferSize.h);
     printGlInfo();
     configureOpenGl();
 
-    RenderResources renderResources;
-    if (!initRenderResources(renderResources)) {
+    render_scene::FrameRenderer frameRenderer;
+    if (!frameRenderer.init()) {
         return 1;
     }
-
-    OverlayRenderer overlay;
-    overlay.init();
     runtime.simulation.fixedStep.lastFrameTime = glfwGetTime();
-
-    render_scene::InstanceBufferState instanceBufferState{};
-    render_scene::PathBufferState pathBufferState{};
     FrameRenderState frameRenderState{};
 
     while (!glfwWindowShouldClose(window)) {
@@ -497,10 +324,10 @@ int runApp(sim::World world) {
             window,
             appState,
             runtime,
-        controls,
-        pauseMenu,
-        simulation,
-        controlsConfigPath);
+            controls,
+            pauseMenu,
+            simulation,
+            controlsConfigPath);
         runSimulationStage(window, simulation, controls, pauseMenu, runtime, cam);
         renderStage(
             window,
@@ -510,14 +337,11 @@ int runApp(sim::World world) {
             controls,
             simulation,
             cam,
-            renderResources,
-            instanceBufferState,
-            pathBufferState,
-            overlay,
+            frameRenderer,
             frameRenderState);
     }
 
-    overlay.shutdown();
+    frameRenderer.shutdown();
     return 0;
 }
 

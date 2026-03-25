@@ -20,7 +20,14 @@ enum class WindowMode { Borderless = 0, Windowed = 1 };
 struct DisplaySettings { WindowMode windowMode = WindowMode::Borderless; bool vsync = true; int windowedX = 120, windowedY = 120, windowedWidth = 1920, windowedHeight = 1080; bool operator==(const DisplaySettings&) const = default; };
 struct SimulationSettings { double minSimSpeed = 1.0 / 64.0, maxSimSpeed = 64.0, gravityStrength = sim::World::Params::kDefaultG, globalRestitution = sim::World::Params::kDefaultRestitution; bool gravityEnabled = true, collisionsEnabled = true; int velocityIterations = sim::World::Params::kDefaultVelocityIterations, positionIterations = sim::World::Params::kDefaultPositionIterations; bool operator==(const SimulationSettings&) const = default; };
 struct CameraSettings { float lookSensitivity = 0.0025f, baseMoveSpeed = 40.0f, fovDegrees = 60.0f; bool invertY = false; bool operator==(const CameraSettings&) const = default; };
-struct InterfaceSettings { int uiScaleIndex = 2, minimapZoomIndex = 1, pathLengthIndex = 3; bool showHud = true, showMinimap = true, showCoordinates = true, showCrosshair = true, drawPath = false, objectInfo = true, objectInfoMaterial = false, objectInfoVelocity = true, objectInfoMass = true, objectInfoRadius = true, objectInfoAngularSpeed = false, objectInfoBodyType = false; bool operator==(const InterfaceSettings&) const = default; };
+struct InterfaceSettings {
+    int uiScaleIndex = 2, minimapZoomIndex = 1, pathLengthIndex = 3, pathColorIndex = 0;
+    bool showSimulationSpeed = true, showFps = true, showElapsedTime = true, showMinimap = true,
+         showCoordinates = true, showCrosshair = true, drawPath = false, objectInfo = true,
+         objectInfoMaterial = false, objectInfoVelocity = true, objectInfoMass = true,
+         objectInfoRadius = true, objectInfoAngularSpeed = false, objectInfoBodyType = false;
+    bool operator==(const InterfaceSettings&) const = default;
+};
 struct SettingsBundle { DisplaySettings display{}; SimulationSettings simulation{}; CameraSettings camera{}; InterfaceSettings interface{}; bool operator==(const SettingsBundle&) const = default; };
 
 enum class SettingsPage { Display = 0, Simulation = 1, Camera = 2, Interface = 3, Controls = 4 };
@@ -30,14 +37,36 @@ enum class ActionPlacement { Top = 0, Bottom };
 inline constexpr std::array<float, 7> kUiScaleChoices{{0.75f, 0.85f, 1.00f, 1.15f, 1.30f, 1.40f, 1.50f}};
 inline constexpr std::array<float, 4> kMinimapZoomChoices{{20.0f, 40.0f, 80.0f, 160.0f}};
 inline constexpr std::array<int, 5> kPathLengthChoices{{256, 512, 1024, 2048, 4096}};
+inline constexpr std::array<const char*, 6> kPathColorChoices{{"CYAN", "AMBER", "WHITE", "LIME", "MAGENTA", "RED"}};
 inline constexpr std::array<double, 9> kMinSpeedChoices{{1.0 / 256.0, 1.0 / 128.0, 1.0 / 64.0, 1.0 / 32.0, 1.0 / 16.0, 1.0 / 8.0, 1.0 / 4.0, 1.0 / 2.0, 1.0}};
 inline constexpr std::array<double, 9> kMaxSpeedChoices{{1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0, 256.0}};
 inline constexpr double kDefaultGravityStrength = sim::World::Params::kDefaultG;
-inline constexpr std::array<double, 9> kGravityStrengthChoices{{kDefaultGravityStrength * 0.125, kDefaultGravityStrength * 0.25, kDefaultGravityStrength * 0.50, kDefaultGravityStrength * 0.75, kDefaultGravityStrength * 1.00, kDefaultGravityStrength * (4.0 / 3.0), kDefaultGravityStrength * 2.00, kDefaultGravityStrength * 4.00, kDefaultGravityStrength * 8.00}};
-inline constexpr std::array<int, 8> kCollisionIterationChoices{{1, 2, 3, 4, 5, 6, 8, 10}};
+inline constexpr std::array<double, 20> kGravityStrengthChoices{{
+    kDefaultGravityStrength * 0.50,
+    kDefaultGravityStrength * 1.00,
+    kDefaultGravityStrength * 1.50,
+    kDefaultGravityStrength * 2.00,
+    kDefaultGravityStrength * 2.50,
+    kDefaultGravityStrength * 3.00,
+    kDefaultGravityStrength * 3.50,
+    kDefaultGravityStrength * 4.00,
+    kDefaultGravityStrength * 4.50,
+    kDefaultGravityStrength * 5.00,
+    kDefaultGravityStrength * 5.50,
+    kDefaultGravityStrength * 6.00,
+    kDefaultGravityStrength * 6.50,
+    kDefaultGravityStrength * 7.00,
+    kDefaultGravityStrength * 7.50,
+    kDefaultGravityStrength * 8.00,
+    kDefaultGravityStrength * 8.50,
+    kDefaultGravityStrength * 9.00,
+    kDefaultGravityStrength * 9.50,
+    kDefaultGravityStrength * 10.00,
+}};
+inline constexpr std::array<int, 10> kCollisionIterationChoices{{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}};
 inline constexpr std::array<double, 11> kGlobalRestitutionChoices{{0.00, 0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90, 1.00}};
 inline constexpr std::array<float, 9> kLookSensitivityChoices{{0.0008f, 0.0012f, 0.0016f, 0.0020f, 0.0025f, 0.0030f, 0.0038f, 0.0048f, 0.0060f}};
-inline constexpr std::array<float, 7> kBaseMoveSpeedChoices{{10.0f, 20.0f, 30.0f, 40.0f, 50.0f, 60.0f, 80.0f}};
+inline constexpr std::array<float, 8> kBaseMoveSpeedChoices{{10.0f, 20.0f, 30.0f, 40.0f, 50.0f, 60.0f, 70.0f, 80.0f}};
 inline constexpr std::array<float, 8> kFovChoices{{50.0f, 60.0f, 70.0f, 80.0f, 90.0f, 100.0f, 110.0f, 120.0f}};
 
 struct ViewRow {

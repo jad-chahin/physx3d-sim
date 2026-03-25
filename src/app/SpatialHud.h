@@ -8,11 +8,23 @@
 
 namespace app_loop {
 
+struct SpatialHudScratch {
+    struct MinimapCandidate {
+        float distanceSq = 0.0f;
+        OverlayRenderer::MinimapMarker marker{};
+    };
+
+    std::vector<MinimapCandidate> candidates{};
+    std::vector<MinimapCandidate> filteredCandidates{};
+};
+
 void buildSpatialHud(
     const render_scene::SceneSnapshot& snapshot,
     const ui::InterfaceSettings& interfaceSettings,
     const input::Camera& cam,
     const render_scene::SceneView& sceneView,
+    int targetIndex,
+    SpatialHudScratch& scratch,
     OverlayRenderer::SpatialHud& spatialHud);
 
 } // namespace app_loop

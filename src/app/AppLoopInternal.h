@@ -1,17 +1,13 @@
 #ifndef PHYSICS3D_APPLOOPINTERNAL_H
 #define PHYSICS3D_APPLOOPINTERNAL_H
 
-#include <cstddef>
-#include <string>
+#include <cstdint>
 #include <vector>
 
-#include "app/ScenePresentation.h"
-#include "app/SpatialHud.h"
 #include "input/Bindings.h"
 #include "input/Camera.h"
 #include "render/SceneRenderer.h"
 #include "sim/DefaultWorld.h"
-#include "ui/OverlayRenderer.h"
 #include "ui/PauseMenu.h"
 
 #include <GLFW/glfw3.h>
@@ -45,6 +41,8 @@ struct RuntimeState {
         bool speedResetWasDown = false;
         bool simFrozen = false;
         double simSpeed = 1.0;
+        double elapsedTime = 0.0;
+        std::uint64_t sceneRevision = 1;
 
         struct FixedStepState {
             double lastFrameTime = 0.0;
@@ -62,6 +60,7 @@ struct RuntimeState {
     InputRuntime input{};
     SimulationRuntime simulation{};
     FpsRuntime fps{};
+    std::uint64_t pathHistoryRevision = 0;
     std::vector<render_scene::PathTrail> pathHistory{};
 };
 
@@ -135,17 +134,6 @@ void buildSceneSnapshot(
     const RuntimeState& runtime,
     double alpha,
     render_scene::SceneSnapshot& snapshot);
-
-void drawOverlay(
-    const OverlayRenderer& overlay,
-    const render_scene::FramebufferSize& framebufferSize,
-    const RuntimeState& runtime,
-    const ui::MenuView& menuView,
-    const OverlayRenderer::SpatialHud& spatialHud,
-    const OverlayRenderer::TargetHud& targetHud,
-    const std::vector<OverlayRenderer::ScreenLine>& pathLines,
-    float uiScale,
-    const ui::InterfaceSettings& interfaceSettings);
 
 } // namespace app_loop
 

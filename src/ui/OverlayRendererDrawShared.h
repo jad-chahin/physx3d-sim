@@ -162,6 +162,14 @@ inline void formatHudSpeed(char* out, const std::size_t outSize, const double si
     std::snprintf(out, outSize, "SPEED: %.2fX", simSpeed);
 }
 
+inline void formatElapsedTime(char* out, const std::size_t outSize, const double elapsedSeconds) {
+    const long long totalSeconds = static_cast<long long>(std::max(0.0, std::floor(elapsedSeconds)));
+    const long long hours = totalSeconds / 3600;
+    const long long minutes = (totalSeconds / 60) % 60;
+    const long long seconds = totalSeconds % 60;
+    std::snprintf(out, outSize, "TIME: %02lld:%02lld:%02lld", hours, minutes, seconds);
+}
+
 inline void appendTextPx(std::vector<float>& out, const float x, const float y, const float scalePx, const std::string& s) {
     const float cell = scalePx;
     float penX = x;

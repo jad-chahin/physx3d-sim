@@ -43,3 +43,7 @@
 # Local runtime config
 controls.cfg
 settings.cfg
+
+# Local build trees
+build/
+build-review/

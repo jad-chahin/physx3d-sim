@@ -109,6 +109,10 @@ std::string formatFloat(const float value, const char* suffix = "") {
     return buffer;
 }
 
+std::string formatMultiplier(const double value) {
+    return formatFloat(static_cast<float>(value), "X");
+}
+
 std::string formatPercent(const double value) {
     char buffer[32];
     std::snprintf(buffer, sizeof(buffer), "%.0f%%", std::clamp(value, 0.0, 1.0) * 100.0);
@@ -116,16 +120,41 @@ std::string formatPercent(const double value) {
 }
 
 bool isDisabledReasonMessage(const std::string& message) {
-    return message == "ENABLE SHOW HUD FIRST" ||
-        message == "ENABLE SHOW MINIMAP FIRST" ||
+    return message == "ENABLE SHOW MINIMAP FIRST" ||
         message == "ENABLE DRAW PATH FIRST" ||
         message == "ENABLE OBJECT INFO FIRST";
+}
+
+constexpr int kInterfaceRowUiScale = 0;
+constexpr int kInterfaceRowMinimapZoom = 5;
+constexpr int kInterfaceRowDetailLevel = 9;
+constexpr std::array<const char*, 2> kObjectInfoDetailChoices{{
+    "BASIC", "FULL",
+}};
+
+int objectInfoDetailIndex(const InterfaceSettings& settings) {
+    if (settings.objectInfoMaterial || settings.objectInfoAngularSpeed || settings.objectInfoBodyType) {
+        return 1;
+    }
+    return 0;
+}
+
+void applyObjectInfoDetailLevel(InterfaceSettings& settings, const int detailIndex) {
+    const int clamped = std::clamp(detailIndex, 0, static_cast<int>(kObjectInfoDetailChoices.size()) - 1);
+    settings.objectInfoMaterial = clamped >= 1;
+    settings.objectInfoVelocity = true;
+    settings.objectInfoMass = true;
+    settings.objectInfoRadius = true;
+    settings.objectInfoAngularSpeed = clamped >= 1;
+    settings.objectInfoBodyType = clamped >= 1;
 }
 
 bool interfacePageSettingsEqual(const InterfaceSettings& lhs, const InterfaceSettings& rhs) {
     return lhs.uiScaleIndex == rhs.uiScaleIndex &&
         lhs.minimapZoomIndex == rhs.minimapZoomIndex &&
-        lhs.showHud == rhs.showHud &&
+        lhs.showSimulationSpeed == rhs.showSimulationSpeed &&
+        lhs.showFps == rhs.showFps &&
+        lhs.showElapsedTime == rhs.showElapsedTime &&
         lhs.showMinimap == rhs.showMinimap &&
         lhs.showCoordinates == rhs.showCoordinates &&
         lhs.showCrosshair == rhs.showCrosshair &&
@@ -141,7 +170,9 @@ bool interfacePageSettingsEqual(const InterfaceSettings& lhs, const InterfaceSet
 void applyInterfacePageSettings(InterfaceSettings& dst, const InterfaceSettings& src) {
     dst.uiScaleIndex = src.uiScaleIndex;
     dst.minimapZoomIndex = src.minimapZoomIndex;
-    dst.showHud = src.showHud;
+    dst.showSimulationSpeed = src.showSimulationSpeed;
+    dst.showFps = src.showFps;
+    dst.showElapsedTime = src.showElapsedTime;
     dst.showMinimap = src.showMinimap;
     dst.showCoordinates = src.showCoordinates;
     dst.showCrosshair = src.showCrosshair;
@@ -157,12 +188,14 @@ void applyInterfacePageSettings(InterfaceSettings& dst, const InterfaceSettings&
 template <typename T, std::size_t N> void adjustChoice(const std::array<T, N>& choices, T& value, const int delta) { int idx = closestChoiceIndex(choices, value); idx = std::clamp(idx + delta, 0, static_cast<int>(choices.size()) - 1); value = choices[static_cast<std::size_t>(idx)]; }
 
 template <typename Settings, std::size_t N>
-bool adjustRowFromDescriptors(
+void adjustRowFromDescriptors(
     const std::array<RowDescriptor<Settings>, N>& descriptors,
     Settings& settings,
-    const int row,
+    const std::size_t rowIndex,
     const int delta)
-{ if (row < 0 || row >= static_cast<int>(descriptors.size())) return false; descriptors[static_cast<std::size_t>(row)].adjust(settings, delta); return true; }
+{
+    descriptors[rowIndex].adjust(settings, delta);
+}
 
 template <typename Settings, std::size_t N, typename DisabledFn>
 void appendRowsFromDescriptors(
@@ -242,7 +275,7 @@ constexpr std::array<RowDescriptor<SimulationSettings>, 8> kSimulationRows{{
     {
         "GRAVITY STRENGTH",
         RowKind::Choice,
-        [](const SimulationSettings& settings) { return formatSpeed(settings.gravityStrength / kDefaultGravityStrength); },
+        [](const SimulationSettings& settings) { return formatMultiplier(settings.gravityStrength / kDefaultGravityStrength); },
         nullptr,
         [](SimulationSettings& settings, int delta) { adjustChoice(kGravityStrengthChoices, settings.gravityStrength, delta); },
     },
@@ -307,7 +340,7 @@ constexpr std::array<RowDescriptor<CameraSettings>, 4> kCameraRows{{
     },
 }};
 
-constexpr std::array<RowDescriptor<InterfaceSettings>, 13> kInterfaceRows{{
+constexpr std::array<RowDescriptor<InterfaceSettings>, 10> kInterfaceRows{{
     {
         "UI SCALE",
         RowKind::Choice,
@@ -317,7 +350,9 @@ constexpr std::array<RowDescriptor<InterfaceSettings>, 13> kInterfaceRows{{
             settings.uiScaleIndex = std::clamp(settings.uiScaleIndex + delta, 0, static_cast<int>(kUiScaleChoices.size()) - 1);
         },
     },
-    {"SHOW HUD", RowKind::Toggle, [](const InterfaceSettings& s) { return formatToggle(s.showHud); }, [](const InterfaceSettings& s) { return s.showHud; }, [](InterfaceSettings& s, int) { s.showHud = !s.showHud; }},
+    {"SHOW SPEED", RowKind::Toggle, [](const InterfaceSettings& s) { return formatToggle(s.showSimulationSpeed); }, [](const InterfaceSettings& s) { return s.showSimulationSpeed; }, [](InterfaceSettings& s, int) { s.showSimulationSpeed = !s.showSimulationSpeed; }},
+    {"SHOW FPS", RowKind::Toggle, [](const InterfaceSettings& s) { return formatToggle(s.showFps); }, [](const InterfaceSettings& s) { return s.showFps; }, [](InterfaceSettings& s, int) { s.showFps = !s.showFps; }},
+    {"SHOW TIME", RowKind::Toggle, [](const InterfaceSettings& s) { return formatToggle(s.showElapsedTime); }, [](const InterfaceSettings& s) { return s.showElapsedTime; }, [](InterfaceSettings& s, int) { s.showElapsedTime = !s.showElapsedTime; }},
     {"SHOW MINIMAP", RowKind::Toggle, [](const InterfaceSettings& s) { return formatToggle(s.showMinimap); }, [](const InterfaceSettings& s) { return s.showMinimap; }, [](InterfaceSettings& s, int) { s.showMinimap = !s.showMinimap; }},
     {
         "MINIMAP ZOOM",
@@ -334,12 +369,17 @@ constexpr std::array<RowDescriptor<InterfaceSettings>, 13> kInterfaceRows{{
     {"SHOW COORDS", RowKind::Toggle, [](const InterfaceSettings& s) { return formatToggle(s.showCoordinates); }, [](const InterfaceSettings& s) { return s.showCoordinates; }, [](InterfaceSettings& s, int) { s.showCoordinates = !s.showCoordinates; }},
     {"CROSSHAIR", RowKind::Toggle, [](const InterfaceSettings& s) { return formatToggle(s.showCrosshair); }, [](const InterfaceSettings& s) { return s.showCrosshair; }, [](InterfaceSettings& s, int) { s.showCrosshair = !s.showCrosshair; }},
     {"OBJECT INFO", RowKind::Toggle, [](const InterfaceSettings& s) { return formatToggle(s.objectInfo); }, [](const InterfaceSettings& s) { return s.objectInfo; }, [](InterfaceSettings& s, int) { s.objectInfo = !s.objectInfo; }},
-    {"INFO MATERIAL", RowKind::Toggle, [](const InterfaceSettings& s) { return formatToggle(s.objectInfoMaterial); }, [](const InterfaceSettings& s) { return s.objectInfoMaterial; }, [](InterfaceSettings& s, int) { s.objectInfoMaterial = !s.objectInfoMaterial; }},
-    {"INFO VELOCITY", RowKind::Toggle, [](const InterfaceSettings& s) { return formatToggle(s.objectInfoVelocity); }, [](const InterfaceSettings& s) { return s.objectInfoVelocity; }, [](InterfaceSettings& s, int) { s.objectInfoVelocity = !s.objectInfoVelocity; }},
-    {"INFO MASS", RowKind::Toggle, [](const InterfaceSettings& s) { return formatToggle(s.objectInfoMass); }, [](const InterfaceSettings& s) { return s.objectInfoMass; }, [](InterfaceSettings& s, int) { s.objectInfoMass = !s.objectInfoMass; }},
-    {"INFO RADIUS", RowKind::Toggle, [](const InterfaceSettings& s) { return formatToggle(s.objectInfoRadius); }, [](const InterfaceSettings& s) { return s.objectInfoRadius; }, [](InterfaceSettings& s, int) { s.objectInfoRadius = !s.objectInfoRadius; }},
-    {"INFO ANGULAR", RowKind::Toggle, [](const InterfaceSettings& s) { return formatToggle(s.objectInfoAngularSpeed); }, [](const InterfaceSettings& s) { return s.objectInfoAngularSpeed; }, [](InterfaceSettings& s, int) { s.objectInfoAngularSpeed = !s.objectInfoAngularSpeed; }},
-    {"INFO TYPE", RowKind::Toggle, [](const InterfaceSettings& s) { return formatToggle(s.objectInfoBodyType); }, [](const InterfaceSettings& s) { return s.objectInfoBodyType; }, [](InterfaceSettings& s, int) { s.objectInfoBodyType = !s.objectInfoBodyType; }},
+    {
+        "DETAIL LEVEL",
+        RowKind::Choice,
+        [](const InterfaceSettings& settings) {
+            return std::string{kObjectInfoDetailChoices[static_cast<std::size_t>(objectInfoDetailIndex(settings))]};
+        },
+        nullptr,
+        [](InterfaceSettings& settings, int delta) {
+            applyObjectInfoDetailLevel(settings, objectInfoDetailIndex(settings) + delta);
+        },
+    },
 }};
 
 bool actionAlwaysVisible(SettingsPage, bool, const input::ControlBindings&) { return true; }
@@ -348,7 +388,7 @@ bool actionResetWorldVisible(const SettingsPage page, bool, const input::Control
 bool actionResetControlsVisible(const SettingsPage page, bool, const input::ControlBindings& controls) { return page == SettingsPage::Controls && controls != input::ControlBindings{}; }
 
 constexpr std::array<ActionDefinition, 6> kActionDefinitions{{
-    {ActionKind::ResetSettings, "R", ActionSection::Top, actionAlwaysVisible},
+    {ActionKind::ResetSettings, "", ActionSection::Top, actionAlwaysVisible},
     {ActionKind::Close, "X", ActionSection::Top, actionAlwaysVisible},
     {ActionKind::Exit, "EXIT TO HOME", ActionSection::Top, actionAlwaysVisible},
     {ActionKind::ResetWorld, "RESET WORLD", ActionSection::Bottom, actionResetWorldVisible},
@@ -434,6 +474,9 @@ void PauseMenu::normalizeSettings() {
         std::clamp(applied_.interface.minimapZoomIndex, 0, static_cast<int>(kMinimapZoomChoices.size()) - 1);
     applied_.interface.pathLengthIndex =
         std::clamp(applied_.interface.pathLengthIndex, 0, static_cast<int>(kPathLengthChoices.size()) - 1);
+    applied_.interface.pathColorIndex =
+        std::clamp(applied_.interface.pathColorIndex, 0, static_cast<int>(kPathColorChoices.size()) - 1);
+    applyObjectInfoDetailLevel(applied_.interface, objectInfoDetailIndex(applied_.interface));
     if (applied_.simulation.maxSimSpeed < applied_.simulation.minSimSpeed) {
         applied_.simulation.maxSimSpeed = applied_.simulation.minSimSpeed;
     }
@@ -511,8 +554,22 @@ void PauseMenu::loadSettings(const std::string& path) {
             if (parseInt(value, pathLength)) {
                 applied_.interface.pathLengthIndex = closestChoiceIndex(kPathLengthChoices, pathLength);
             }
-        } else if (key == "SHOW_HUD") {
-            parseBool(value, applied_.interface.showHud);
+        } else if (key == "PATH_COLOR_INDEX") {
+            parseInt(value, applied_.interface.pathColorIndex);
+        } else if (key == "PATH_COLOR") {
+            const std::string colorName = toUpperCopy(value);
+            for (std::size_t i = 0; i < kPathColorChoices.size(); ++i) {
+                if (colorName == kPathColorChoices[i]) {
+                    applied_.interface.pathColorIndex = static_cast<int>(i);
+                    break;
+                }
+            }
+        } else if (key == "SHOW_SIM_SPEED") {
+            parseBool(value, applied_.interface.showSimulationSpeed);
+        } else if (key == "SHOW_FPS") {
+            parseBool(value, applied_.interface.showFps);
+        } else if (key == "SHOW_ELAPSED_TIME") {
+            parseBool(value, applied_.interface.showElapsedTime);
         } else if (key == "SHOW_MINIMAP") {
             parseBool(value, applied_.interface.showMinimap);
         } else if (key == "SHOW_COORDINATES") {
@@ -521,6 +578,16 @@ void PauseMenu::loadSettings(const std::string& path) {
             parseBool(value, applied_.interface.showCrosshair);
         } else if (key == "DRAW_PATH") {
             parseBool(value, applied_.interface.drawPath);
+        } else if (key == "OBJECT_INFO_DETAIL_INDEX") {
+            int detailIndex = objectInfoDetailIndex(applied_.interface);
+            if (parseInt(value, detailIndex)) {
+                applyObjectInfoDetailLevel(applied_.interface, detailIndex);
+            }
+        } else if (key == "OBJECT_INFO_DETAIL_LEVEL") {
+            int detailIndex = objectInfoDetailIndex(applied_.interface);
+            if (parseInt(value, detailIndex)) {
+                applyObjectInfoDetailLevel(applied_.interface, detailIndex);
+            }
         } else if (key == "OBJECT_INFO") {
             parseBool(value, applied_.interface.objectInfo);
         } else if (key == "OBJECT_INFO_MATERIAL") {
@@ -573,18 +640,16 @@ void PauseMenu::saveSettings() const {
     out << "UI_SCALE_INDEX=" << applied_.interface.uiScaleIndex << '\n';
     out << "MINIMAP_ZOOM_INDEX=" << applied_.interface.minimapZoomIndex << '\n';
     out << "PATH_LENGTH_INDEX=" << applied_.interface.pathLengthIndex << '\n';
-    out << "SHOW_HUD=" << formatToggle(applied_.interface.showHud) << '\n';
+    out << "PATH_COLOR_INDEX=" << applied_.interface.pathColorIndex << '\n';
+    out << "SHOW_SIM_SPEED=" << formatToggle(applied_.interface.showSimulationSpeed) << '\n';
+    out << "SHOW_FPS=" << formatToggle(applied_.interface.showFps) << '\n';
+    out << "SHOW_ELAPSED_TIME=" << formatToggle(applied_.interface.showElapsedTime) << '\n';
     out << "SHOW_MINIMAP=" << formatToggle(applied_.interface.showMinimap) << '\n';
     out << "SHOW_COORDINATES=" << formatToggle(applied_.interface.showCoordinates) << '\n';
     out << "SHOW_CROSSHAIR=" << formatToggle(applied_.interface.showCrosshair) << '\n';
     out << "DRAW_PATH=" << formatToggle(applied_.interface.drawPath) << '\n';
     out << "OBJECT_INFO=" << formatToggle(applied_.interface.objectInfo) << '\n';
-    out << "OBJECT_INFO_MATERIAL=" << formatToggle(applied_.interface.objectInfoMaterial) << '\n';
-    out << "OBJECT_INFO_VELOCITY=" << formatToggle(applied_.interface.objectInfoVelocity) << '\n';
-    out << "OBJECT_INFO_MASS=" << formatToggle(applied_.interface.objectInfoMass) << '\n';
-    out << "OBJECT_INFO_RADIUS=" << formatToggle(applied_.interface.objectInfoRadius) << '\n';
-    out << "OBJECT_INFO_ANGULAR_SPEED=" << formatToggle(applied_.interface.objectInfoAngularSpeed) << '\n';
-    out << "OBJECT_INFO_BODY_TYPE=" << formatToggle(applied_.interface.objectInfoBodyType) << '\n';
+    out << "OBJECT_INFO_DETAIL_INDEX=" << objectInfoDetailIndex(applied_.interface) << '\n';
 }
 
 void PauseMenu::applyDisplaySettings(GLFWwindow* window, DisplaySettings& settings) {
@@ -640,7 +705,7 @@ void PauseMenu::applyCurrentDisplaySettings(GLFWwindow* window) {
 int PauseMenu::rowCount() const {
     switch (page_) {
         case SettingsPage::Display: return static_cast<int>(kDisplayRows.size());
-        case SettingsPage::Simulation: return static_cast<int>(kSimulationRows.size()) + 2;
+        case SettingsPage::Simulation: return static_cast<int>(kSimulationRows.size()) + 3;
         case SettingsPage::Camera: return static_cast<int>(kCameraRows.size());
         case SettingsPage::Interface: return static_cast<int>(kInterfaceRows.size());
         case SettingsPage::Controls: return static_cast<int>(input::rebindActions().size());
@@ -654,7 +719,8 @@ bool PauseMenu::pageDirty(const SettingsPage page) const {
         case SettingsPage::Simulation:
             return draft_.simulation != applied_.simulation ||
                 draft_.interface.drawPath != applied_.interface.drawPath ||
-                draft_.interface.pathLengthIndex != applied_.interface.pathLengthIndex;
+                draft_.interface.pathLengthIndex != applied_.interface.pathLengthIndex ||
+                draft_.interface.pathColorIndex != applied_.interface.pathColorIndex;
         case SettingsPage::Camera: return draft_.camera != applied_.camera;
         case SettingsPage::Interface: return !interfacePageSettingsEqual(draft_.interface, applied_.interface);
         case SettingsPage::Controls: return false;
@@ -664,16 +730,15 @@ bool PauseMenu::pageDirty(const SettingsPage page) const {
 
 bool PauseMenu::fieldDisabled(const int row) const {
     if (page_ == SettingsPage::Simulation) {
-        return row == static_cast<int>(kSimulationRows.size()) + 1 && !draft_.interface.drawPath;
+        return (row == static_cast<int>(kSimulationRows.size()) + 1 ||
+                row == static_cast<int>(kSimulationRows.size()) + 2) &&
+            !draft_.interface.drawPath;
     }
     if (page_ == SettingsPage::Interface) {
-        if ((row == 2 || row == 3 || row == 4) && !draft_.interface.showHud) {
+        if (row == kInterfaceRowMinimapZoom && !draft_.interface.showMinimap) {
             return true;
         }
-        if (row == 3 && !draft_.interface.showMinimap) {
-            return true;
-        }
-        if (row >= 7 && row <= 12 && !draft_.interface.objectInfo) {
+        if (row == kInterfaceRowDetailLevel && !draft_.interface.objectInfo) {
             return true;
         }
     }
@@ -682,19 +747,19 @@ bool PauseMenu::fieldDisabled(const int row) const {
 
 std::string PauseMenu::disabledReason(const int row) const {
     if (page_ == SettingsPage::Simulation) {
-        if (row == static_cast<int>(kSimulationRows.size()) + 1 && !draft_.interface.drawPath) {
+        if ((row == static_cast<int>(kSimulationRows.size()) + 1 ||
+             row == static_cast<int>(kSimulationRows.size()) + 2) &&
+            !draft_.interface.drawPath)
+        {
             return "ENABLE DRAW PATH FIRST";
         }
         return "";
     }
     if (page_ == SettingsPage::Interface) {
-        if ((row == 2 || row == 3 || row == 4) && !draft_.interface.showHud) {
-            return "ENABLE SHOW HUD FIRST";
-        }
-        if (row == 3 && !draft_.interface.showMinimap) {
+        if (row == kInterfaceRowMinimapZoom && !draft_.interface.showMinimap) {
             return "ENABLE SHOW MINIMAP FIRST";
         }
-        if (row >= 7 && row <= 12 && !draft_.interface.objectInfo) {
+        if (row == kInterfaceRowDetailLevel && !draft_.interface.objectInfo) {
             return "ENABLE OBJECT INFO FIRST";
         }
     }
@@ -890,7 +955,7 @@ void PauseMenu::resetControlsToDefaults(
 {
     controls = input::ControlBindings{};
     input::saveControlBindings(controls, controlsConfigPath);
-    statusMessage_ = "CONTROLS RESET";
+    statusMessage_.clear();
 }
 
 void PauseMenu::resetAllSettings(GLFWwindow* window) {
@@ -898,7 +963,7 @@ void PauseMenu::resetAllSettings(GLFWwindow* window) {
     normalizeSettings();
     applyDisplaySettings(window, applied_.display);
     saveSettings();
-    statusMessage_ = "SETTINGS RESET";
+    statusMessage_.clear();
 }
 
 void PauseMenu::confirmPopup(GLFWwindow* window, input::ControlBindings& controls, const std::string& controlsConfigPath) {
@@ -909,7 +974,7 @@ void PauseMenu::confirmPopup(GLFWwindow* window, input::ControlBindings& control
             return;
         case PopupKind::ResetWorld:
             resetWorldRequested_ = true;
-            statusMessage_ = "WORLD RESET";
+            statusMessage_.clear();
             closePopup();
             return;
         case PopupKind::ResetControls:
@@ -941,23 +1006,30 @@ void PauseMenu::adjustCurrentPageRow(const int delta) {
 
     switch (page_) {
         case SettingsPage::Display:
-            adjustRowFromDescriptors(kDisplayRows, draft_.display, selectedRow_, delta);
+            adjustRowFromDescriptors(kDisplayRows, draft_.display, static_cast<std::size_t>(selectedRow_), delta);
             break;
         case SettingsPage::Simulation:
             if (selectedRow_ < static_cast<int>(kSimulationRows.size())) {
-                adjustRowFromDescriptors(kSimulationRows, draft_.simulation, selectedRow_, delta);
+                adjustRowFromDescriptors(
+                    kSimulationRows,
+                    draft_.simulation,
+                    static_cast<std::size_t>(selectedRow_),
+                    delta);
             } else if (selectedRow_ == static_cast<int>(kSimulationRows.size())) {
                 draft_.interface.drawPath = !draft_.interface.drawPath;
             } else if (selectedRow_ == static_cast<int>(kSimulationRows.size()) + 1) {
                 draft_.interface.pathLengthIndex =
                     std::clamp(draft_.interface.pathLengthIndex + delta, 0, static_cast<int>(kPathLengthChoices.size()) - 1);
+            } else if (selectedRow_ == static_cast<int>(kSimulationRows.size()) + 2) {
+                draft_.interface.pathColorIndex =
+                    std::clamp(draft_.interface.pathColorIndex + delta, 0, static_cast<int>(kPathColorChoices.size()) - 1);
             }
             break;
         case SettingsPage::Camera:
-            adjustRowFromDescriptors(kCameraRows, draft_.camera, selectedRow_, delta);
+            adjustRowFromDescriptors(kCameraRows, draft_.camera, static_cast<std::size_t>(selectedRow_), delta);
             break;
         case SettingsPage::Interface:
-            adjustRowFromDescriptors(kInterfaceRows, draft_.interface, selectedRow_, delta);
+            adjustRowFromDescriptors(kInterfaceRows, draft_.interface, static_cast<std::size_t>(selectedRow_), delta);
             break;
         case SettingsPage::Controls:
             break;
@@ -974,7 +1046,10 @@ bool PauseMenu::selectedRowActsAsToggle() const {
         case SettingsPage::Simulation:
             return selectedRow_ == 2 || selectedRow_ == 4 || selectedRow_ == static_cast<int>(kSimulationRows.size());
         case SettingsPage::Camera: return selectedRow_ == 2;
-        case SettingsPage::Interface: return selectedRow_ >= 1 && selectedRow_ != 3;
+        case SettingsPage::Interface:
+            return selectedRow_ != kInterfaceRowUiScale &&
+                selectedRow_ != kInterfaceRowMinimapZoom &&
+                selectedRow_ != kInterfaceRowDetailLevel;
         case SettingsPage::Controls: return false;
     }
     return false;
@@ -1036,6 +1111,7 @@ void PauseMenu::applyCurrentPage(GLFWwindow* window) {
             applied_.simulation = draft_.simulation;
             applied_.interface.drawPath = draft_.interface.drawPath;
             applied_.interface.pathLengthIndex = draft_.interface.pathLengthIndex;
+            applied_.interface.pathColorIndex = draft_.interface.pathColorIndex;
             break;
         case SettingsPage::Camera:
             applied_.camera = draft_.camera;
@@ -1048,7 +1124,7 @@ void PauseMenu::applyCurrentPage(GLFWwindow* window) {
     }
 
     saveSettings();
-    statusMessage_ = "CHANGES APPLIED";
+    statusMessage_.clear();
 }
 
 void PauseMenu::activateFocused(
@@ -1097,7 +1173,7 @@ void PauseMenu::updateEscapeState(
         if (awaitingRebind_) {
             awaitingRebind_ = false;
             awaitingRebindAction_ = -1;
-            statusMessage_ = "REBIND CANCELED";
+            statusMessage_.clear();
             resumeRequested_ = false;
             escWasDown_ = escDown;
             return;
@@ -1160,7 +1236,7 @@ void PauseMenu::handlePressedKey(
         if (pressedKey == GLFW_KEY_ESCAPE) {
             awaitingRebind_ = false;
             awaitingRebindAction_ = -1;
-            statusMessage_ = "REBIND CANCELED";
+            statusMessage_.clear();
             return;
         }
         if (pressedKey != GLFW_KEY_UNKNOWN) {
@@ -1205,6 +1281,14 @@ void PauseMenu::handlePressedKey(
             return;
         case GLFW_KEY_ENTER:
         case GLFW_KEY_KP_ENTER:
+            if (popup_ == PopupKind::None &&
+                focusArea_ == FocusArea::Rows &&
+                page_ != SettingsPage::Controls &&
+                pageDirty(page_))
+            {
+                applyCurrentPage(window);
+                return;
+            }
             activateFocused(window, controls, controlsConfigPath);
             return;
         case GLFW_KEY_SPACE:
@@ -1341,9 +1425,6 @@ void PauseMenu::handlePointerInput(
         }
 
         triggerAction(actionKindFromId(action.id), window);
-        return;
-    }
-    if (!clickPressed && hoveredAction_ >= 0) {
         return;
     }
 
@@ -1502,6 +1583,15 @@ void PauseMenu::appendCurrentPageRows(MenuView& view, const input::ControlBindin
                 .disabled = fieldDisabled(static_cast<int>(kSimulationRows.size()) + 1),
                 .selected = focusArea_ == FocusArea::Rows &&
                     static_cast<int>(kSimulationRows.size()) + 1 == selectedRow_,
+                .boolValue = false,
+            });
+            view.rows.push_back(ViewRow{
+                .label = "PATH COLOR",
+                .value = kPathColorChoices[static_cast<std::size_t>(draft_.interface.pathColorIndex)],
+                .kind = RowKind::Choice,
+                .disabled = fieldDisabled(static_cast<int>(kSimulationRows.size()) + 2),
+                .selected = focusArea_ == FocusArea::Rows &&
+                    static_cast<int>(kSimulationRows.size()) + 2 == selectedRow_,
                 .boolValue = false,
             });
             return;

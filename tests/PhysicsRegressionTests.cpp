@@ -14,6 +14,8 @@
 
 void appendUiPauseMenuTests(std::vector<std::pair<std::string, std::function<void()>>>& tests);
 void appendMinimapTests(std::vector<std::pair<std::string, std::function<void()>>>& tests);
+void appendRenderMaterialTests(std::vector<std::pair<std::string, std::function<void()>>>& tests);
+void appendSceneLightingTests(std::vector<std::pair<std::string, std::function<void()>>>& tests);
 
 namespace {
     using sim::Body;
@@ -199,6 +201,8 @@ int main()
     };
     appendUiPauseMenuTests(tests);
     appendMinimapTests(tests);
+    appendRenderMaterialTests(tests);
+    appendSceneLightingTests(tests);
 
     int failures = 0;
     for (const auto& [name, test] : tests) {

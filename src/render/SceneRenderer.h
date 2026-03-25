@@ -4,6 +4,8 @@
 #include <glad/glad.h>
 #include <glm/glm.hpp>
 
+#include <array>
+#include <cstdint>
 #include <cstddef>
 #include <string_view>
 #include <span>
@@ -11,10 +13,11 @@
 
 #include "input/Camera.h"
 #include "sim/Vec3.h"
-#include "ui/OverlayRenderer.h"
 #include "ui/PauseMenu.h"
 
 namespace render_scene {
+
+inline constexpr std::size_t kMaxLocalLights = 4;
 
 struct FramebufferSize {
     int w = 0;
@@ -22,7 +25,10 @@ struct FramebufferSize {
 };
 
 struct SceneView {
+    glm::vec3 cameraPosition{0.0f, 0.0f, 0.0f};
     glm::vec3 forward{0.0f, 0.0f, -1.0f};
+    float nearPlane = 0.1f;
+    float farPlane = 1000.0f;
     glm::mat4 view{1.0f};
     glm::mat4 proj{1.0f};
     glm::mat4 viewProj{1.0f};
@@ -30,10 +36,20 @@ struct SceneView {
 
 struct InstanceBufferState {
     std::size_t capacity = 0;
+    std::uint64_t uploadedRevision = 0;
+};
+
+struct SceneInstanceData {
+    glm::mat4 model{1.0f};
+    glm::vec4 albedoRoughness{1.0f, 1.0f, 1.0f, 0.5f};
+    glm::vec4 metalnessParams{0.0f, 0.0f, 0.0f, 0.0f};
+    glm::vec4 emissiveColorStrength{0.0f, 0.0f, 0.0f, 0.0f};
+    glm::vec4 surfaceParams{0.0f, 0.0f, 0.0f, 0.0f};
 };
 
 struct PathBufferState {
     std::size_t capacity = 0;
+    std::uint64_t uploadedRevision = 0;
 };
 
 struct PathTrail {
@@ -48,6 +64,7 @@ struct BodySnapshot {
     float velocityMagnitude = 0.0f;
     float angularSpeedMagnitude = 0.0f;
     double invMass = 0.0;
+    std::uint64_t bodyId = 0;
     std::string_view materialName{};
 };
 
@@ -55,6 +72,31 @@ struct SceneSnapshot {
     std::vector<BodySnapshot> bodies;
     std::vector<glm::mat4> models;
     std::span<const PathTrail> pathTrails{};
+    std::uint64_t instanceRevision = 0;
+    std::uint64_t pathTrailsRevision = 0;
+};
+
+struct SceneLighting;
+
+struct ScenePassResources {
+    GLuint program = 0;
+    GLint uView = -1;
+    GLint uProj = -1;
+    GLint uCameraPos = -1;
+    GLint uLightDir = -1;
+    GLint uLightColor = -1;
+    GLint uSkyZenithColor = -1;
+    GLint uSkyHorizonColor = -1;
+    GLint uGroundColor = -1;
+    GLint uLightViewProj = -1;
+    GLint uShadowMap = -1;
+    GLint uShadowTexelSize = -1;
+    GLint uLocalLightCount = -1;
+    std::array<GLint, kMaxLocalLights> uLocalLightPosRange{};
+    std::array<GLint, kMaxLocalLights> uLocalLightColorIntensity{};
+    GLuint sphereVao = 0;
+    GLuint shadowTexture = 0;
+    GLsizei sphereIndexCount = 0;
 };
 
 bool raySphereHit(
@@ -78,19 +120,20 @@ SceneView buildSceneView(
     const ui::CameraSettings& cameraSettings,
     const FramebufferSize& framebufferSize);
 
-void drawBodies(
-    GLuint instanceVbo,
-    GLuint program,
-    GLint uView,
-    GLint uProj,
-    GLint uLightDir,
-    GLint uBaseColor,
-    GLint uAmbient,
-    GLuint sphereVao,
-    GLsizei sphereIndexCount,
-    const SceneView& sceneView,
-    InstanceBufferState& instanceBufferState,
+void buildSceneInstances(
+    std::vector<SceneInstanceData>& instanceScratch,
     const SceneSnapshot& snapshot);
+
+void uploadSceneInstances(
+    GLuint instanceVbo,
+    InstanceBufferState& instanceBufferState,
+    std::span<const SceneInstanceData> instances);
+
+void drawBodies(
+    const ScenePassResources& resources,
+    const SceneView& sceneView,
+    const SceneLighting& lighting,
+    std::span<const SceneInstanceData> instances);
 
 void drawPathTrails(
     GLuint pathVao,
@@ -104,6 +147,8 @@ void drawPathTrails(
     std::vector<GLint>& drawStarts,
     std::vector<GLsizei>& drawCounts,
     std::span<const PathTrail> pathTrails,
+    std::uint64_t pathTrailsRevision,
+    int pathColorIndex,
     bool simFrozen);
 
 } // namespace render_scene

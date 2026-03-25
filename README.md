@@ -60,3 +60,4 @@ If you get a DLL error on Windows when launching from terminal, make sure runtim
 ## Development Notes
 
 - Default world setup is currently code-driven in `src/sim/DefaultWorld.*`.
+- Rendering upgrade targets and constraints are documented in `docs/RenderingUpgradeSpec.md`.

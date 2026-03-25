@@ -17,14 +17,6 @@ public:
         bool operator==(const TargetHud&) const = default;
     };
 
-    struct ScreenLine {
-        float x0 = 0.0f;
-        float y0 = 0.0f;
-        float x1 = 0.0f;
-        float y1 = 0.0f;
-        bool operator==(const ScreenLine&) const = default;
-    };
-
     struct MinimapMarker {
         float xNorm = 0.0f;
         float yNorm = 0.0f;
@@ -55,13 +47,15 @@ public:
         int fbh,
         bool simFrozen,
         double simSpeed,
+        double simElapsed,
         double fps,
         const ui::MenuView& menu,
         const SpatialHud& spatialHud,
         const TargetHud& targetHud,
-        const std::vector<ScreenLine>& pathLines,
         float uiScale,
-        bool showHud,
+        bool showSimulationSpeed,
+        bool showFps,
+        bool showElapsedTime,
         bool showMinimap,
         bool showCoordinates,
         bool showCrosshair) const;
@@ -79,10 +73,8 @@ public:
         StatusText,
         FrozenIndicator,
         Crosshair,
-        PathLines,
         PopupBg,
         PopupFrame,
-        PopupAccent,
         PopupText,
     };
 
@@ -113,10 +105,8 @@ public:
         SceneNode statusText{SceneLayer::StatusText, BufferClass::Dynamic, {}};
         SceneNode frozenIndicator{SceneLayer::FrozenIndicator, BufferClass::Dynamic, {}};
         SceneNode crosshair{SceneLayer::Crosshair, BufferClass::Static, {}};
-        SceneNode pathLines{SceneLayer::PathLines, BufferClass::Dynamic, {}};
         SceneNode popupBg{SceneLayer::PopupBg, BufferClass::Dynamic, {}};
         SceneNode popupFrame{SceneLayer::PopupFrame, BufferClass::Dynamic, {}};
-        SceneNode popupAccent{SceneLayer::PopupAccent, BufferClass::Dynamic, {}};
         SceneNode popupText{SceneLayer::PopupText, BufferClass::Dynamic, {}};
     };
 
@@ -135,13 +125,21 @@ public:
 
     struct HudSectionState {
         GeometryKey geometry{};
-        bool simFrozen = false;
         double simSpeed = 1.0;
+        int elapsedSeconds = 0;
         double fps = 0.0;
         SpatialHud spatialHud{};
+        bool showSimulationSpeed = false;
+        bool showFps = false;
+        bool showElapsedTime = false;
         bool showMinimap = false;
         bool showCoordinates = false;
         bool operator==(const HudSectionState&) const = default;
+    };
+
+    struct FrozenIndicatorSectionState {
+        GeometryKey geometry{};
+        bool operator==(const FrozenIndicatorSectionState&) const = default;
     };
 
     struct CrosshairSectionState {
@@ -149,12 +147,6 @@ public:
         bool simFrozen = false;
         bool operator==(const CrosshairSectionState&) const = default;
     };
-
-    struct PathSectionState {
-        std::vector<ScreenLine> pathLines;
-        bool operator==(const PathSectionState&) const = default;
-    };
-
     struct PopupSectionState {
         GeometryKey geometry{};
         TargetHud targetHud{};
@@ -164,13 +156,13 @@ public:
     struct SceneCache {
         bool menuValid = false;
         bool hudValid = false;
+        bool frozenIndicatorValid = false;
         bool crosshairValid = false;
-        bool pathValid = false;
         bool popupValid = false;
         MenuSectionState menu{};
         HudSectionState hud{};
+        FrozenIndicatorSectionState frozenIndicator{};
         CrosshairSectionState crosshair{};
-        PathSectionState path{};
         PopupSectionState popup{};
     };
 
@@ -185,13 +177,15 @@ public:
         int fbh = 0;
         bool simFrozen = false;
         double simSpeed = 1.0;
+        double simElapsed = 0.0;
         double fps = 0.0;
         const ui::MenuView* menu = nullptr;
         const SpatialHud* spatialHud = nullptr;
         const TargetHud* targetHud = nullptr;
-        const std::vector<ScreenLine>* pathLines = nullptr;
         float uiScale = 1.0f;
-        bool showHud = false;
+        bool showSimulationSpeed = false;
+        bool showFps = false;
+        bool showElapsedTime = false;
         bool showMinimap = false;
         bool showCoordinates = false;
         bool showCrosshair = false;
@@ -201,9 +195,8 @@ public:
         int fbw = 0;
         int fbh = 0;
         bool menuVisible = false;
-        bool showHud = false;
+        bool showHudSection = false;
         bool showCrosshair = false;
-        bool showPathLines = false;
         bool showTargetPopup = false;
         bool showFrozenIndicator = false;
         bool frozenOverlay = false;

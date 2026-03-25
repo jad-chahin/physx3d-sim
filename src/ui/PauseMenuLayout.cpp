@@ -179,7 +179,7 @@ PauseMenuLayout buildPauseMenuLayout(
 
     const std::size_t resetIndex = findActionIndex(view, ActionKind::ResetSettings);
     if (resetIndex < view.actions.size()) {
-        const float resetWidth = measureMaxLinePx(view.actions[resetIndex].label, layout.tabsScalePx) + tabPadX * 2.0f;
+        const float resetWidth = tabHeight;
         layout.actionRects[resetIndex] = {
             layout.cardX0 + topInset,
             layout.cardY0 + topInset,

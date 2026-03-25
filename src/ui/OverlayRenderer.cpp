@@ -42,10 +42,28 @@ uniform vec4 uColor;
 void main() { FragColor = uColor; }
 )GLSL";
 
+constexpr std::array<float, 4> kMenuDimColor{0.02f, 0.03f, 0.04f, 0.44f};
+constexpr std::array<float, 4> kMenuDimFrozenColor{0.04f, 0.05f, 0.06f, 0.68f};
+constexpr std::array<float, 4> kPanelFillColor{0.06f, 0.06f, 0.07f, 0.88f};
+constexpr std::array<float, 4> kPanelFillMenuColor{0.06f, 0.06f, 0.07f, 0.58f};
+constexpr std::array<float, 4> kPanelFrameColor{0.33f, 0.31f, 0.27f, 0.92f};
+constexpr std::array<float, 4> kAccentFillColor{0.78f, 0.63f, 0.30f, 0.92f};
+constexpr std::array<float, 4> kAccentFrozenFillColor{0.84f, 0.76f, 0.54f, 0.92f};
+constexpr std::array<float, 4> kTextPrimaryColor{0.96f, 0.95f, 0.92f, 1.0f};
+constexpr std::array<float, 4> kTextMutedColor{0.76f, 0.73f, 0.68f, 0.98f};
+constexpr std::array<float, 4> kTextAccentColor{0.92f, 0.82f, 0.60f, 1.0f};
+constexpr std::array<float, 4> kTextWarningColor{0.94f, 0.55f, 0.38f, 1.0f};
+constexpr std::array<float, 4> kDisabledOverlayColor{0.04f, 0.04f, 0.05f, 0.60f};
+constexpr std::array<float, 4> kHudFrozenColor{0.92f, 0.86f, 0.72f, 1.0f};
+constexpr std::array<float, 4> kHudActiveColor{0.56f, 0.86f, 0.60f, 1.0f};
+constexpr std::array<float, 4> kPopupBgColor{0.07f, 0.07f, 0.08f, 1.0f};
+constexpr std::array<float, 4> kPopupFrameColor{0.36f, 0.34f, 0.30f, 0.98f};
+constexpr std::array<float, 4> kPopupTextColor{0.96f, 0.95f, 0.92f, 1.0f};
+
 void drawLayer(
     const GLuint vao,
     const GLuint buffer,
-    OverlayRenderer::SceneNode& node,
+    const OverlayRenderer::SceneNode& node,
     const GLint uColor,
     const std::array<float, 4>& color)
 {
@@ -86,29 +104,26 @@ struct Buffers {
     std::vector<float>& statusText;
     std::vector<float>& frozenIndicator;
     std::vector<float>& crosshair;
-    std::vector<float>& pathLines;
     std::vector<float>& popupBg;
     std::vector<float>& popupFrame;
-    std::vector<float>& popupAccent;
     std::vector<float>& popupText;
 };
 
 void drawMenu(const ui::MenuView& menu, const Geometry& geometry, const Buffers& buffers);
 void drawHud(
     const Geometry& geometry,
-    bool simFrozen,
     double simSpeed,
+    double simElapsed,
     double fps,
     const OverlayRenderer::SpatialHud& spatialHud,
+    bool showSimulationSpeed,
+    bool showFps,
+    bool showElapsedTime,
     bool showMinimap,
     bool showCoordinates,
     const Buffers& buffers);
 void drawFrozenIndicator(const Geometry& geometry, const Buffers& buffers);
-void drawCrosshair(const Geometry& geometry, bool simFrozen, const Buffers& buffers);
-void drawPathLines(
-    const Geometry& geometry,
-    const std::vector<OverlayRenderer::ScreenLine>& pathLines,
-    const Buffers& buffers);
+void drawCrosshair(const Geometry& geometry, const Buffers& buffers);
 void drawTargetPopup(
     const OverlayRenderer::TargetHud& targetHud,
     const Geometry& geometry,
@@ -122,6 +137,17 @@ void resetNode(OverlayRenderer::SceneNode& node, const std::size_t reserveHint) 
     if (node.geometry.capacity() < reserveHint) {
         node.geometry.reserve(reserveHint);
     }
+}
+
+void clearNodeGeometry(OverlayRenderer::SceneNode& node)
+{
+    if (node.geometry.empty() && node.vertexCount == 0) {
+        return;
+    }
+    node.geometry.clear();
+    node.uploadDirty = true;
+    node.vertexOffset = 0;
+    node.vertexCount = 0;
 }
 
 template <typename Fn>
@@ -138,10 +164,8 @@ void forEachSceneNode(OverlayRenderer::RetainedScene& scene, Fn&& fn) {
     fn(scene.statusText);
     fn(scene.frozenIndicator);
     fn(scene.crosshair);
-    fn(scene.pathLines);
     fn(scene.popupBg);
     fn(scene.popupFrame);
-    fn(scene.popupAccent);
     fn(scene.popupText);
 }
 
@@ -159,10 +183,8 @@ void forEachSceneNode(const OverlayRenderer::RetainedScene& scene, Fn&& fn) {
     fn(scene.statusText);
     fn(scene.frozenIndicator);
     fn(scene.crosshair);
-    fn(scene.pathLines);
     fn(scene.popupBg);
     fn(scene.popupFrame);
-    fn(scene.popupAccent);
     fn(scene.popupText);
 }
 
@@ -239,7 +261,6 @@ void resetMenuSection(OverlayRenderer::RetainedScene& scene) {
     resetNode(scene.disabledOverlay, 2400);
     resetNode(scene.popupBg, 600);
     resetNode(scene.popupFrame, 600);
-    resetNode(scene.popupAccent, 600);
     resetNode(scene.popupText, 1200);
     scene.statusText.geometry.clear();
     scene.statusText.uploadDirty = true;
@@ -248,20 +269,10 @@ void resetMenuSection(OverlayRenderer::RetainedScene& scene) {
 void resetHudSection(OverlayRenderer::RetainedScene& scene) {
     resetNode(scene.panelFill, 600);
     resetNode(scene.panelFrame, 600);
-    resetNode(scene.accentFill, 600);
     resetNode(scene.textPrimary, 3000);
     resetNode(scene.textMuted, 3000);
     resetNode(scene.statusText, 2000);
-    scene.screenDim.geometry.clear();
-    scene.screenDim.uploadDirty = true;
-    scene.textAccent.geometry.clear();
-    scene.textAccent.uploadDirty = true;
-    scene.textWarning.geometry.clear();
-    scene.textWarning.uploadDirty = true;
-    scene.disabledOverlay.geometry.clear();
-    scene.disabledOverlay.uploadDirty = true;
-    scene.frozenIndicator.geometry.clear();
-    scene.frozenIndicator.uploadDirty = true;
+    clearNodeGeometry(scene.screenDim);
 }
 
 void resetFrozenIndicatorSection(OverlayRenderer::RetainedScene& scene) {
@@ -272,17 +283,9 @@ void resetCrosshairSection(OverlayRenderer::RetainedScene& scene) {
     resetNode(scene.crosshair, 24);
 }
 
-void resetPathSection(
-    OverlayRenderer::RetainedScene& scene,
-    const std::size_t lineCount)
-{
-    resetNode(scene.pathLines, std::max(scene.pathLines.geometry.capacity(), lineCount * 12));
-}
-
 void resetTargetPopupSection(OverlayRenderer::RetainedScene& scene) {
     resetNode(scene.popupBg, 600);
     resetNode(scene.popupFrame, 600);
-    resetNode(scene.popupAccent, 600);
     resetNode(scene.popupText, 1200);
 }
 
@@ -331,44 +334,49 @@ void OverlayRenderer::draw(
     int fbh,
     bool simFrozen,
     double simSpeed,
+    double simElapsed,
     double fps,
     const ui::MenuView& menu,
     const SpatialHud& spatialHud,
     const TargetHud& targetHud,
-    const std::vector<ScreenLine>& pathLines,
     float uiScale,
-    bool showHud,
+    bool showSimulationSpeed,
+    bool showFps,
+    bool showElapsedTime,
     bool showMinimap,
     bool showCoordinates,
     bool showCrosshair) const
 {
+    const bool showHudSection =
+        showSimulationSpeed || showFps || showElapsedTime || showMinimap || showCoordinates;
     const FrameInput input{
         fbw,
         fbh,
         simFrozen,
         simSpeed,
+        simElapsed,
         fps,
         &menu,
         &spatialHud,
         &targetHud,
-        &pathLines,
         uiScale,
-        showHud,
+        showSimulationSpeed,
+        showFps,
+        showElapsedTime,
         showMinimap,
         showCoordinates,
         showCrosshair,
     };
-    const RenderPassState renderState{
-        fbw,
-        fbh,
-        menu.visible,
-        showHud,
-        showCrosshair,
-        !menu.visible && !pathLines.empty(),
-        !menu.visible && targetHud.visible && !targetHud.lines.empty(),
-        simFrozen && !menu.visible,
-        simFrozen,
-    };
+    RenderPassState renderState{};
+    renderState.fbw = fbw;
+    renderState.fbh = fbh;
+    renderState.menuVisible = menu.visible;
+    renderState.showHudSection = showHudSection;
+    renderState.showCrosshair = showCrosshair;
+    renderState.showTargetPopup = !menu.visible && targetHud.visible && !targetHud.lines.empty();
+    renderState.showFrozenIndicator = simFrozen && !menu.visible;
+    renderState.frozenOverlay = simFrozen;
+    renderState.simFrozen = simFrozen;
 
     updateCachedLayout(input);
     uploadBatches();
@@ -395,16 +403,14 @@ void OverlayRenderer::updateCachedLayout(const FrameInput& input) const {
         retainedScene_.statusText.geometry,
         retainedScene_.frozenIndicator.geometry,
         retainedScene_.crosshair.geometry,
-        retainedScene_.pathLines.geometry,
         retainedScene_.popupBg.geometry,
         retainedScene_.popupFrame.geometry,
-        retainedScene_.popupAccent.geometry,
         retainedScene_.popupText.geometry,
     };
 
     if (input.menu->visible) {
         const MenuSectionState nextMenuState{geometryKey, *input.menu};
-        if (!sceneCache_.menuValid || !(sceneCache_.menu == nextMenuState)) {
+        if (!sceneCache_.menuValid || sceneCache_.menu != nextMenuState) {
             overlay_renderer::resetMenuSection(retainedScene_);
             overlay_renderer::drawMenu(*input.menu, geometry, buffers);
             overlay_renderer::markBatchDirty(staticBuffer_, dynamicBuffer_, BufferClass::Static);
@@ -415,26 +421,35 @@ void OverlayRenderer::updateCachedLayout(const FrameInput& input) const {
             sceneCache_.popupValid = false;
         }
     } else {
-        if (input.showHud) {
+        const bool showHudSection =
+            input.showSimulationSpeed || input.showFps ||
+            input.showElapsedTime || input.showMinimap || input.showCoordinates;
+        if (showHudSection) {
             OverlayRenderer::SpatialHud cachedHudState = *input.spatialHud;
             cachedHudState.lookPitch = 0.0f;
             const HudSectionState nextHudState{
                 geometryKey,
-                input.simFrozen,
-                input.simSpeed,
-                input.fps,
+                input.showSimulationSpeed ? input.simSpeed : 0.0,
+                input.showElapsedTime ? static_cast<int>(std::floor(std::max(0.0, input.simElapsed))) : 0,
+                input.showFps ? input.fps : 0.0,
                 cachedHudState,
+                input.showSimulationSpeed,
+                input.showFps,
+                input.showElapsedTime,
                 input.showMinimap,
                 input.showCoordinates,
             };
-            if (!sceneCache_.hudValid || !(sceneCache_.hud == nextHudState)) {
+            if (!sceneCache_.hudValid || sceneCache_.hud != nextHudState) {
                 overlay_renderer::resetHudSection(retainedScene_);
                 overlay_renderer::drawHud(
                     geometry,
-                    input.simFrozen,
                     input.simSpeed,
+                    input.simElapsed,
                     input.fps,
                     *input.spatialHud,
+                    input.showSimulationSpeed,
+                    input.showFps,
+                    input.showElapsedTime,
                     input.showMinimap,
                     input.showCoordinates,
                     buffers);
@@ -444,39 +459,49 @@ void OverlayRenderer::updateCachedLayout(const FrameInput& input) const {
                 sceneCache_.hudValid = true;
                 sceneCache_.menuValid = false;
             }
+        } else if (sceneCache_.hudValid ||
+            !retainedScene_.panelFill.geometry.empty() ||
+            !retainedScene_.panelFrame.geometry.empty() ||
+            !retainedScene_.textPrimary.geometry.empty() ||
+            !retainedScene_.textMuted.geometry.empty() ||
+            !retainedScene_.statusText.geometry.empty())
+        {
+            overlay_renderer::resetHudSection(retainedScene_);
+            overlay_renderer::markBatchDirty(staticBuffer_, dynamicBuffer_, BufferClass::Static);
+            overlay_renderer::markBatchDirty(staticBuffer_, dynamicBuffer_, BufferClass::Dynamic);
+            sceneCache_.hudValid = false;
         }
         if (input.simFrozen) {
-            overlay_renderer::resetFrozenIndicatorSection(retainedScene_);
-            overlay_renderer::drawFrozenIndicator(geometry, buffers);
+            const FrozenIndicatorSectionState nextFrozenIndicatorState{geometryKey};
+            if (!sceneCache_.frozenIndicatorValid || sceneCache_.frozenIndicator != nextFrozenIndicatorState) {
+                overlay_renderer::resetFrozenIndicatorSection(retainedScene_);
+                overlay_renderer::drawFrozenIndicator(geometry, buffers);
+                overlay_renderer::markBatchDirty(staticBuffer_, dynamicBuffer_, BufferClass::Dynamic);
+                sceneCache_.frozenIndicator = nextFrozenIndicatorState;
+                sceneCache_.frozenIndicatorValid = true;
+            }
+        } else if (sceneCache_.frozenIndicatorValid || !retainedScene_.frozenIndicator.geometry.empty()) {
+            overlay_renderer::clearNodeGeometry(retainedScene_.frozenIndicator);
             overlay_renderer::markBatchDirty(staticBuffer_, dynamicBuffer_, BufferClass::Dynamic);
-        } else if (!retainedScene_.frozenIndicator.geometry.empty()) {
-            retainedScene_.frozenIndicator.geometry.clear();
-            retainedScene_.frozenIndicator.uploadDirty = true;
-            overlay_renderer::markBatchDirty(staticBuffer_, dynamicBuffer_, BufferClass::Dynamic);
+            sceneCache_.frozenIndicatorValid = false;
         }
         if (input.showCrosshair) {
             const CrosshairSectionState nextCrosshairState{geometryKey, input.simFrozen};
-            if (!sceneCache_.crosshairValid || !(sceneCache_.crosshair == nextCrosshairState)) {
+            if (!sceneCache_.crosshairValid || sceneCache_.crosshair != nextCrosshairState) {
                 overlay_renderer::resetCrosshairSection(retainedScene_);
-                overlay_renderer::drawCrosshair(geometry, input.simFrozen, buffers);
+                overlay_renderer::drawCrosshair(geometry, buffers);
                 overlay_renderer::markBatchDirty(staticBuffer_, dynamicBuffer_, BufferClass::Static);
                 sceneCache_.crosshair = nextCrosshairState;
                 sceneCache_.crosshairValid = true;
             }
-        }
-        if (!input.pathLines->empty()) {
-            const PathSectionState nextPathState{*input.pathLines};
-            if (!sceneCache_.pathValid || !(sceneCache_.path == nextPathState)) {
-                overlay_renderer::resetPathSection(retainedScene_, input.pathLines->size());
-                overlay_renderer::drawPathLines(geometry, *input.pathLines, buffers);
-                overlay_renderer::markBatchDirty(staticBuffer_, dynamicBuffer_, BufferClass::Dynamic);
-                sceneCache_.path = nextPathState;
-                sceneCache_.pathValid = true;
-            }
+        } else if (sceneCache_.crosshairValid || !retainedScene_.crosshair.geometry.empty()) {
+            overlay_renderer::clearNodeGeometry(retainedScene_.crosshair);
+            overlay_renderer::markBatchDirty(staticBuffer_, dynamicBuffer_, BufferClass::Static);
+            sceneCache_.crosshairValid = false;
         }
         if (input.targetHud->visible && !input.targetHud->lines.empty()) {
             const PopupSectionState nextPopupState{geometryKey, *input.targetHud};
-            if (!sceneCache_.popupValid || !(sceneCache_.popup == nextPopupState)) {
+            if (!sceneCache_.popupValid || sceneCache_.popup != nextPopupState) {
                 overlay_renderer::resetTargetPopupSection(retainedScene_);
                 overlay_renderer::drawTargetPopup(*input.targetHud, geometry, buffers);
                 overlay_renderer::markBatchDirty(staticBuffer_, dynamicBuffer_, BufferClass::Dynamic);
@@ -484,6 +509,16 @@ void OverlayRenderer::updateCachedLayout(const FrameInput& input) const {
                 sceneCache_.popupValid = true;
                 sceneCache_.menuValid = false;
             }
+        } else if (sceneCache_.popupValid ||
+            !retainedScene_.popupBg.geometry.empty() ||
+            !retainedScene_.popupFrame.geometry.empty() ||
+            !retainedScene_.popupText.geometry.empty())
+        {
+            overlay_renderer::clearNodeGeometry(retainedScene_.popupBg);
+            overlay_renderer::clearNodeGeometry(retainedScene_.popupFrame);
+            overlay_renderer::clearNodeGeometry(retainedScene_.popupText);
+            overlay_renderer::markBatchDirty(staticBuffer_, dynamicBuffer_, BufferClass::Dynamic);
+            sceneCache_.popupValid = false;
         }
     }
 }
@@ -519,68 +554,38 @@ void OverlayRenderer::renderCachedLayout(const RenderPassState& renderState) con
             staticBuffer_.buffer,
             retainedScene_.screenDim,
             uColor_,
-            renderState.frozenOverlay
-                ? std::array<float, 4>{0.05f, 0.09f, 0.12f, 0.68f}
-                : std::array<float, 4>{0.01f, 0.03f, 0.05f, 0.42f});
-        drawLayer(vao_, staticBuffer_.buffer, retainedScene_.panelFill, uColor_, {0.03f, 0.05f, 0.07f, 0.56f});
-        drawLayer(vao_, staticBuffer_.buffer, retainedScene_.panelFrame, uColor_, {0.18f, 0.24f, 0.30f, 0.78f});
+            renderState.frozenOverlay ? kMenuDimFrozenColor : kMenuDimColor);
+        drawLayer(vao_, staticBuffer_.buffer, retainedScene_.panelFill, uColor_, kPanelFillMenuColor);
+        drawLayer(vao_, staticBuffer_.buffer, retainedScene_.panelFrame, uColor_, kPanelFrameColor);
         drawLayer(
             vao_,
             staticBuffer_.buffer,
             retainedScene_.accentFill,
             uColor_,
-            renderState.frozenOverlay
-                ? std::array<float, 4>{0.58f, 0.83f, 0.92f, 0.88f}
-                : std::array<float, 4>{0.23f, 0.70f, 0.92f, 0.72f});
-        drawLayer(vao_, dynamicBuffer_.buffer, retainedScene_.textPrimary, uColor_, {1.0f, 1.0f, 1.0f, 1.0f});
-        drawLayer(vao_, staticBuffer_.buffer, retainedScene_.textMuted, uColor_, {0.74f, 0.80f, 0.86f, 0.98f});
-        drawLayer(vao_, staticBuffer_.buffer, retainedScene_.textAccent, uColor_, {0.37f, 0.81f, 0.97f, 1.0f});
-        drawLayer(vao_, staticBuffer_.buffer, retainedScene_.textWarning, uColor_, {1.0f, 0.62f, 0.31f, 1.0f});
-        drawLayer(vao_, staticBuffer_.buffer, retainedScene_.disabledOverlay, uColor_, {0.05f, 0.06f, 0.08f, 0.58f});
-        drawLayer(vao_, dynamicBuffer_.buffer, retainedScene_.popupBg, uColor_, {0.05f, 0.07f, 0.10f, 1.0f});
-        drawLayer(vao_, dynamicBuffer_.buffer, retainedScene_.popupFrame, uColor_, {0.18f, 0.24f, 0.30f, 0.98f});
-        drawLayer(vao_, dynamicBuffer_.buffer, retainedScene_.popupAccent, uColor_, {1.0f, 0.62f, 0.31f, 1.0f});
-        drawLayer(vao_, dynamicBuffer_.buffer, retainedScene_.popupText, uColor_, {0.95f, 0.97f, 1.0f, 1.0f});
+            renderState.frozenOverlay ? kAccentFrozenFillColor : kAccentFillColor);
+        drawLayer(vao_, dynamicBuffer_.buffer, retainedScene_.textPrimary, uColor_, kTextPrimaryColor);
+        drawLayer(vao_, staticBuffer_.buffer, retainedScene_.textMuted, uColor_, kTextMutedColor);
+        drawLayer(vao_, staticBuffer_.buffer, retainedScene_.textAccent, uColor_, kTextAccentColor);
+        drawLayer(vao_, staticBuffer_.buffer, retainedScene_.textWarning, uColor_, kTextWarningColor);
+        drawLayer(vao_, staticBuffer_.buffer, retainedScene_.disabledOverlay, uColor_, kDisabledOverlayColor);
+        drawLayer(vao_, dynamicBuffer_.buffer, retainedScene_.popupBg, uColor_, kPopupBgColor);
+        drawLayer(vao_, dynamicBuffer_.buffer, retainedScene_.popupFrame, uColor_, kPopupFrameColor);
+        drawLayer(vao_, dynamicBuffer_.buffer, retainedScene_.popupText, uColor_, kPopupTextColor);
     } else {
-        if (renderState.showHud) {
-            drawLayer(vao_, staticBuffer_.buffer, retainedScene_.panelFill, uColor_, {0.05f, 0.07f, 0.10f, 0.90f});
-            drawLayer(vao_, staticBuffer_.buffer, retainedScene_.panelFrame, uColor_, {0.18f, 0.24f, 0.30f, 0.98f});
-            drawLayer(
-                vao_,
-                staticBuffer_.buffer,
-                retainedScene_.accentFill,
-                uColor_,
-                renderState.frozenOverlay
-                    ? std::array<float, 4>{0.58f, 0.83f, 0.92f, 0.88f}
-                    : std::array<float, 4>{0.23f, 0.70f, 0.92f, 0.95f});
-            drawLayer(vao_, dynamicBuffer_.buffer, retainedScene_.textPrimary, uColor_, {1.0f, 1.0f, 1.0f, 1.0f});
-            drawLayer(vao_, staticBuffer_.buffer, retainedScene_.textMuted, uColor_, {0.74f, 0.80f, 0.86f, 0.98f});
+        if (renderState.showHudSection) {
+            drawLayer(vao_, staticBuffer_.buffer, retainedScene_.panelFill, uColor_, kPanelFillColor);
+            drawLayer(vao_, staticBuffer_.buffer, retainedScene_.panelFrame, uColor_, kPanelFrameColor);
+            drawLayer(vao_, dynamicBuffer_.buffer, retainedScene_.textPrimary, uColor_, kTextPrimaryColor);
+            drawLayer(vao_, staticBuffer_.buffer, retainedScene_.textMuted, uColor_, kTextMutedColor);
             drawLayer(
                 vao_,
                 dynamicBuffer_.buffer,
                 retainedScene_.statusText,
                 uColor_,
-                renderState.simFrozen
-                    ? std::array<float, 4>{0.74f, 0.91f, 1.0f, 1.0f}
-                    : std::array<float, 4>{0.48f, 0.88f, 0.54f, 1.0f});
+                renderState.simFrozen ? kHudFrozenColor : kHudActiveColor);
         }
         if (renderState.showFrozenIndicator) {
-            drawLayer(
-                vao_,
-                dynamicBuffer_.buffer,
-                retainedScene_.frozenIndicator,
-                uColor_,
-                {0.74f, 0.91f, 1.0f, 1.0f});
-        }
-        if (renderState.showPathLines) {
-            drawLayer(
-                vao_,
-                dynamicBuffer_.buffer,
-                retainedScene_.pathLines,
-                uColor_,
-                renderState.frozenOverlay
-                    ? std::array<float, 4>{0.70f, 0.90f, 1.0f, 0.52f}
-                    : std::array<float, 4>{0.37f, 0.81f, 0.97f, 0.72f});
+            drawLayer(vao_, dynamicBuffer_.buffer, retainedScene_.frozenIndicator, uColor_, kHudFrozenColor);
         }
         if (renderState.showCrosshair) {
             drawLayer(
@@ -593,10 +598,9 @@ void OverlayRenderer::renderCachedLayout(const RenderPassState& renderState) con
                     : std::array<float, 4>{0.32f, 0.85f, 0.95f, 1.0f});
         }
         if (renderState.showTargetPopup) {
-            drawLayer(vao_, dynamicBuffer_.buffer, retainedScene_.popupBg, uColor_, {0.05f, 0.07f, 0.10f, 1.0f});
-            drawLayer(vao_, dynamicBuffer_.buffer, retainedScene_.popupFrame, uColor_, {0.18f, 0.24f, 0.30f, 0.98f});
-            drawLayer(vao_, dynamicBuffer_.buffer, retainedScene_.popupAccent, uColor_, {1.0f, 0.62f, 0.31f, 1.0f});
-            drawLayer(vao_, dynamicBuffer_.buffer, retainedScene_.popupText, uColor_, {0.95f, 0.97f, 1.0f, 1.0f});
+            drawLayer(vao_, dynamicBuffer_.buffer, retainedScene_.popupBg, uColor_, kPopupBgColor);
+            drawLayer(vao_, dynamicBuffer_.buffer, retainedScene_.popupFrame, uColor_, kPopupFrameColor);
+            drawLayer(vao_, dynamicBuffer_.buffer, retainedScene_.popupText, uColor_, kPopupTextColor);
         }
     }
 
@@ -633,8 +637,8 @@ void pushDiscPx(
     if (radius <= 0.0f || segments < 3) {
         return;
     }
-    constexpr float kTau = 6.28318530717958647692f;
     for (int i = 0; i < segments; ++i) {
+        constexpr float kTau = 6.28318530717958647692f;
         const float a0 = kTau * static_cast<float>(i) / static_cast<float>(segments);
         const float a1 = kTau * static_cast<float>(i + 1) / static_cast<float>(segments);
         pushTrianglePx(
@@ -646,6 +650,59 @@ void pushDiscPx(
             cx + std::cos(a1) * radius,
             cy + std::sin(a1) * radius);
     }
+}
+
+const ButtonPalette& buttonPaletteForState(
+    const ButtonStyle& style,
+    const bool hovered,
+    const bool selected)
+{
+    return selected ? style.selected : (hovered ? style.hover : style.normal);
+}
+
+void drawResetIconPx(
+    std::vector<float>& out,
+    const ui::pause_menu_layout::Rect& rect)
+{
+    const float width = rect.x1 - rect.x0;
+    const float height = rect.y1 - rect.y0;
+    const float cx = 0.5f * (rect.x0 + rect.x1);
+    const float cy = 0.5f * (rect.y0 + rect.y1);
+    const float radius = std::min(width, height) * 0.24f;
+    const float thickness = std::max(1.4f, std::min(width, height) * 0.085f);
+    constexpr int segments = 12;
+    constexpr float kPi = 3.14159265359f;
+    constexpr float startAngle = 0.55f * kPi;
+    constexpr float endAngle = 2.08f * kPi;
+    float prevX = cx + std::cos(startAngle) * radius;
+    float prevY = cy + std::sin(startAngle) * radius;
+    for (int i = 1; i <= segments; ++i) {
+        const float t = static_cast<float>(i) / static_cast<float>(segments);
+        const float angle = startAngle + (endAngle - startAngle) * t;
+        const float x = cx + std::cos(angle) * radius;
+        const float y = cy + std::sin(angle) * radius;
+        pushThickLinePx(out, prevX, prevY, x, y, thickness);
+        prevX = x;
+        prevY = y;
+    }
+
+    constexpr float headAngle = endAngle;
+    const float tipX = cx + std::cos(headAngle) * radius;
+    const float tipY = cy + std::sin(headAngle) * radius;
+    const float tangentX = -std::sin(headAngle);
+    const float tangentY = std::cos(headAngle);
+    const float normalX = std::cos(headAngle);
+    const float normalY = std::sin(headAngle);
+    const float headLength = radius * 0.72f;
+    const float headWidth = radius * 0.58f;
+    pushTrianglePx(
+        out,
+        tipX,
+        tipY,
+        tipX - tangentX * headLength + normalX * headWidth * 0.5f,
+        tipY - tangentY * headLength + normalY * headWidth * 0.5f,
+        tipX - tangentX * headLength - normalX * headWidth * 0.5f,
+        tipY - tangentY * headLength - normalY * headWidth * 0.5f);
 }
 
 void drawActionButtons(
@@ -662,15 +719,11 @@ void drawActionButtons(
         if (action.placement != placement) {
             continue;
         }
-        drawButtonPx(
-            style,
-            layout.actionRect(i),
-            padX,
-            padY,
-            textScalePx,
-            action.label,
-            action.hovered,
-            action.selected);
+        const auto& rect = layout.actionRect(i);
+        drawButtonPx(style, rect, padX, padY, textScalePx, action.label, action.hovered, action.selected);
+        if (action.id == static_cast<int>(ui::ActionKind::ResetSettings)) {
+            drawResetIconPx(buttonPaletteForState(style, action.hovered, action.selected).text, rect);
+        }
     }
 }
 
@@ -698,7 +751,6 @@ void drawMenu(
     const float cardW = cardX1 - cardX0;
     pushQuadPx(buffers.panelFill, cardX0, cardY0, cardX1, cardY1);
     pushFramePx(buffers.panelFrame, cardX0, cardY0, cardX1, cardY1, 2.0f);
-    pushQuadPx(buffers.accentFill, cardX0, cardY0, cardX1, cardY0 + 5.0f);
 
     const float centerX = w * 0.5f;
     const float infoWidth = cardW - 72.0f;
@@ -767,7 +819,6 @@ void drawMenu(
 
     pushQuadPx(buffers.panelFill, l.sectionX0, l.settingsY0, l.sectionX1, l.settingsY1);
     pushFramePx(buffers.panelFrame, l.sectionX0, l.settingsY0, l.sectionX1, l.settingsY1, 1.5f);
-    pushQuadPx(buffers.accentFill, l.sectionX0, l.settingsY0, l.sectionX1, l.settingsY0 + 3.0f);
     const std::string sectionTitle = menu.sectionTitle.empty() ? "SETTINGS" : menu.sectionTitle;
     appendTextPx(
         buffers.textAccent,
@@ -855,7 +906,7 @@ void drawMenu(
         const float buttonY1 =
             lineY + (static_cast<float>(kFontH) + 3.5f) * l.rowScalePx + 2.0f * menuScale;
         const auto drawInlineButton =
-            [&](const float x0, const float x1, const std::string& text, const bool active, const bool warning) {
+            [&](const float x0, const float x1, const std::string& text, const bool active) {
                 if (active && !disabled && !selected) {
                     pushQuadPx(buffers.panelFill, x0, buttonY0, x1, buttonY1);
                 }
@@ -870,8 +921,7 @@ void drawMenu(
                 }
                 appendTextPx(
                     disabled ? buffers.textMuted
-                             : (active ? buffers.textPrimary
-                                       : (warning ? buffers.textWarning : buffers.textMuted)),
+                             : (active ? buffers.textPrimary : buffers.textMuted),
                     x0 + (x1 - x0 - measureMaxLinePx(text, valueScalePx)) * 0.5f,
                     lineY + 0.3f * menuScale,
                     valueScalePx,
@@ -909,15 +959,9 @@ void drawMenu(
                 break;
             }
             case ui::RowKind::Choice:
-                if (disabled) {
-                    drawInlineButton(widgets.leftArrow.x0, widgets.leftArrow.x1, "<", false, false);
-                    drawInlineButton(widgets.rightArrow.x0, widgets.rightArrow.x1, ">", false, false);
-                    drawInlineButton(widgets.value.x0, widgets.value.x1, line.value, false, false);
-                } else {
-                    drawInlineButton(widgets.leftArrow.x0, widgets.leftArrow.x1, "<", false, false);
-                    drawInlineButton(widgets.rightArrow.x0, widgets.rightArrow.x1, ">", false, false);
-                    drawInlineButton(widgets.value.x0, widgets.value.x1, line.value, false, false);
-                }
+                drawInlineButton(widgets.leftArrow.x0, widgets.leftArrow.x1, "<", false);
+                drawInlineButton(widgets.rightArrow.x0, widgets.rightArrow.x1, ">", false);
+                drawInlineButton(widgets.value.x0, widgets.value.x1, line.value, false);
                 break;
             case ui::RowKind::Rebind:
             case ui::RowKind::Header:
@@ -964,7 +1008,6 @@ void drawMenu(
 
     pushQuadPx(buffers.popupBg, l.popupRect.x0, l.popupRect.y0, l.popupRect.x1, l.popupRect.y1);
     pushFramePx(buffers.popupFrame, l.popupRect.x0, l.popupRect.y0, l.popupRect.x1, l.popupRect.y1, 1.5f);
-    pushQuadPx(buffers.popupAccent, l.popupRect.x0, l.popupRect.y0, l.popupRect.x1, l.popupRect.y0 + 3.0f);
     appendTextPx(
         buffers.popupText,
         l.popupRect.x0 + 16.0f * menuScale,
@@ -1026,10 +1069,13 @@ void drawMenu(
 
 void drawHud(
     const Geometry& geometry,
-    const bool simFrozen,
     const double simSpeed,
+    const double simElapsed,
     const double fps,
     const OverlayRenderer::SpatialHud& spatialHud,
+    const bool showSimulationSpeed,
+    const bool showFps,
+    const bool showElapsedTime,
     const bool showMinimap,
     const bool showCoordinates,
     const Buffers& buffers)
@@ -1042,28 +1088,48 @@ void drawHud(
     constexpr float hudTextY0 = hudY0 + 10.0f;
     char speedLine[64];
     char fpsLine[64];
+    char timeLine[64];
     formatHudSpeed(speedLine, sizeof(speedLine), simSpeed);
     std::snprintf(fpsLine, sizeof(fpsLine), "FPS: %.1f", fps);
+    formatElapsedTime(timeLine, sizeof(timeLine), simElapsed);
 
-    float maxLineW = std::max(
-        {measureMaxLinePx(simFrozen ? "WORLD: FROZEN" : "WORLD: RUNNING", baseScalePx),
-         measureMaxLinePx("ESC: MENU", baseScalePx),
-         measureMaxLinePx(speedLine, baseScalePx),
-         measureMaxLinePx(fpsLine, baseScalePx)});
-    const float hudX1 = std::min(geometry.width - 16.0f, hudTextX + maxLineW + 20.0f);
-    const float hudY1 = hudY0 + 16.0f + 4.0f * hudRowStep;
-    pushQuadPx(buffers.panelFill, hudX0, hudY0, hudX1, hudY1);
-    pushFramePx(buffers.panelFrame, hudX0, hudY0, hudX1, hudY1, 1.5f);
-    pushQuadPx(buffers.accentFill, hudX0, hudY0, hudX1, hudY0 + 3.0f);
-    appendTextPx(
-        buffers.statusText,
-        hudTextX,
-        hudTextY0,
-        baseScalePx,
-        simFrozen ? "WORLD: FROZEN" : "WORLD: RUNNING");
-    appendTextPx(buffers.textMuted, hudTextX, hudTextY0 + hudRowStep, baseScalePx, "ESC: MENU");
-    appendTextPx(buffers.textPrimary, hudTextX, hudTextY0 + hudRowStep * 2.0f, baseScalePx, speedLine);
-    appendTextPx(buffers.textPrimary, hudTextX, hudTextY0 + hudRowStep * 3.0f, baseScalePx, fpsLine);
+    float infoMaxLineW = 0.0f;
+    int infoLineCount = 0;
+    if (showSimulationSpeed) {
+        infoMaxLineW = std::max(infoMaxLineW, measureMaxLinePx(speedLine, baseScalePx));
+        ++infoLineCount;
+    }
+    if (showFps) {
+        infoMaxLineW = std::max(infoMaxLineW, measureMaxLinePx(fpsLine, baseScalePx));
+        ++infoLineCount;
+    }
+    if (showElapsedTime) {
+        infoMaxLineW = std::max(infoMaxLineW, measureMaxLinePx(timeLine, baseScalePx));
+        ++infoLineCount;
+    }
+
+    const bool showInfoPanel = infoLineCount > 0;
+    float infoPanelBottom = hudY0;
+    if (showInfoPanel) {
+        const float hudX1 = std::min(geometry.width - 16.0f, hudTextX + infoMaxLineW + 20.0f);
+        const float hudY1 = hudY0 + 16.0f + static_cast<float>(infoLineCount) * hudRowStep;
+        pushQuadPx(buffers.panelFill, hudX0, hudY0, hudX1, hudY1);
+        pushFramePx(buffers.panelFrame, hudX0, hudY0, hudX1, hudY1, 1.5f);
+
+        float lineY = hudTextY0;
+        if (showSimulationSpeed) {
+            appendTextPx(buffers.textPrimary, hudTextX, lineY, baseScalePx, speedLine);
+            lineY += hudRowStep;
+        }
+        if (showFps) {
+            appendTextPx(buffers.textPrimary, hudTextX, lineY, baseScalePx, fpsLine);
+            lineY += hudRowStep;
+        }
+        if (showElapsedTime) {
+            appendTextPx(buffers.textPrimary, hudTextX, lineY, baseScalePx, timeLine);
+        }
+        infoPanelBottom = hudY1;
+    }
 
     const float coordsScalePx = baseScalePx * 0.9f;
     if (showCoordinates) {
@@ -1074,9 +1140,9 @@ void drawHud(
         std::snprintf(coordYLine, sizeof(coordYLine), "Y: %.2f", spatialHud.worldY);
         std::snprintf(coordZLine, sizeof(coordZLine), "Z: %.2f", spatialHud.worldZ);
 
-        const float coordsX0 = hudX0;
-        const float coordsY0 = hudY1 + 14.0f * geometry.uiScale;
-        const float coordsTextX = coordsX0 + 10.0f;
+        constexpr float coordsX0 = hudX0;
+        const float coordsY0 = showInfoPanel ? (infoPanelBottom + 14.0f * geometry.uiScale) : hudY0;
+        constexpr float coordsTextX = coordsX0 + 10.0f;
         const float coordsTextY = coordsY0 + 9.0f;
         const float coordsWidth = std::max(
             {measureMaxLinePx(coordXLine, coordsScalePx),
@@ -1207,20 +1273,20 @@ void drawHud(
                                                   : (markerRadius + symbolGap + symbolHeight * 0.5f)),
                     mapInnerY0 + symbolHeight * 0.5f,
                     mapInnerY1 - symbolHeight * 0.5f);
-                const float tipY = marker.aboveCamera
+                const float symbolTipY = marker.aboveCamera
                     ? symbolCenterY - symbolHeight * 0.5f
                     : symbolCenterY + symbolHeight * 0.5f;
-                const float baseY = marker.aboveCamera
+                const float symbolBaseY = marker.aboveCamera
                     ? symbolCenterY + symbolHeight * 0.5f
                     : symbolCenterY - symbolHeight * 0.5f;
                 pushTrianglePx(
                     markerBuffer,
                     markerX,
-                    tipY,
+                    symbolTipY,
                     markerX - symbolHalfWidth,
-                    baseY,
+                    symbolBaseY,
                     markerX + symbolHalfWidth,
-                    baseY);
+                    symbolBaseY);
             }
         }
     }
@@ -1228,14 +1294,18 @@ void drawHud(
 
 void drawFrozenIndicator(const Geometry& geometry, const Buffers& buffers) {
     constexpr float indicatorInset = 16.0f;
-    const float iconH = 24.0f * geometry.uiScale;
-    const float iconW = 18.0f * geometry.uiScale;
+    const float baseScalePx = kBaseScalePx * geometry.uiScale * 0.92f;
+    const char* label = "FROZEN";
+    const float labelWidth = measureLinePx(label, baseScalePx);
+    const float iconH = 26.0f * geometry.uiScale;
+    const float iconW = 20.0f * geometry.uiScale;
+    const float labelGap = 10.0f * geometry.uiScale;
     const float x1 = geometry.width - indicatorInset * geometry.uiScale;
     const float x0 = x1 - iconW;
     const float y0 = indicatorInset * geometry.uiScale;
     const float y1 = y0 + iconH;
-    const float barW = std::max(3.0f, iconW * 0.24f);
-    const float gap = std::max(4.0f, iconW * 0.22f);
+    const float barW = std::max(4.0f, iconW * 0.24f);
+    const float gap = std::max(4.5f, iconW * 0.20f);
     const float totalBarsW = barW * 2.0f + gap;
     const float leftX0 = x0 + (iconW - totalBarsW) * 0.5f;
     const float leftX1 = leftX0 + barW;
@@ -1243,12 +1313,14 @@ void drawFrozenIndicator(const Geometry& geometry, const Buffers& buffers) {
     const float rightX1 = rightX0 + barW;
     const float barY0 = y0 + iconH * 0.08f;
     const float barY1 = y1 - iconH * 0.08f;
+    const float labelX = x0 - labelGap - labelWidth;
+    const float labelY = y0 + std::max(0.0f, (iconH - static_cast<float>(kFontH) * baseScalePx) * 0.5f);
+    appendTextPx(buffers.frozenIndicator, labelX, labelY, baseScalePx, label);
     pushQuadPx(buffers.frozenIndicator, leftX0, barY0, leftX1, barY1);
     pushQuadPx(buffers.frozenIndicator, rightX0, barY0, rightX1, barY1);
 }
 
-void drawCrosshair(const Geometry& geometry, const bool simFrozen, const Buffers& buffers) {
-    (void)simFrozen;
+void drawCrosshair(const Geometry& geometry, const Buffers& buffers) {
     const float cx = geometry.width * 0.5f;
     const float cy = geometry.height * 0.5f;
     pushQuadPx(buffers.crosshair, cx - 13.0f, cy - 1.0f, cx - 5.0f, cy + 1.0f);
@@ -1256,17 +1328,6 @@ void drawCrosshair(const Geometry& geometry, const bool simFrozen, const Buffers
     pushQuadPx(buffers.crosshair, cx - 1.0f, cy - 13.0f, cx + 1.0f, cy - 5.0f);
     pushQuadPx(buffers.crosshair, cx - 1.0f, cy + 5.0f, cx + 1.0f, cy + 13.0f);
     pushQuadPx(buffers.crosshair, cx - 1.0f, cy - 1.0f, cx + 1.0f, cy + 1.0f);
-}
-
-void drawPathLines(
-    const Geometry& geometry,
-    const std::vector<OverlayRenderer::ScreenLine>& pathLines,
-    const Buffers& buffers)
-{
-    const float thicknessPx = std::max(2.0f, geometry.uiScale * 2.5f);
-    for (const auto& line : pathLines) {
-        pushThickLinePx(buffers.pathLines, line.x0, line.y0, line.x1, line.y1, thicknessPx);
-    }
 }
 
 void drawTargetPopup(
@@ -1298,7 +1359,6 @@ void drawTargetPopup(
     const float py = targetHud.yPx - popupH - 12.0f;
     pushQuadPx(buffers.popupBg, px, py, px + popupW, py + popupH);
     pushFramePx(buffers.popupFrame, px, py, px + popupW, py + popupH, 1.5f);
-    pushQuadPx(buffers.popupAccent, px, py, px + popupW, py + 3.0f);
     appendTextPx(buffers.popupText, px + 8.0f, py + 6.0f, baseScalePx, popup);
 }
 

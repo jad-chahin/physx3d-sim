@@ -127,6 +127,8 @@ void SimulationController::step(RuntimeState& runtime, const bool pauseMenuOpen,
     while (fixedStep.accumulator >= kFixedDt && steps < kInternalMaxPhysicsStepsPerFrame) {
         syncPreviousState_();
         world_.step(kFixedDt);
+        ++runtime.simulation.sceneRevision;
+        runtime.simulation.elapsedTime += kFixedDt;
         fixedStep.accumulator -= kFixedDt;
         ++steps;
     }

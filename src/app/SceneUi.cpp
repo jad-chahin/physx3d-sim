@@ -5,10 +5,10 @@
 namespace app_loop {
 namespace {
     [[nodiscard]] glm::mat3 quatToMat3(const sim::Quaternion& q) {
-        const float w = static_cast<float>(q.w);
-        const float x = static_cast<float>(q.x);
-        const float y = static_cast<float>(q.y);
-        const float z = static_cast<float>(q.z);
+        const auto w = static_cast<float>(q.w);
+        const auto x = static_cast<float>(q.x);
+        const auto y = static_cast<float>(q.y);
+        const auto z = static_cast<float>(q.z);
 
         const float xx = x * x;
         const float yy = y * y;
@@ -20,10 +20,10 @@ namespace {
         const float wy = w * y;
         const float wz = w * z;
 
-        return glm::mat3(
+        return {
             1.0f - 2.0f * (yy + zz), 2.0f * (xy + wz), 2.0f * (xz - wy),
             2.0f * (xy - wz), 1.0f - 2.0f * (xx + zz), 2.0f * (yz + wx),
-            2.0f * (xz + wy), 2.0f * (yz - wx), 1.0f - 2.0f * (xx + yy));
+            2.0f * (xz + wy), 2.0f * (yz - wx), 1.0f - 2.0f * (xx + yy)};
     }
 
 } // namespace
@@ -38,6 +38,7 @@ void buildSceneSnapshot(
     snapshot.bodies.resize(bodies.size());
     snapshot.models.resize(bodies.size());
     snapshot.pathTrails = runtime.pathHistory;
+    snapshot.pathTrailsRevision = runtime.pathHistoryRevision;
 
     for (std::size_t i = 0; i < bodies.size(); ++i) {
         const sim::Vec3 interpolatedPosition =
@@ -48,7 +49,7 @@ void buildSceneSnapshot(
             static_cast<float>(interpolatedPosition.x),
             static_cast<float>(interpolatedPosition.y),
             static_cast<float>(interpolatedPosition.z));
-        const float radius = static_cast<float>(bodies[i].radius);
+        const auto radius = static_cast<float>(bodies[i].radius);
 
         snapshot.bodies[i] = render_scene::BodySnapshot{
             .renderPosition = pos,
@@ -56,6 +57,7 @@ void buildSceneSnapshot(
             .velocityMagnitude = static_cast<float>(bodies[i].velocity.magnitude()),
             .angularSpeedMagnitude = static_cast<float>(bodies[i].angularVelocity.magnitude()),
             .invMass = bodies[i].invMass,
+            .bodyId = bodies[i].id,
             .materialName = bodies[i].materialName,
         };
 
@@ -69,38 +71,6 @@ void buildSceneSnapshot(
         model[3][2] = pos.z;
         snapshot.models[i] = model;
     }
-}
-
-void drawOverlay(
-    const OverlayRenderer& overlay,
-    const render_scene::FramebufferSize& framebufferSize,
-    const RuntimeState& runtime,
-    const ui::MenuView& menuView,
-    const OverlayRenderer::SpatialHud& spatialHud,
-    const OverlayRenderer::TargetHud& targetHud,
-    const std::vector<OverlayRenderer::ScreenLine>& pathLines,
-    const float uiScale,
-    const ui::InterfaceSettings& interfaceSettings)
-{
-    glDisable(GL_DEPTH_TEST);
-    glDisable(GL_CULL_FACE);
-    overlay.draw(
-        framebufferSize.w,
-        framebufferSize.h,
-        runtime.simulation.simFrozen,
-        runtime.simulation.simSpeed,
-        runtime.fps.displayed,
-        menuView,
-        spatialHud,
-        targetHud,
-        pathLines,
-        uiScale,
-        interfaceSettings.showHud,
-        interfaceSettings.showMinimap,
-        interfaceSettings.showCoordinates,
-        interfaceSettings.showCrosshair);
-    glEnable(GL_CULL_FACE);
-    glEnable(GL_DEPTH_TEST);
 }
 
 } // namespace app_loop

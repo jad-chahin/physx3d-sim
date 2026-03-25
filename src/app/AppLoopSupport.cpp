@@ -91,6 +91,9 @@ void SimulationController::reset(
     runtime.simulation.speedDownWasDown = false;
     runtime.simulation.speedUpWasDown = false;
     runtime.simulation.speedResetWasDown = false;
+    runtime.simulation.elapsedTime = 0.0;
+    ++runtime.simulation.sceneRevision;
+    ++runtime.pathHistoryRevision;
     runtime.pathHistory.clear();
     syncPreviousState_();
 }

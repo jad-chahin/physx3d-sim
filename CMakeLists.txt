@@ -69,6 +69,9 @@ add_executable(physics3d
         src/ui/OverlayRenderer.cpp
         src/ui/PauseMenu.cpp
         src/ui/PauseMenuLayout.cpp
+        src/render/FrameRenderer.cpp
+        src/render/RenderMaterial.cpp
+        src/render/SceneLighting.cpp
         src/render/SceneRenderer.cpp
         src/render/ShaderUtil.cpp
         src/render/SphereMesh.cpp
@@ -103,9 +106,13 @@ enable_testing()
 add_executable(physics3d_tests
         tests/PhysicsRegressionTests.cpp
         tests/MinimapTests.cpp
+        tests/RenderMaterialTests.cpp
+        tests/SceneLightingTests.cpp
         tests/UiPauseMenuTests.cpp
         src/app/SpatialHud.cpp
         src/input/Bindings.cpp
+        src/render/RenderMaterial.cpp
+        src/render/SceneLighting.cpp
         src/ui/PauseMenu.cpp
         src/ui/PauseMenuLayout.cpp
 )

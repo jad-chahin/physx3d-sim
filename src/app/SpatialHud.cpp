@@ -1,10 +1,9 @@
 #include "app/SpatialHud.h"
+#include "app/ScenePresentation.h"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <limits>
-#include <vector>
 
 namespace app_loop {
 namespace {
@@ -14,69 +13,6 @@ constexpr std::size_t kMaxMinimapMarkers = 96;
 constexpr int kMinimapGridResolution = 14;
 constexpr int kMinimapHeightBandsPerSide = 5;
 constexpr int kMinimapHeightBandCount = kMinimapHeightBandsPerSide * 2;
-
-bool raySphereHit(
-    const glm::vec3& rayOrigin,
-    const glm::vec3& rayDir,
-    const glm::vec3& center,
-    const float radius,
-    float& outT)
-{
-    const glm::vec3 oc = rayOrigin - center;
-    const float b = glm::dot(oc, rayDir);
-    const float c = glm::dot(oc, oc) - radius * radius;
-    const float disc = b * b - c;
-    if (disc < 0.0f) {
-        return false;
-    }
-
-    const float s = std::sqrt(disc);
-    const float t0 = -b - s;
-    const float t1 = -b + s;
-    if (t0 > 0.0f) {
-        outT = t0;
-        return true;
-    }
-    if (t1 > 0.0f) {
-        outT = t1;
-        return true;
-    }
-    return false;
-}
-
-int findTargetBodyIndex(
-    const render_scene::SceneSnapshot& snapshot,
-    const input::Camera& cam,
-    const render_scene::SceneView& sceneView)
-{
-    const glm::vec3 rayOrigin = cam.pos;
-    const glm::vec3 rayDir = glm::normalize(sceneView.forward);
-
-    int bestIdx = -1;
-    float bestT = std::numeric_limits<float>::infinity();
-    for (std::size_t i = 0; i < snapshot.bodies.size(); ++i) {
-        float t = 0.0f;
-        if (!raySphereHit(
-                rayOrigin,
-                rayDir,
-                snapshot.bodies[i].renderPosition,
-                snapshot.bodies[i].radius,
-                t))
-        {
-            continue;
-        }
-        if (t < bestT) {
-            bestT = t;
-            bestIdx = static_cast<int>(i);
-        }
-    }
-    return bestIdx;
-}
-
-struct MinimapCandidate {
-    float distanceSq = 0.0f;
-    OverlayRenderer::MinimapMarker marker{};
-};
 
 [[nodiscard]] int minimapCellIndex(const float xNorm, const float yNorm) {
     const float tx = std::clamp((xNorm + 1.0f) * 0.5f, 0.0f, 0.9999f);
@@ -98,8 +34,8 @@ struct MinimapCandidate {
 }
 
 [[nodiscard]] bool shouldReplaceMinimapMarker(
-    const MinimapCandidate& candidate,
-    const MinimapCandidate& existing)
+    const SpatialHudScratch::MinimapCandidate& candidate,
+    const SpatialHudScratch::MinimapCandidate& existing)
 {
     if (candidate.marker.highlighted != existing.marker.highlighted) {
         return candidate.marker.highlighted;
@@ -120,6 +56,8 @@ void buildSpatialHud(
     const ui::InterfaceSettings& interfaceSettings,
     const input::Camera& cam,
     const render_scene::SceneView& sceneView,
+    const int targetIndex,
+    SpatialHudScratch& scratch,
     OverlayRenderer::SpatialHud& spatialHud)
 {
     spatialHud.worldX = cam.pos.x;
@@ -133,7 +71,7 @@ void buildSpatialHud(
     spatialHud.lookPitch = std::clamp(sceneView.forward.y, -1.0f, 1.0f);
     spatialHud.markers.clear();
 
-    if (!interfaceSettings.showHud || (!interfaceSettings.showCoordinates && !interfaceSettings.showMinimap)) {
+    if (!interfaceSettings.showCoordinates && !interfaceSettings.showMinimap) {
         return;
     }
 
@@ -149,9 +87,8 @@ void buildSpatialHud(
         return;
     }
 
-    const int targetIndex = findTargetBodyIndex(snapshot, cam, sceneView);
-    std::vector<MinimapCandidate> candidates;
-    candidates.reserve(snapshot.bodies.size());
+    scratch.candidates.clear();
+    scratch.candidates.reserve(snapshot.bodies.size());
 
     for (std::size_t i = 0; i < snapshot.bodies.size(); ++i) {
         const glm::vec3 delta = snapshot.bodies[i].renderPosition - cam.pos;
@@ -159,7 +96,7 @@ void buildSpatialHud(
         const float yNorm = -delta.z / spatialHud.rangeMeters;
         const float clampedX = std::clamp(xNorm, -kMinimapClampLimit, kMinimapClampLimit);
         const float clampedY = std::clamp(yNorm, -kMinimapClampLimit, kMinimapClampLimit);
-        candidates.push_back({
+        scratch.candidates.push_back({
             delta.x * delta.x + delta.z * delta.z,
             {
                 clampedX,
@@ -173,37 +110,34 @@ void buildSpatialHud(
         });
     }
 
-    std::vector<MinimapCandidate> filteredCandidates;
-    filteredCandidates.reserve(candidates.size());
-    if (candidates.size() <= kMaxMinimapMarkers) {
-        filteredCandidates = candidates;
+    scratch.filteredCandidates.clear();
+    scratch.filteredCandidates.reserve(scratch.candidates.size());
+    if (scratch.candidates.size() <= kMaxMinimapMarkers) {
+        scratch.filteredCandidates = scratch.candidates;
     } else {
-        std::array<int, kMinimapGridResolution * kMinimapGridResolution * kMinimapHeightBandCount> bestIndices;
+        std::array<int, kMinimapGridResolution * kMinimapGridResolution * kMinimapHeightBandCount> bestIndices{};
         bestIndices.fill(-1);
-        for (const auto& candidate : candidates) {
+        for (const auto& candidate : scratch.candidates) {
             if (candidate.marker.highlighted) {
-                filteredCandidates.push_back(candidate);
+                scratch.filteredCandidates.push_back(candidate);
                 continue;
             }
 
             const int bucketIndex = minimapBucketIndex(candidate.marker);
             const int existingIndex = bestIndices[static_cast<std::size_t>(bucketIndex)];
             if (existingIndex < 0) {
-                bestIndices[static_cast<std::size_t>(bucketIndex)] = static_cast<int>(filteredCandidates.size());
-                filteredCandidates.push_back(candidate);
+                bestIndices[static_cast<std::size_t>(bucketIndex)] = static_cast<int>(scratch.filteredCandidates.size());
+                scratch.filteredCandidates.push_back(candidate);
                 continue;
             }
 
-            if (shouldReplaceMinimapMarker(candidate, filteredCandidates[static_cast<std::size_t>(existingIndex)])) {
-                filteredCandidates[static_cast<std::size_t>(existingIndex)] = candidate;
+            if (shouldReplaceMinimapMarker(candidate, scratch.filteredCandidates[static_cast<std::size_t>(existingIndex)])) {
+                scratch.filteredCandidates[static_cast<std::size_t>(existingIndex)] = candidate;
             }
         }
     }
 
-    std::stable_sort(
-        filteredCandidates.begin(),
-        filteredCandidates.end(),
-        [](const MinimapCandidate& a, const MinimapCandidate& b) {
+    const auto markerOrder = [](const SpatialHudScratch::MinimapCandidate& a, const SpatialHudScratch::MinimapCandidate& b) {
             if (a.marker.highlighted != b.marker.highlighted) {
                 return a.marker.highlighted > b.marker.highlighted;
             }
@@ -214,12 +148,21 @@ void buildSpatialHud(
                 return a.marker.edgeClamped < b.marker.edgeClamped;
             }
             return a.distanceSq < b.distanceSq;
-        });
+        };
 
-    const std::size_t markerCount = std::min(kMaxMinimapMarkers, filteredCandidates.size());
+    const std::size_t markerCount = std::min(kMaxMinimapMarkers, scratch.filteredCandidates.size());
+    if (scratch.filteredCandidates.size() > markerCount) {
+        std::ranges::partial_sort(scratch.filteredCandidates, scratch.filteredCandidates.begin() + static_cast<std::ptrdiff_t>(markerCount)
+                                  ,
+                                  markerOrder);
+    } else {
+        std::ranges::stable_sort(scratch.filteredCandidates
+                                 ,
+                                 markerOrder);
+    }
     spatialHud.markers.reserve(markerCount);
     for (std::size_t i = 0; i < markerCount; ++i) {
-        spatialHud.markers.push_back(filteredCandidates[i].marker);
+        spatialHud.markers.push_back(scratch.filteredCandidates[i].marker);
     }
 }
 
