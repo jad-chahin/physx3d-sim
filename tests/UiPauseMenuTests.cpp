@@ -40,10 +40,6 @@ public:
         menu.moveSelectionHorizontal(delta);
     }
 
-    static void applyCurrentPage(PauseMenu& menu) {
-        menu.applyCurrentPage(nullptr);
-    }
-
     static const SettingsBundle& draft(const PauseMenu& menu) {
         return menu.draft_;
     }
@@ -60,14 +56,13 @@ public:
         return static_cast<int>(menu.focusArea_);
     }
 
+    static bool selectedRowSupportsHorizontalRepeat(const PauseMenu& menu) {
+        return menu.selectedRowSupportsHorizontalRepeat();
+    }
+
     static void setStatus(PauseMenu& menu, const std::string& status, const bool warning) {
         menu.statusMessage_ = status;
         menu.awaitingRebind_ = warning;
-    }
-
-    static void focusBottomAction(PauseMenu& menu, const int actionIndex) {
-        menu.focusArea_ = PauseMenu::FocusArea::BottomActions;
-        menu.selectedAction_ = actionIndex;
     }
 
     static void showPopup(PauseMenu& menu, const PauseMenu::PopupKind popup) {
@@ -85,15 +80,6 @@ void require(const bool condition, const std::string& message) {
     if (!condition) {
         throw std::runtime_error(message);
     }
-}
-
-bool hasApplyAction(const ui::MenuView& view) {
-    for (const auto& action : view.actions) {
-        if (action.id == static_cast<int>(ui::ActionKind::Apply)) {
-            return true;
-        }
-    }
-    return false;
 }
 
 void testUi2SpaceOnlyTogglesToggleRows()
@@ -115,7 +101,7 @@ void testUi2SpaceOnlyTogglesToggleRows()
         "space should not adjust non-toggle rows");
 }
 
-void testUi2SimulationPageSupportsMultiRowDraft()
+void testUi2SimulationPageAppliesMultiRowEditsImmediately()
 {
     ui::PauseMenu menu;
     input::ControlBindings controls{};
@@ -128,16 +114,16 @@ void testUi2SimulationPageSupportsMultiRowDraft()
     ui::testing::PauseMenuAccess::moveHorizontal(menu, 1, controls);
 
     require(!ui::testing::PauseMenuAccess::draft(menu).simulation.gravityEnabled,
-        "draft should retain the first edited row");
+        "edited rows should update the draft state");
     require(!ui::testing::PauseMenuAccess::draft(menu).simulation.collisionsEnabled,
-        "draft should retain additional edits on the same page");
-    require(menu.simulationSettings().gravityEnabled,
-        "applied settings should stay unchanged before apply");
-    require(menu.simulationSettings().collisionsEnabled,
-        "applied settings should stay unchanged before apply");
+        "additional edits should update the draft state");
+    require(!menu.simulationSettings().gravityEnabled,
+        "simulation settings should update immediately");
+    require(!menu.simulationSettings().collisionsEnabled,
+        "multiple simulation edits should apply immediately");
 }
 
-void testUi2InterfacePageIgnoresHiddenSimulationPathDraft()
+void testUi2SimulationPathEditsApplyImmediately()
 {
     ui::PauseMenu menu;
     input::ControlBindings controls{};
@@ -147,33 +133,12 @@ void testUi2InterfacePageIgnoresHiddenSimulationPathDraft()
     ui::testing::PauseMenuAccess::setSelectedRow(menu, 8);
     ui::testing::PauseMenuAccess::moveHorizontal(menu, 1, controls);
     require(ui::testing::PauseMenuAccess::draft(menu).interface.drawPath,
-        "simulation page should be able to draft draw path changes");
-    require(!menu.interfaceSettings().drawPath,
-        "draw path should remain unapplied before simulation apply");
-
-    ui::testing::PauseMenuAccess::selectPage(menu, ui::SettingsPage::Interface);
-    const auto cleanView = menu.buildView(controls);
-    require(!hasApplyAction(cleanView),
-        "interface page should not show apply for hidden simulation-owned path edits");
-
-    ui::testing::PauseMenuAccess::setSelectedRow(menu, 6);
-    ui::testing::PauseMenuAccess::moveHorizontal(menu, 1, controls);
-    require(!ui::testing::PauseMenuAccess::draft(menu).interface.showCoordinates,
-        "interface page should still draft its own visible edits");
-
-    ui::testing::PauseMenuAccess::applyCurrentPage(menu);
-    require(!menu.interfaceSettings().drawPath,
-        "applying interface page should not commit hidden simulation-owned path edits");
-    require(!menu.interfaceSettings().showCoordinates,
-        "applying interface page should commit visible interface edits");
-
-    ui::testing::PauseMenuAccess::selectPage(menu, ui::SettingsPage::Simulation);
-    const auto simulationView = menu.buildView(controls);
-    require(hasApplyAction(simulationView),
-        "simulation page should still expose apply for pending path edits");
+        "simulation page should update draw path immediately");
+    require(menu.interfaceSettings().drawPath,
+        "draw path should apply immediately from the simulation page");
 }
 
-void testUi2DisplayPageUsesDraftApplyModel()
+void testUi2DisplayPageUsesImmediateModel()
 {
     ui::PauseMenu menu;
     input::ControlBindings controls{};
@@ -183,16 +148,12 @@ void testUi2DisplayPageUsesDraftApplyModel()
 
     ui::testing::PauseMenuAccess::moveHorizontal(menu, 1, controls);
     require(!ui::testing::PauseMenuAccess::draft(menu).display.vsync,
-        "display settings should edit draft state first");
-    require(menu.displaySettings().vsync,
-        "display settings should remain unapplied until apply");
-
-    ui::testing::PauseMenuAccess::applyCurrentPage(menu);
+        "display settings should update the draft state");
     require(!menu.displaySettings().vsync,
-        "display page changes should apply explicitly");
+        "display page changes should apply immediately");
 }
 
-void testUi2EnterAppliesDirtySettingsPage()
+void testUi2EnterActivatesSelectedSetting()
 {
     ui::PauseMenu menu;
     input::ControlBindings controls{};
@@ -200,18 +161,12 @@ void testUi2EnterAppliesDirtySettingsPage()
     ui::testing::PauseMenuAccess::selectPage(menu, ui::SettingsPage::Simulation);
     ui::testing::PauseMenuAccess::setSelectedRow(menu, 2);
 
-    menu.handlePressedKey(nullptr, GLFW_KEY_RIGHT, controls, "");
-    require(!ui::testing::PauseMenuAccess::draft(menu).simulation.gravityEnabled,
-        "editing the row should dirty the simulation page");
-    require(menu.simulationSettings().gravityEnabled,
-        "applied settings should remain unchanged before enter apply");
-
     menu.handlePressedKey(nullptr, GLFW_KEY_ENTER, controls, "");
     require(!menu.simulationSettings().gravityEnabled,
-        "enter should apply the current dirty settings page");
+        "enter should activate the selected setting");
 }
 
-void testUi2ScrollKeepsSelectionAndDraft()
+void testUi2ScrollKeepsSelectionAndLiveEdits()
 {
     ui::PauseMenu menu;
     input::ControlBindings controls{};
@@ -224,7 +179,9 @@ void testUi2ScrollKeepsSelectionAndDraft()
     require(ui::testing::PauseMenuAccess::selectedRow(menu) == 2,
         "scrolling should not clear the selected row");
     require(!ui::testing::PauseMenuAccess::draft(menu).simulation.gravityEnabled,
-        "scrolling should not discard draft edits");
+        "scrolling should not discard live edits");
+    require(!menu.simulationSettings().gravityEnabled,
+        "scrolling should not roll back immediate changes");
 }
 
 void testUi2LastRowDoesNotJumpToActionsEarly()
@@ -250,7 +207,6 @@ void testUi2BuildViewMapsMenuState()
     ui::testing::PauseMenuAccess::selectPage(menu, ui::SettingsPage::Interface);
     ui::testing::PauseMenuAccess::setSelectedRow(menu, 1);
     ui::testing::PauseMenuAccess::moveHorizontal(menu, 1, controls);
-    ui::testing::PauseMenuAccess::focusBottomAction(menu, 0);
     ui::testing::PauseMenuAccess::setStatus(menu, "STATUS", true);
     ui::testing::PauseMenuAccess::showPopup(menu, ui::PauseMenu::PopupKind::ResetWorld);
 
@@ -266,20 +222,16 @@ void testUi2BuildViewMapsMenuState()
                 row.label != "INFO RADIUS" && row.label != "INFO ANGULAR" && row.label != "INFO TYPE",
             "interface view should not expose separate object info sub-options");
     }
-
-    bool foundApply = false;
     for (const auto& action : view.actions) {
-        if (action.id == static_cast<int>(ui::ActionKind::Apply)) {
-            foundApply = true;
-            require(action.placement == ui::ActionPlacement::Bottom,
-                "apply should be exposed as a bottom action");
-            require(action.selected, "focused bottom action should stay selected");
-        }
+        require(action.id != static_cast<int>(ui::ActionKind::ResetWorld) &&
+                action.id != static_cast<int>(ui::ActionKind::ResetControls),
+            "interface view should not expose bottom apply-style actions");
     }
-    require(foundApply, "view should expose the apply action when the page is dirty");
 
     require(view.statusLine == "STATUS" && view.statusWarning,
         "view should preserve warning status messages");
+    require(view.footerHint == "ESC CLOSE  TAB PAGE  ARROWS NAVIGATE/CHANGE  ENTER ACTIVATE",
+        "view should expose the immediate-mode activation hint");
     require(view.popup.visible,
         "view should preserve popup state");
     require(view.popup.title == "ARE YOU SURE?",
@@ -384,6 +336,29 @@ void testUi2ObjectInfoDetailLevelUsesBasicAndFullOnly()
         "detail level should expose FULL as the only expanded option");
 }
 
+void testUi2GravityStrengthUsesReciprocalAndIntegerLabels()
+{
+    ui::PauseMenu menu;
+    input::ControlBindings controls{};
+    ui::testing::PauseMenuAccess::openMenu(menu);
+    ui::testing::PauseMenuAccess::selectPage(menu, ui::SettingsPage::Simulation);
+    ui::testing::PauseMenuAccess::setSelectedRow(menu, 3);
+
+    auto view = menu.buildView(controls);
+    require(view.rows.size() > 4 && view.rows[4].label == "GRAVITY STRENGTH" && view.rows[4].value == "1X",
+        "gravity strength should default to 1X");
+
+    ui::testing::PauseMenuAccess::moveHorizontal(menu, -9, controls);
+    view = menu.buildView(controls);
+    require(view.rows[4].value == "0.1X",
+        "gravity strength should show decimal labels on the left side");
+
+    ui::testing::PauseMenuAccess::moveHorizontal(menu, 18, controls);
+    view = menu.buildView(controls);
+    require(view.rows[4].value == "10X",
+        "gravity strength should show integer labels on the right side");
+}
+
 void testUi2LayoutKeepsManualScrollOffset()
 {
     ui::MenuView view{};
@@ -479,12 +454,68 @@ void testUi2LayoutUsesRemoteStyleTopButtons()
 
 void testUi2NormalizedChoiceRanges()
 {
+    require(ui::kGravityStrengthChoices.front() == ui::kDefaultGravityStrength / 10.0,
+        "gravity strength should support down to 1/10x");
+    require(ui::kGravityStrengthChoices[8] == ui::kDefaultGravityStrength * 0.9,
+        "gravity strength should step down through decimal values");
+    require(ui::kGravityStrengthChoices[9] == ui::kDefaultGravityStrength,
+        "gravity strength should retain 1x at the center");
+    require(ui::kGravityStrengthChoices[10] == ui::kDefaultGravityStrength * 2.0,
+        "gravity strength should step up to 2x immediately to the right of 1x");
     require(ui::kGravityStrengthChoices.back() == ui::kDefaultGravityStrength * 10.0,
         "gravity strength should now support up to 10x");
     require(ui::kCollisionIterationChoices[6] == 7 && ui::kCollisionIterationChoices[8] == 9,
         "collision iterations should use normalized single-step increments");
+    require(ui::kLookSensitivityChoices[0] == 0.0010f &&
+            ui::kLookSensitivityChoices[1] == 0.0015f &&
+            ui::kLookSensitivityChoices[3] == 0.0025f &&
+            ui::kLookSensitivityChoices.back() == 0.0060f,
+        "look sensitivity should use a simple 0.0005-step range with enough headroom");
     require(ui::kBaseMoveSpeedChoices[6] == 70.0f,
         "camera move speed should include the normalized 70 step");
+}
+
+void testUi2ControlsPopupSupportsHorizontalNavigation()
+{
+    ui::PauseMenu menu;
+    input::ControlBindings controls{};
+    ui::testing::PauseMenuAccess::openMenu(menu);
+    ui::testing::PauseMenuAccess::selectPage(menu, ui::SettingsPage::Controls);
+    ui::testing::PauseMenuAccess::showPopup(menu, ui::PauseMenu::PopupKind::ResetControls);
+
+    menu.handlePressedKey(nullptr, GLFW_KEY_RIGHT, controls, "");
+    auto view = menu.buildView(controls);
+    require(view.popup.visible && !view.popup.confirmSelected,
+        "right should move a controls-page popup selection to cancel");
+
+    menu.handlePressedKey(nullptr, GLFW_KEY_LEFT, controls, "");
+    view = menu.buildView(controls);
+    require(view.popup.confirmSelected,
+        "left should move a controls-page popup selection back to confirm");
+}
+
+void testUi2HorizontalRepeatOnlyAppliesToDirectionalRows()
+{
+    ui::PauseMenu menu;
+    ui::testing::PauseMenuAccess::openMenu(menu);
+
+    ui::testing::PauseMenuAccess::selectPage(menu, ui::SettingsPage::Display);
+    ui::testing::PauseMenuAccess::setSelectedRow(menu, 0);
+    require(!ui::testing::PauseMenuAccess::selectedRowSupportsHorizontalRepeat(menu),
+        "window mode should not repeat horizontally in immediate mode");
+
+    ui::testing::PauseMenuAccess::setSelectedRow(menu, 1);
+    require(!ui::testing::PauseMenuAccess::selectedRowSupportsHorizontalRepeat(menu),
+        "toggle rows should not repeat horizontally in immediate mode");
+
+    ui::testing::PauseMenuAccess::selectPage(menu, ui::SettingsPage::Simulation);
+    ui::testing::PauseMenuAccess::setSelectedRow(menu, 3);
+    require(ui::testing::PauseMenuAccess::selectedRowSupportsHorizontalRepeat(menu),
+        "directional choice rows should still support held horizontal stepping");
+
+    ui::testing::PauseMenuAccess::setSelectedRow(menu, 2);
+    require(!ui::testing::PauseMenuAccess::selectedRowSupportsHorizontalRepeat(menu),
+        "simulation toggles should not repeat horizontally");
 }
 
 } // namespace
@@ -492,20 +523,23 @@ void testUi2NormalizedChoiceRanges()
 void appendUiPauseMenuTests(std::vector<std::pair<std::string, std::function<void()>>>& tests)
 {
     tests.emplace_back("ui2_space_only_toggles_toggle_rows", testUi2SpaceOnlyTogglesToggleRows);
-    tests.emplace_back("ui2_simulation_page_supports_multi_row_draft", testUi2SimulationPageSupportsMultiRowDraft);
-    tests.emplace_back("ui2_interface_page_ignores_hidden_simulation_path_draft", testUi2InterfacePageIgnoresHiddenSimulationPathDraft);
-    tests.emplace_back("ui2_display_page_uses_draft_apply_model", testUi2DisplayPageUsesDraftApplyModel);
-    tests.emplace_back("ui2_enter_applies_dirty_settings_page", testUi2EnterAppliesDirtySettingsPage);
-    tests.emplace_back("ui2_scroll_keeps_selection_and_draft", testUi2ScrollKeepsSelectionAndDraft);
+    tests.emplace_back("ui2_simulation_page_applies_multi_row_edits_immediately", testUi2SimulationPageAppliesMultiRowEditsImmediately);
+    tests.emplace_back("ui2_simulation_path_edits_apply_immediately", testUi2SimulationPathEditsApplyImmediately);
+    tests.emplace_back("ui2_display_page_uses_immediate_model", testUi2DisplayPageUsesImmediateModel);
+    tests.emplace_back("ui2_enter_activates_selected_setting", testUi2EnterActivatesSelectedSetting);
+    tests.emplace_back("ui2_scroll_keeps_selection_and_live_edits", testUi2ScrollKeepsSelectionAndLiveEdits);
     tests.emplace_back("ui2_last_row_does_not_jump_to_actions_early", testUi2LastRowDoesNotJumpToActionsEarly);
     tests.emplace_back("ui2_build_view_maps_menu_state", testUi2BuildViewMapsMenuState);
     tests.emplace_back("ui2_path_length_disables_when_draw_path_off", testUi2PathLengthDisablesWhenDrawPathOff);
     tests.emplace_back("ui2_spatial_hud_rows_stay_independent_of_info_panel", testUi2SpatialHudRowsStayIndependentOfInfoPanel);
     tests.emplace_back("ui2_minimap_zoom_disables_when_minimap_off", testUi2MinimapZoomDisablesWhenMinimapOff);
     tests.emplace_back("ui2_object_info_detail_level_uses_basic_and_full_only", testUi2ObjectInfoDetailLevelUsesBasicAndFullOnly);
+    tests.emplace_back("ui2_gravity_strength_uses_reciprocal_and_integer_labels", testUi2GravityStrengthUsesReciprocalAndIntegerLabels);
     tests.emplace_back("ui2_layout_keeps_manual_scroll_offset", testUi2LayoutKeepsManualScrollOffset);
     tests.emplace_back("ui2_layout_keeps_selected_row_visible_when_moving_up", testUi2LayoutKeepsSelectedRowVisibleWhenMovingUp);
     tests.emplace_back("ui2_layout_uses_remote_style_top_buttons", testUi2LayoutUsesRemoteStyleTopButtons);
     tests.emplace_back("ui2_normalized_choice_ranges", testUi2NormalizedChoiceRanges);
+    tests.emplace_back("ui2_controls_popup_supports_horizontal_navigation", testUi2ControlsPopupSupportsHorizontalNavigation);
+    tests.emplace_back("ui2_horizontal_repeat_only_applies_to_directional_rows", testUi2HorizontalRepeatOnlyAppliesToDirectionalRows);
 }
 

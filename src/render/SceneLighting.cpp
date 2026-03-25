@@ -23,6 +23,8 @@ constexpr float kNearPlanePadding = 12.0f;
 constexpr float kFarPlanePadding = 18.0f;
 constexpr float kMinOrthoHalfExtent = 16.0f;
 constexpr float kMinLocalLightRange = 8.0f;
+constexpr float kFogNearDistance = 2200.0f;
+constexpr float kFogFarDistance = 5600.0f;
 
 void expandBounds(glm::vec3& minBounds, glm::vec3& maxBounds, const glm::vec3& point)
 {
@@ -86,14 +88,7 @@ void applySunnyBackdrop(SceneLighting& lighting)
         glm::vec3(0.48f, 0.62f, 0.82f),
         daylight);
     lighting.starIntensity = 0.0f;
-    lighting.nebulaIntensity = 0.0f;
     lighting.bloomStrength = 0.18f;
-    lighting.fogNearColor = glm::mix(lighting.skyHorizonColor, lighting.groundColor, 0.25f);
-    lighting.fogFarColor = glm::max(
-        glm::mix(lighting.skyHorizonColor, lighting.skyZenithColor, 0.58f),
-        lighting.fogNearColor + glm::vec3(0.02f));
-    lighting.fogNearDistance = glm::mix(24.0f, 36.0f, daylight);
-    lighting.fogFarDistance = glm::mix(90.0f, 165.0f, daylight);
 }
 
 void applySpaceBackdrop(SceneLighting& lighting)
@@ -105,29 +100,17 @@ void applySpaceBackdrop(SceneLighting& lighting)
     lighting.sunGlowColor = glm::vec3(1.04f, 1.12f, 1.28f);
     lighting.skyAccentColor = glm::vec3(0.38f, 0.46f, 0.64f);
     lighting.starIntensity = 1.0f;
-    lighting.nebulaIntensity = 0.0f;
     lighting.bloomStrength = 0.0f;
-    lighting.fogNearColor = glm::vec3(0.0025f, 0.0040f, 0.0090f);
-    lighting.fogFarColor = glm::vec3(0.0055f, 0.0095f, 0.0180f);
-    lighting.fogNearDistance = 260.0f;
-    lighting.fogFarDistance = 620.0f;
 }
 
-void applyNebulaBackdrop(SceneLighting& lighting)
+void applySharedFog(SceneLighting& lighting)
 {
-    lighting.color = glm::vec3(3.96f, 3.72f, 4.02f);
-    lighting.skyZenithColor = glm::vec3(0.0024f, 0.0048f, 0.016f);
-    lighting.skyHorizonColor = glm::vec3(0.22f, 0.07f, 0.14f);
-    lighting.groundColor = glm::vec3(0.0010f, 0.0024f, 0.008f);
-    lighting.sunGlowColor = glm::vec3(1.10f, 0.77f, 0.58f);
-    lighting.skyAccentColor = glm::vec3(0.08f, 0.36f, 0.44f);
-    lighting.starIntensity = 0.78f;
-    lighting.nebulaIntensity = 0.88f;
-    lighting.bloomStrength = 0.12f;
-    lighting.fogNearColor = glm::vec3(0.011f, 0.008f, 0.020f);
-    lighting.fogFarColor = glm::vec3(0.054f, 0.034f, 0.072f);
-    lighting.fogNearDistance = 128.0f;
-    lighting.fogFarDistance = 320.0f;
+    lighting.fogNearColor = glm::mix(lighting.skyHorizonColor, lighting.groundColor, 0.22f);
+    lighting.fogFarColor = glm::max(
+        glm::mix(lighting.skyHorizonColor, lighting.skyZenithColor, 0.62f),
+        lighting.fogNearColor + glm::vec3(0.01f));
+    lighting.fogNearDistance = kFogNearDistance;
+    lighting.fogFarDistance = kFogFarDistance;
 }
 
 void applyBackdropPreset(SceneLighting& lighting, const BackdropPreset backdropPreset)
@@ -140,10 +123,8 @@ void applyBackdropPreset(SceneLighting& lighting, const BackdropPreset backdropP
         case BackdropPreset::Space:
             applySpaceBackdrop(lighting);
             break;
-        case BackdropPreset::Nebula:
-            applyNebulaBackdrop(lighting);
-            break;
     }
+    applySharedFog(lighting);
 }
 
 float localLightRange(

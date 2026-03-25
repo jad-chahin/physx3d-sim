@@ -147,36 +147,24 @@ void testBuildSceneLightingSupportsBackdropPresets()
         snapshot,
         2048,
         render_scene::BackdropPreset::Space);
-    const render_scene::SceneLighting nebula = render_scene::buildSceneLighting(
-        sceneView,
-        snapshot,
-        2048,
-        render_scene::BackdropPreset::Nebula);
 
     require(sunny.backdropPreset == render_scene::BackdropPreset::Sunny,
         "sunny preset should be recorded in the lighting state");
     require(space.backdropPreset == render_scene::BackdropPreset::Space,
         "space preset should be recorded in the lighting state");
-    require(nebula.backdropPreset == render_scene::BackdropPreset::Nebula,
-        "nebula preset should be recorded in the lighting state");
-    require(sunny.starIntensity == 0.0f && sunny.nebulaIntensity == 0.0f,
+    require(sunny.starIntensity == 0.0f,
         "sunny preset should not enable space-only sky effects");
-    require(space.starIntensity > 0.8f && space.nebulaIntensity == 0.0f,
-        "space preset should enable stars without enabling nebula clouds");
-    require(nebula.starIntensity > 0.0f && nebula.nebulaIntensity > 0.8f,
-        "nebula preset should enable both stars and nebula clouds");
-    require(space.fogNearDistance > nebula.fogNearDistance && nebula.fogNearDistance > sunny.fogNearDistance,
-        "backdrop presets should expose distinct fog ranges");
+    require(space.starIntensity > 0.8f,
+        "space preset should enable stars");
+    require(nearlyEqual(sunny.fogNearDistance, space.fogNearDistance) &&
+            nearlyEqual(sunny.fogFarDistance, space.fogFarDistance),
+        "backdrop presets should share the same visibility range");
     require(glm::distance(sunny.skyZenithColor, space.skyZenithColor) > 0.2f,
         "space should not collapse to the sunny sky colors");
-    require(glm::distance(space.skyHorizonColor, nebula.skyHorizonColor) > 0.08f,
-        "nebula should remain visually distinct from space");
     require(glm::length(space.groundColor) < glm::length(sunny.groundColor),
         "space backdrop should keep a darker lower hemisphere than sunny");
     require(glm::length(space.skyZenithColor) < 0.02f,
         "space backdrop should keep the sky base genuinely dark");
-    require(glm::distance(nebula.skyAccentColor, nebula.skyHorizonColor) > 0.2f,
-        "nebula preset should carry a secondary accent color for cloud variation");
 }
 
 } // namespace

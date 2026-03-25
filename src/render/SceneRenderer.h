@@ -28,7 +28,7 @@ struct SceneView {
     glm::vec3 cameraPosition{0.0f, 0.0f, 0.0f};
     glm::vec3 forward{0.0f, 0.0f, -1.0f};
     float nearPlane = 0.1f;
-    float farPlane = 1000.0f;
+    float farPlane = 6000.0f;
     glm::mat4 view{1.0f};
     glm::mat4 proj{1.0f};
     glm::mat4 viewProj{1.0f};
@@ -92,8 +92,8 @@ struct ScenePassResources {
     GLint uShadowMap = -1;
     GLint uShadowTexelSize = -1;
     GLint uLocalLightCount = -1;
-    std::array<GLint, kMaxLocalLights> uLocalLightPosRange{};
-    std::array<GLint, kMaxLocalLights> uLocalLightColorIntensity{};
+    GLint uLocalLightPosRange = -1;
+    GLint uLocalLightColorIntensity = -1;
     GLuint sphereVao = 0;
     GLuint shadowTexture = 0;
     GLsizei sphereIndexCount = 0;

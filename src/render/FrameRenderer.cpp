@@ -74,17 +74,10 @@ uniform vec3 uSunGlowColor;
 uniform vec3 uSkyAccentColor;
 uniform int uBackdropPreset;
 uniform float uStarIntensity;
-uniform float uNebulaIntensity;
 uniform vec3 uStateTintColor;
 uniform float uStateTintStrength;
 
 const float PI = 3.14159265359;
-
-struct NebulaFieldResult {
-    vec3 color;
-    float mask;
-    float dust;
-};
 
 vec3 reconstructRayDir(vec2 clipPos) {
     vec4 worldFar = uInvViewProj * vec4(clipPos, 1.0, 1.0);
@@ -108,33 +101,6 @@ vec2 sphereUv(vec3 dir) {
     float u = atan(dir.z, dir.x) / (2.0 * PI) + 0.5;
     float v = asin(clamp(dir.y, -1.0, 1.0)) / PI + 0.5;
     return vec2(u, v);
-}
-
-float noise(vec2 p) {
-    vec2 i = floor(p);
-    vec2 f = fract(p);
-    float a = hash21(i);
-    float b = hash21(i + vec2(1.0, 0.0));
-    float c = hash21(i + vec2(0.0, 1.0));
-    float d = hash21(i + vec2(1.0, 1.0));
-    vec2 u = f * f * (3.0 - 2.0 * f);
-    return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
-}
-
-float fbm(vec2 p) {
-    float value = 0.0;
-    float amplitude = 0.5;
-    for (int i = 0; i < 5; ++i) {
-        value += amplitude * noise(p);
-        p = p * 2.03 + vec2(17.1, 9.2);
-        amplitude *= 0.5;
-    }
-    return value;
-}
-
-float sphericalBlob(vec3 dir, vec3 center, float radius, float softness) {
-    float d = length(dir - center);
-    return 1.0 - smoothstep(radius, radius + softness, d);
 }
 
 float starLayer(vec2 uv, vec2 scale, float threshold, float radius, vec2 seed) {
@@ -195,79 +161,11 @@ vec3 deepSpaceBackdrop(vec3 rayDir) {
     return color;
 }
 
-NebulaFieldResult nebulaField(vec3 rayDir) {
-    vec3 dir = normalize(rayDir);
-    vec2 uv = sphereUv(dir);
-    vec2 p = vec2(uv.x * 4.1, uv.y * 2.3);
-
-    vec2 warp = vec2(
-        fbm(p * 0.34 + vec2(1.6, -0.5)),
-        fbm(p * 0.38 + vec2(-2.2, 3.1)));
-    vec3 warpedDir = normalize(dir + vec3(
-        (warp.x - 0.5) * 0.26,
-        (fbm(p * 0.30 + vec2(3.8, -2.6)) - 0.5) * 0.16,
-        (warp.y - 0.5) * 0.24));
-
-    float mainA = sphericalBlob(warpedDir, normalize(vec3(-0.56, 0.08, -0.83)), 0.34, 0.24);
-    float mainB = sphericalBlob(warpedDir, normalize(vec3(-0.26, -0.02, -0.97)), 0.28, 0.20);
-    float mainC = sphericalBlob(warpedDir, normalize(vec3(0.02, 0.14, -0.99)), 0.26, 0.18);
-    float sideA = sphericalBlob(warpedDir, normalize(vec3(0.66, 0.22, -0.72)), 0.30, 0.22);
-    float sideB = sphericalBlob(warpedDir, normalize(vec3(0.82, 0.08, -0.56)), 0.22, 0.16);
-    float highA = sphericalBlob(warpedDir, normalize(vec3(-0.28, 0.68, -0.68)), 0.24, 0.20);
-
-    float mainField = clamp(mainA * 0.90 + mainB * 1.04 + mainC * 0.76, 0.0, 1.35);
-    float sideField = clamp(sideA * 0.82 + sideB * 0.72, 0.0, 1.08);
-    float highField = highA * 0.72;
-
-    float structure = fbm(p * 0.72 + vec2(-1.0, 2.0));
-    float billow = fbm(p * 1.18 + vec2(4.1, -3.3));
-    float wisps = 1.0 - abs(fbm(p * 2.10 + vec2(-6.2, 4.4)) * 2.0 - 1.0);
-
-    float mainMask = smoothstep(0.12, 0.82, mainField) * smoothstep(0.30, 0.74, structure * 0.58 + billow * 0.42);
-    float sideMask = smoothstep(0.10, 0.78, sideField) * smoothstep(0.32, 0.76, structure * 0.50 + billow * 0.50);
-    float highMask = smoothstep(0.12, 0.78, highField) * smoothstep(0.36, 0.80, structure * 0.64 + billow * 0.36);
-    float mask = clamp(mainMask * 0.95 + sideMask * 0.72 + highMask * 0.48, 0.0, 1.0) * (0.72 + 0.28 * wisps);
-
-    float dustBase = fbm(p * 1.72 + vec2(7.8, -3.9));
-    float dustRidge = 1.0 - abs(fbm(p * 2.56 + vec2(3.1, 7.2)) * 2.0 - 1.0);
-    float dust = smoothstep(0.56, 0.82, dustBase) *
-        smoothstep(0.48, 0.92, dustRidge) *
-        mask *
-        (0.40 + 0.60 * mainMask);
-
-    float core = pow(mainB, 3.0) * smoothstep(0.60, 0.90, billow);
-
-    vec3 mainColor = mix(uSkyHorizonColor, uSunGlowColor, 0.26 + 0.20 * smoothstep(0.32, 0.82, billow));
-    vec3 sideColor = mix(uSkyAccentColor, uSkyZenithColor, 0.22);
-    vec3 highColor = mix(uSkyAccentColor, uSkyHorizonColor, 0.18);
-    vec3 cloudColor = vec3(0.0);
-    cloudColor += mainColor * mainMask;
-    cloudColor += sideColor * sideMask * 0.85;
-    cloudColor += highColor * highMask * 0.60;
-    cloudColor /= max(mainMask + sideMask * 0.85 + highMask * 0.60, 1e-4);
-    cloudColor = mix(cloudColor, uSunGlowColor, core * 0.34);
-
-    float emission = mainMask * (0.28 + 0.78 * billow) +
-        sideMask * 0.40 +
-        highMask * 0.24 +
-        core * 0.36;
-    NebulaFieldResult result;
-    result.color = cloudColor * emission * uNebulaIntensity * 0.92;
-    result.mask = mask;
-    result.dust = dust;
-    return result;
-}
-
 void main() {
     vec3 rayDir = reconstructRayDir(vClipPos);
     vec3 color = atmosphericBackdrop(rayDir);
     if (uBackdropPreset == 1) {
         color = deepSpaceBackdrop(rayDir) + starField(rayDir);
-    } else if (uBackdropPreset == 2) {
-        NebulaFieldResult nebula = nebulaField(rayDir);
-        vec3 backdrop = deepSpaceBackdrop(rayDir) * (0.62 + 0.16 * (1.0 - nebula.mask));
-        vec3 stars = starField(rayDir) * (1.0 - clamp(nebula.mask * 0.35 + nebula.dust * 0.62, 0.0, 0.82));
-        color = backdrop * (1.0 - nebula.dust * 0.32) + stars + nebula.color;
     }
     color = mix(color, uStateTintColor, uStateTintStrength);
 
@@ -493,21 +391,22 @@ bool FrameRenderer::initSceneResources_()
     resources_.uShadowMap = glGetUniformLocation(resources_.program, "uShadowMap");
     resources_.uShadowTexelSize = glGetUniformLocation(resources_.program, "uShadowTexelSize");
     resources_.uLocalLightCount = glGetUniformLocation(resources_.program, "uLocalLightCount");
-    for (std::size_t i = 0; i < kMaxLocalLights; ++i) {
-        const std::string posName = "uLocalLightPosRange[" + std::to_string(i) + "]";
-        const std::string colorName = "uLocalLightColorIntensity[" + std::to_string(i) + "]";
-        resources_.uLocalLightPosRange[i] = glGetUniformLocation(resources_.program, posName.c_str());
-        resources_.uLocalLightColorIntensity[i] = glGetUniformLocation(resources_.program, colorName.c_str());
-    }
+    resources_.uLocalLightPosRange = glGetUniformLocation(resources_.program, "uLocalLightPosRange[0]");
+    resources_.uLocalLightColorIntensity = glGetUniformLocation(resources_.program, "uLocalLightColorIntensity[0]");
     if (resources_.uView < 0 || resources_.uProj < 0 || resources_.uCameraPos < 0 ||
         resources_.uLightDir < 0 || resources_.uLightColor < 0 ||
         resources_.uSkyZenithColor < 0 || resources_.uSkyHorizonColor < 0 ||
         resources_.uGroundColor < 0 ||
         resources_.uLightViewProj < 0 || resources_.uShadowMap < 0 ||
-        resources_.uShadowTexelSize < 0 || resources_.uLocalLightCount < 0)
+        resources_.uShadowTexelSize < 0 || resources_.uLocalLightCount < 0 ||
+        resources_.uLocalLightPosRange < 0 || resources_.uLocalLightColorIntensity < 0)
     {
         std::cerr << "Missing uniform(s). Check shader names match exactly.\n";
     }
+
+    glUseProgram(resources_.program);
+    glUniform1i(resources_.uShadowMap, 0);
+    glUseProgram(0);
 
     const GLuint pathVs = compileShader(GL_VERTEX_SHADER, kPathVertSrc);
     const GLuint pathFs = compileShader(GL_FRAGMENT_SHADER, kPathFragSrc);
@@ -647,15 +546,13 @@ bool FrameRenderer::initSkyResources_()
     sky_.uSkyAccentColor = glGetUniformLocation(sky_.program, "uSkyAccentColor");
     sky_.uBackdropPreset = glGetUniformLocation(sky_.program, "uBackdropPreset");
     sky_.uStarIntensity = glGetUniformLocation(sky_.program, "uStarIntensity");
-    sky_.uNebulaIntensity = glGetUniformLocation(sky_.program, "uNebulaIntensity");
     sky_.uStateTintColor = glGetUniformLocation(sky_.program, "uStateTintColor");
     sky_.uStateTintStrength = glGetUniformLocation(sky_.program, "uStateTintStrength");
     if (sky_.uInvViewProj < 0 || sky_.uCameraPos < 0 || sky_.uLightDir < 0 ||
         sky_.uSkyZenithColor < 0 || sky_.uSkyHorizonColor < 0 ||
         sky_.uGroundColor < 0 || sky_.uSunGlowColor < 0 ||
         sky_.uSkyAccentColor < 0 || sky_.uBackdropPreset < 0 ||
-        sky_.uStarIntensity < 0 || sky_.uNebulaIntensity < 0 ||
-        sky_.uStateTintColor < 0 || sky_.uStateTintStrength < 0)
+        sky_.uStarIntensity < 0 || sky_.uStateTintColor < 0 || sky_.uStateTintStrength < 0)
     {
         std::cerr << "Missing sky uniform(s). Check shader names match exactly.\n";
     }
@@ -757,6 +654,12 @@ bool FrameRenderer::initPostProcessResources_()
     postProcess_.uFogFarColor = glGetUniformLocation(postProcess_.program, "uFogFarColor");
     postProcess_.uFogDistances = glGetUniformLocation(postProcess_.program, "uFogDistances");
 
+    glUseProgram(postProcess_.program);
+    glUniform1i(postProcess_.uSceneColor, 0);
+    glUniform1i(postProcess_.uSceneDepth, 1);
+    glUniform1i(postProcess_.uBloomTexture, 2);
+    glUseProgram(0);
+
     glGenFramebuffers(1, &postProcess_.hdrFramebuffer);
     glGenTextures(1, &postProcess_.hdrColorTexture);
     glGenTextures(1, &postProcess_.hdrDepthTexture);
@@ -801,6 +704,12 @@ bool FrameRenderer::initBloomResources_()
     bloom_.blurUSourceTexture = glGetUniformLocation(bloom_.blurProgram, "uSourceTexture");
     bloom_.blurUTexelSize = glGetUniformLocation(bloom_.blurProgram, "uTexelSize");
     bloom_.blurUDirection = glGetUniformLocation(bloom_.blurProgram, "uDirection");
+
+    glUseProgram(bloom_.extractProgram);
+    glUniform1i(bloom_.extractUSceneColor, 0);
+    glUseProgram(bloom_.blurProgram);
+    glUniform1i(bloom_.blurUSourceTexture, 0);
+    glUseProgram(0);
 
     glGenFramebuffers(2, bloom_.framebuffers);
     glGenTextures(2, bloom_.textures);
@@ -908,7 +817,6 @@ bool FrameRenderer::skyCacheMatches_(const SkyCacheKey& key) const
         sameVec3(skyCacheKey_.skyAccentColor, key.skyAccentColor) &&
         skyCacheKey_.backdropPreset == key.backdropPreset &&
         skyCacheKey_.starIntensity == key.starIntensity &&
-        skyCacheKey_.nebulaIntensity == key.nebulaIntensity &&
         sameVec3(skyCacheKey_.stateTintColor, key.stateTintColor) &&
         skyCacheKey_.stateTintStrength == key.stateTintStrength;
 }
@@ -1133,7 +1041,6 @@ void FrameRenderer::updateSkyCache_(
         lighting.skyAccentColor,
         lighting.backdropPreset,
         lighting.starIntensity,
-        lighting.nebulaIntensity,
         stateTintColor,
         stateTintStrength,
     };
@@ -1187,7 +1094,6 @@ void FrameRenderer::renderSkyPass_(
     glUniform3fv(sky_.uSkyAccentColor, 1, &lighting.skyAccentColor[0]);
     glUniform1i(sky_.uBackdropPreset, static_cast<int>(lighting.backdropPreset));
     glUniform1f(sky_.uStarIntensity, lighting.starIntensity);
-    glUniform1f(sky_.uNebulaIntensity, lighting.nebulaIntensity);
     glUniform3fv(sky_.uStateTintColor, 1, &stateTintColor[0]);
     glUniform1f(sky_.uStateTintStrength, stateTintStrength);
     glBindVertexArray(sky_.fullscreenVao);
@@ -1266,7 +1172,6 @@ void FrameRenderer::renderBloomPass_() const
     glUseProgram(bloom_.extractProgram);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, postProcess_.hdrColorTexture);
-    glUniform1i(bloom_.extractUSceneColor, 0);
     glUniform1f(bloom_.extractUThreshold, 1.15f);
     glBindVertexArray(postProcess_.fullscreenVao);
     glDrawArrays(GL_TRIANGLES, 0, 3);
@@ -1279,7 +1184,6 @@ void FrameRenderer::renderBloomPass_() const
 
     glBindFramebuffer(GL_FRAMEBUFFER, bloom_.framebuffers[1]);
     glBindTexture(GL_TEXTURE_2D, bloom_.textures[0]);
-    glUniform1i(bloom_.blurUSourceTexture, 0);
     glUniform2f(bloom_.blurUDirection, 1.0f, 0.0f);
     glDrawArrays(GL_TRIANGLES, 0, 3);
 
@@ -1306,15 +1210,12 @@ void FrameRenderer::compositeSceneTarget_(
     glUseProgram(postProcess_.program);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, postProcess_.hdrColorTexture);
-    glUniform1i(postProcess_.uSceneColor, 0);
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, postProcess_.hdrDepthTexture);
-    glUniform1i(postProcess_.uSceneDepth, 1);
     glActiveTexture(GL_TEXTURE2);
     glBindTexture(
         GL_TEXTURE_2D,
         lighting.bloomStrength > 0.0f ? bloom_.textures[0] : postProcess_.hdrColorTexture);
-    glUniform1i(postProcess_.uBloomTexture, 2);
     glUniform1f(postProcess_.uExposure, 1.0f);
     glUniform1f(postProcess_.uGamma, 2.2f);
     glUniform1f(postProcess_.uBloomStrength, lighting.bloomStrength);

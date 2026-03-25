@@ -42,23 +42,23 @@ uniform vec4 uColor;
 void main() { FragColor = uColor; }
 )GLSL";
 
-constexpr std::array<float, 4> kMenuDimColor{0.02f, 0.03f, 0.04f, 0.44f};
-constexpr std::array<float, 4> kMenuDimFrozenColor{0.04f, 0.05f, 0.06f, 0.68f};
-constexpr std::array<float, 4> kPanelFillColor{0.06f, 0.06f, 0.07f, 0.88f};
-constexpr std::array<float, 4> kPanelFillMenuColor{0.06f, 0.06f, 0.07f, 0.58f};
-constexpr std::array<float, 4> kPanelFrameColor{0.33f, 0.31f, 0.27f, 0.92f};
-constexpr std::array<float, 4> kAccentFillColor{0.78f, 0.63f, 0.30f, 0.92f};
-constexpr std::array<float, 4> kAccentFrozenFillColor{0.84f, 0.76f, 0.54f, 0.92f};
-constexpr std::array<float, 4> kTextPrimaryColor{0.96f, 0.95f, 0.92f, 1.0f};
-constexpr std::array<float, 4> kTextMutedColor{0.76f, 0.73f, 0.68f, 0.98f};
-constexpr std::array<float, 4> kTextAccentColor{0.92f, 0.82f, 0.60f, 1.0f};
+constexpr std::array<float, 4> kMenuDimColor{0.01f, 0.015f, 0.028f, 0.48f};
+constexpr std::array<float, 4> kMenuDimFrozenColor{0.02f, 0.028f, 0.046f, 0.70f};
+constexpr std::array<float, 4> kPanelFillColor{0.045f, 0.055f, 0.078f, 0.90f};
+constexpr std::array<float, 4> kPanelFillMenuColor{0.045f, 0.055f, 0.078f, 0.62f};
+constexpr std::array<float, 4> kPanelFrameColor{0.26f, 0.31f, 0.39f, 0.92f};
+constexpr std::array<float, 4> kAccentFillColor{0.44f, 0.56f, 0.69f, 0.92f};
+constexpr std::array<float, 4> kAccentFrozenFillColor{0.58f, 0.69f, 0.82f, 0.92f};
+constexpr std::array<float, 4> kTextPrimaryColor{0.93f, 0.95f, 0.98f, 1.0f};
+constexpr std::array<float, 4> kTextMutedColor{0.68f, 0.72f, 0.79f, 0.98f};
+constexpr std::array<float, 4> kTextAccentColor{0.78f, 0.85f, 0.92f, 1.0f};
 constexpr std::array<float, 4> kTextWarningColor{0.94f, 0.55f, 0.38f, 1.0f};
-constexpr std::array<float, 4> kDisabledOverlayColor{0.04f, 0.04f, 0.05f, 0.60f};
-constexpr std::array<float, 4> kHudFrozenColor{0.92f, 0.86f, 0.72f, 1.0f};
+constexpr std::array<float, 4> kDisabledOverlayColor{0.025f, 0.03f, 0.045f, 0.62f};
+constexpr std::array<float, 4> kHudFrozenColor{0.80f, 0.87f, 0.96f, 1.0f};
 constexpr std::array<float, 4> kHudActiveColor{0.56f, 0.86f, 0.60f, 1.0f};
-constexpr std::array<float, 4> kPopupBgColor{0.07f, 0.07f, 0.08f, 1.0f};
-constexpr std::array<float, 4> kPopupFrameColor{0.36f, 0.34f, 0.30f, 0.98f};
-constexpr std::array<float, 4> kPopupTextColor{0.96f, 0.95f, 0.92f, 1.0f};
+constexpr std::array<float, 4> kPopupBgColor{0.05f, 0.06f, 0.085f, 1.0f};
+constexpr std::array<float, 4> kPopupFrameColor{0.30f, 0.35f, 0.43f, 0.98f};
+constexpr std::array<float, 4> kPopupTextColor{0.93f, 0.95f, 0.98f, 1.0f};
 
 void drawLayer(
     const GLuint vao,
@@ -1111,7 +1111,9 @@ void drawHud(
     const bool showInfoPanel = infoLineCount > 0;
     float infoPanelBottom = hudY0;
     if (showInfoPanel) {
-        const float hudX1 = std::min(geometry.width - 16.0f, hudTextX + infoMaxLineW + 20.0f);
+        const float maxExpectedTimeWidth = measureMaxLinePx("TIME: 999D 23:59:59", baseScalePx);
+        const float panelTextWidth = std::max(infoMaxLineW, maxExpectedTimeWidth);
+        const float hudX1 = std::min(geometry.width - 16.0f, hudTextX + panelTextWidth + 20.0f);
         const float hudY1 = hudY0 + 16.0f + static_cast<float>(infoLineCount) * hudRowStep;
         pushQuadPx(buffers.panelFill, hudX0, hudY0, hudX1, hudY1);
         pushFramePx(buffers.panelFrame, hudX0, hudY0, hudX1, hudY1, 1.5f);

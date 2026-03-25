@@ -104,7 +104,7 @@ SceneView buildSceneView(
     sceneView.cameraPosition = cam.pos;
     sceneView.forward = input::forwardDir(cam);
     sceneView.nearPlane = 0.1f;
-    sceneView.farPlane = 1000.0f;
+    sceneView.farPlane = 6000.0f;
     sceneView.proj = glm::perspective(
         glm::radians(std::clamp(cameraSettings.fovDegrees, 30.0f, 130.0f)),
         aspect,
@@ -188,24 +188,25 @@ void drawBodies(
     glUniformMatrix4fv(resources.uLightViewProj, 1, GL_FALSE, &lighting.shadowViewProj[0][0]);
     glUniform2fv(resources.uShadowTexelSize, 1, &lighting.shadowTexelSize[0]);
     glUniform1i(resources.uLocalLightCount, lighting.localLightCount);
-    for (int i = 0; i < lighting.localLightCount; ++i) {
-        const LocalLight& light = lighting.localLights[static_cast<std::size_t>(i)];
-        glUniform4f(
-            resources.uLocalLightPosRange[static_cast<std::size_t>(i)],
-            light.position.x,
-            light.position.y,
-            light.position.z,
-            light.range);
-        glUniform4f(
-            resources.uLocalLightColorIntensity[static_cast<std::size_t>(i)],
-            light.color.x,
-            light.color.y,
-            light.color.z,
-            light.intensity);
+    if (lighting.localLightCount > 0) {
+        std::array<glm::vec4, kMaxLocalLights> localLightPosRange{};
+        std::array<glm::vec4, kMaxLocalLights> localLightColorIntensity{};
+        for (int i = 0; i < lighting.localLightCount; ++i) {
+            const LocalLight& light = lighting.localLights[static_cast<std::size_t>(i)];
+            localLightPosRange[static_cast<std::size_t>(i)] = glm::vec4(light.position, light.range);
+            localLightColorIntensity[static_cast<std::size_t>(i)] = glm::vec4(light.color, light.intensity);
+        }
+        glUniform4fv(
+            resources.uLocalLightPosRange,
+            lighting.localLightCount,
+            &localLightPosRange[0].x);
+        glUniform4fv(
+            resources.uLocalLightColorIntensity,
+            lighting.localLightCount,
+            &localLightColorIntensity[0].x);
     }
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, resources.shadowTexture);
-    glUniform1i(resources.uShadowMap, 0);
 
     glBindVertexArray(resources.sphereVao);
     glDrawElementsInstanced(

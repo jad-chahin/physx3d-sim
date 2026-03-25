@@ -9,7 +9,6 @@ namespace render_scene {
 enum class BackdropPreset {
     Sunny,
     Space,
-    Nebula,
 };
 
 struct LocalLight {
@@ -29,12 +28,11 @@ struct SceneLighting {
     glm::vec3 sunGlowColor{1.30f, 1.08f, 0.86f};
     glm::vec3 skyAccentColor{0.48f, 0.62f, 0.82f};
     float starIntensity = 0.0f;
-    float nebulaIntensity = 0.0f;
     float bloomStrength = 0.18f;
     glm::vec3 fogNearColor{0.55f, 0.63f, 0.74f};
-    float fogNearDistance = 32.0f;
+    float fogNearDistance = 2200.0f;
     glm::vec3 fogFarColor{0.78f, 0.84f, 0.92f};
-    float fogFarDistance = 150.0f;
+    float fogFarDistance = 5600.0f;
     std::array<LocalLight, kMaxLocalLights> localLights{};
     int localLightCount = 0;
     glm::mat4 shadowViewProj{1.0f};

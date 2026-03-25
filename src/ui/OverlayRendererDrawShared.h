@@ -61,6 +61,7 @@ inline const std::array<std::uint8_t, 7>& glyph5x7(const char c) {
     static constexpr std::array<std::uint8_t, 7> GT = {0b10000, 0b01000, 0b00100, 0b00010, 0b00100, 0b01000, 0b10000};
     static constexpr std::array<std::uint8_t, 7> PLUS = {0b00000, 0b00100, 0b00100, 0b11111, 0b00100, 0b00100, 0b00000};
     static constexpr std::array<std::uint8_t, 7> MINUS = {0b00000, 0b00000, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000};
+    static constexpr std::array<std::uint8_t, 7> SLASH = {0b00001, 0b00010, 0b00100, 0b01000, 0b10000, 0b00000, 0b00000};
     static constexpr std::array<std::uint8_t, 7> EQUAL = {0b00000, 0b11111, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000};
     static constexpr std::array<std::uint8_t, 7> DOT = {0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00110, 0b00110};
     static constexpr std::array<std::uint8_t, 7> UNDERSCORE = {0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b11111};
@@ -73,7 +74,7 @@ inline const std::array<std::uint8_t, 7>& glyph5x7(const char c) {
         case 'Z': return Z; case '0': return N0; case '1': return N1; case '2': return N2; case '3': return N3;
         case '4': return N4; case '5': return N5; case '6': return N6; case '7': return N7; case '8': return N8;
         case '9': return N9; case ':': return COLON; case '<': return LT; case '>': return GT; case '+': return PLUS;
-        case '-': return MINUS; case '=': return EQUAL; case '.': return DOT; case '_': return UNDERSCORE; default: return SP;
+        case '-': return MINUS; case '/': return SLASH; case '=': return EQUAL; case '.': return DOT; case '_': return UNDERSCORE; default: return SP;
     }
 }
 
@@ -164,9 +165,21 @@ inline void formatHudSpeed(char* out, const std::size_t outSize, const double si
 
 inline void formatElapsedTime(char* out, const std::size_t outSize, const double elapsedSeconds) {
     const long long totalSeconds = static_cast<long long>(std::max(0.0, std::floor(elapsedSeconds)));
+    const long long days = totalSeconds / 86400;
     const long long hours = totalSeconds / 3600;
     const long long minutes = (totalSeconds / 60) % 60;
     const long long seconds = totalSeconds % 60;
+    if (days > 0) {
+        std::snprintf(
+            out,
+            outSize,
+            "TIME: %lldD %02lld:%02lld:%02lld",
+            days,
+            hours % 24,
+            minutes,
+            seconds);
+        return;
+    }
     std::snprintf(out, outSize, "TIME: %02lld:%02lld:%02lld", hours, minutes, seconds);
 }
 

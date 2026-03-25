@@ -27,7 +27,7 @@ constexpr std::array<const char*, 2> kWindowModes{{
 
 template <typename Settings> struct RowDescriptor { const char* label; RowKind kind; std::string (*value)(const Settings&); bool (*boolValue)(const Settings&); void (*adjust)(Settings&, int); };
 enum class ActionSection { Top, Bottom };
-struct ActionDefinition { ActionKind kind; const char* label; ActionSection section; bool (*visible)(SettingsPage, bool, const input::ControlBindings&); };
+struct ActionDefinition { ActionKind kind; const char* label; ActionSection section; bool (*visible)(SettingsPage, const input::ControlBindings&); };
 struct PopupDefinition { PauseMenu::PopupKind kind; const char* title; const char* body; const char* confirmLabel; const char* cancelLabel; };
 
 template <typename T, std::size_t N>
@@ -109,8 +109,16 @@ std::string formatFloat(const float value, const char* suffix = "") {
     return buffer;
 }
 
-std::string formatMultiplier(const double value) {
-    return formatFloat(static_cast<float>(value), "X");
+std::string formatGravityStrength(const double value) {
+    const int idx = closestChoiceIndex(kGravityStrengthChoices, value);
+    constexpr int kUnityIndex = 9;
+    if (idx < kUnityIndex) {
+        return formatFloat(static_cast<float>(idx + 1) * 0.1f, "X");
+    }
+    if (idx == kUnityIndex) {
+        return "1X";
+    }
+    return std::to_string(idx - kUnityIndex + 1) + "X";
 }
 
 std::string formatPercent(const double value) {
@@ -147,24 +155,6 @@ void applyObjectInfoDetailLevel(InterfaceSettings& settings, const int detailInd
     settings.objectInfoRadius = true;
     settings.objectInfoAngularSpeed = clamped >= 1;
     settings.objectInfoBodyType = clamped >= 1;
-}
-
-bool interfacePageSettingsEqual(const InterfaceSettings& lhs, const InterfaceSettings& rhs) {
-    return lhs.uiScaleIndex == rhs.uiScaleIndex &&
-        lhs.minimapZoomIndex == rhs.minimapZoomIndex &&
-        lhs.showSimulationSpeed == rhs.showSimulationSpeed &&
-        lhs.showFps == rhs.showFps &&
-        lhs.showElapsedTime == rhs.showElapsedTime &&
-        lhs.showMinimap == rhs.showMinimap &&
-        lhs.showCoordinates == rhs.showCoordinates &&
-        lhs.showCrosshair == rhs.showCrosshair &&
-        lhs.objectInfo == rhs.objectInfo &&
-        lhs.objectInfoMaterial == rhs.objectInfoMaterial &&
-        lhs.objectInfoVelocity == rhs.objectInfoVelocity &&
-        lhs.objectInfoMass == rhs.objectInfoMass &&
-        lhs.objectInfoRadius == rhs.objectInfoRadius &&
-        lhs.objectInfoAngularSpeed == rhs.objectInfoAngularSpeed &&
-        lhs.objectInfoBodyType == rhs.objectInfoBodyType;
 }
 
 void applyInterfacePageSettings(InterfaceSettings& dst, const InterfaceSettings& src) {
@@ -275,7 +265,7 @@ constexpr std::array<RowDescriptor<SimulationSettings>, 8> kSimulationRows{{
     {
         "GRAVITY STRENGTH",
         RowKind::Choice,
-        [](const SimulationSettings& settings) { return formatMultiplier(settings.gravityStrength / kDefaultGravityStrength); },
+        [](const SimulationSettings& settings) { return formatGravityStrength(settings.gravityStrength); },
         nullptr,
         [](SimulationSettings& settings, int delta) { adjustChoice(kGravityStrengthChoices, settings.gravityStrength, delta); },
     },
@@ -382,18 +372,16 @@ constexpr std::array<RowDescriptor<InterfaceSettings>, 10> kInterfaceRows{{
     },
 }};
 
-bool actionAlwaysVisible(SettingsPage, bool, const input::ControlBindings&) { return true; }
-bool actionApplyVisible(const SettingsPage page, const bool pageDirty, const input::ControlBindings&) { return page != SettingsPage::Controls && pageDirty; }
-bool actionResetWorldVisible(const SettingsPage page, bool, const input::ControlBindings&) { return page == SettingsPage::Simulation; }
-bool actionResetControlsVisible(const SettingsPage page, bool, const input::ControlBindings& controls) { return page == SettingsPage::Controls && controls != input::ControlBindings{}; }
+bool actionAlwaysVisible(SettingsPage, const input::ControlBindings&) { return true; }
+bool actionResetWorldVisible(const SettingsPage page, const input::ControlBindings&) { return page == SettingsPage::Simulation; }
+bool actionResetControlsVisible(const SettingsPage page, const input::ControlBindings& controls) { return page == SettingsPage::Controls && controls != input::ControlBindings{}; }
 
-constexpr std::array<ActionDefinition, 6> kActionDefinitions{{
+constexpr std::array<ActionDefinition, 5> kActionDefinitions{{
     {ActionKind::ResetSettings, "", ActionSection::Top, actionAlwaysVisible},
     {ActionKind::Close, "X", ActionSection::Top, actionAlwaysVisible},
     {ActionKind::Exit, "EXIT TO HOME", ActionSection::Top, actionAlwaysVisible},
     {ActionKind::ResetWorld, "RESET WORLD", ActionSection::Bottom, actionResetWorldVisible},
     {ActionKind::ResetControls, "RESET CONTROLS", ActionSection::Bottom, actionResetControlsVisible},
-    {ActionKind::Apply, "APPLY CHANGES", ActionSection::Bottom, actionApplyVisible},
 }};
 
 constexpr std::array<PopupDefinition, 4> kPopupDefinitions{{
@@ -405,13 +393,12 @@ constexpr std::array<PopupDefinition, 4> kPopupDefinitions{{
 
 std::vector<const ActionDefinition*> visibleActionsForSection(
     const SettingsPage page,
-    const bool pageDirty,
     const ActionSection section,
     const input::ControlBindings& controls)
 {
     std::vector<const ActionDefinition*> actions;
     for (const auto& definition : kActionDefinitions) {
-        if (definition.section == section && definition.visible(page, pageDirty, controls)) {
+        if (definition.section == section && definition.visible(page, controls)) {
             actions.push_back(&definition);
         }
     }
@@ -429,7 +416,6 @@ const PopupDefinition* popupDefinitionFor(const PauseMenu::PopupKind kind) {
 
 ActionKind actionKindFromId(const int id) {
     switch (static_cast<ActionKind>(id)) {
-        case ActionKind::Apply:
         case ActionKind::ResetWorld:
         case ActionKind::ResetControls:
         case ActionKind::ResetSettings:
@@ -437,7 +423,7 @@ ActionKind actionKindFromId(const int id) {
         case ActionKind::Exit:
             return static_cast<ActionKind>(id);
     }
-    return ActionKind::Apply;
+    return ActionKind::Close;
 }
 
 SettingsPage pageFromNumberKey(const int key) {
@@ -713,21 +699,6 @@ int PauseMenu::rowCount() const {
     return 0;
 }
 
-bool PauseMenu::pageDirty(const SettingsPage page) const {
-    switch (page) {
-        case SettingsPage::Display: return draft_.display != applied_.display;
-        case SettingsPage::Simulation:
-            return draft_.simulation != applied_.simulation ||
-                draft_.interface.drawPath != applied_.interface.drawPath ||
-                draft_.interface.pathLengthIndex != applied_.interface.pathLengthIndex ||
-                draft_.interface.pathColorIndex != applied_.interface.pathColorIndex;
-        case SettingsPage::Camera: return draft_.camera != applied_.camera;
-        case SettingsPage::Interface: return !interfacePageSettingsEqual(draft_.interface, applied_.interface);
-        case SettingsPage::Controls: return false;
-    }
-    return false;
-}
-
 bool PauseMenu::fieldDisabled(const int row) const {
     if (page_ == SettingsPage::Simulation) {
         return (row == static_cast<int>(kSimulationRows.size()) + 1 ||
@@ -792,7 +763,7 @@ void PauseMenu::moveSelectionVertical(const int delta, const input::ControlBindi
     manualScroll_ = false;
 
     const auto visibleActions = [&](const ActionSection section) {
-        return visibleActionsForSection(page_, pageDirty(page_), section, controls);
+        return visibleActionsForSection(page_, section, controls);
     };
     const auto findEnabledRow = [&](const int start, const int step) {
         const int count = rowCount();
@@ -1055,16 +1026,62 @@ bool PauseMenu::selectedRowActsAsToggle() const {
     return false;
 }
 
-void PauseMenu::moveSelectionHorizontal(const int delta) {
+bool PauseMenu::selectedRowSupportsHorizontalRepeat() const
+{
+    if (popup_ != PopupKind::None) {
+        return false;
+    }
+    if (focusArea_ != FocusArea::Rows || selectedRow_ < 0 || fieldDisabled(selectedRow_)) {
+        return false;
+    }
+
+    switch (page_) {
+        case SettingsPage::Display:
+            return false;
+        case SettingsPage::Simulation:
+            return selectedRow_ == 0 ||
+                selectedRow_ == 1 ||
+                selectedRow_ == 3 ||
+                selectedRow_ == 5 ||
+                selectedRow_ == 6 ||
+                selectedRow_ == 7 ||
+                selectedRow_ == static_cast<int>(kSimulationRows.size()) + 1 ||
+                selectedRow_ == static_cast<int>(kSimulationRows.size()) + 2;
+        case SettingsPage::Camera:
+            return selectedRow_ == 0 ||
+                selectedRow_ == 1 ||
+                selectedRow_ == 3;
+        case SettingsPage::Interface:
+            return selectedRow_ == kInterfaceRowUiScale ||
+                selectedRow_ == kInterfaceRowMinimapZoom ||
+                selectedRow_ == kInterfaceRowDetailLevel;
+        case SettingsPage::Controls:
+            return false;
+    }
+    return false;
+}
+
+void PauseMenu::moveSelectionHorizontal(const int delta, GLFWwindow* window) {
+    if (popup_ != PopupKind::None) {
+        adjustCurrentPageRow(delta);
+        return;
+    }
+
+    if (page_ == SettingsPage::Controls) {
+        return;
+    }
+
+    const SettingsBundle before = draft_;
     adjustCurrentPageRow(delta);
+    if (draft_ != before) {
+        commitCurrentPageSettings(window);
+    }
 }
 
 void PauseMenu::triggerAction(
-    const ActionKind action,
-    GLFWwindow* window)
+    const ActionKind action)
 {
     switch (action) {
-        case ActionKind::Apply: applyCurrentPage(window); return;
         case ActionKind::ResetWorld: openPopup(PopupKind::ResetWorld); return;
         case ActionKind::ResetControls: openPopup(PopupKind::ResetControls); return;
         case ActionKind::ResetSettings: openPopup(PopupKind::ResetSettings); return;
@@ -1074,7 +1091,6 @@ void PauseMenu::triggerAction(
 }
 
 bool PauseMenu::triggerFocusedAction(
-    GLFWwindow* window,
     const input::ControlBindings& controls,
     const std::string& controlsConfigPath)
 {
@@ -1084,7 +1100,6 @@ bool PauseMenu::triggerFocusedAction(
 
     const auto actions = visibleActionsForSection(
         page_,
-        pageDirty(page_),
         focusArea_ == FocusArea::TopActions ? ActionSection::Top : ActionSection::Bottom,
         controls);
     if (selectedAction_ < 0 || selectedAction_ >= static_cast<int>(actions.size())) {
@@ -1093,15 +1108,11 @@ bool PauseMenu::triggerFocusedAction(
 
     (void)controls;
     (void)controlsConfigPath;
-    triggerAction(actions[static_cast<std::size_t>(selectedAction_)]->kind, window);
+    triggerAction(actions[static_cast<std::size_t>(selectedAction_)]->kind);
     return true;
 }
 
-void PauseMenu::applyCurrentPage(GLFWwindow* window) {
-    if (!pageDirty(page_)) {
-        return;
-    }
-
+void PauseMenu::commitCurrentPageSettings(GLFWwindow* window) {
     switch (page_) {
         case SettingsPage::Display:
             applied_.display = draft_.display;
@@ -1123,6 +1134,7 @@ void PauseMenu::applyCurrentPage(GLFWwindow* window) {
             return;
     }
 
+    draft_ = applied_;
     saveSettings();
     statusMessage_.clear();
 }
@@ -1141,7 +1153,7 @@ void PauseMenu::activateFocused(
         return;
     }
 
-    if (triggerFocusedAction(window, controls, controlsConfigPath)) {
+    if (triggerFocusedAction(controls, controlsConfigPath)) {
         return;
     }
 
@@ -1151,7 +1163,7 @@ void PauseMenu::activateFocused(
     }
 
     if (selectedRow_ >= 0 && !fieldDisabled(selectedRow_)) {
-        moveSelectionHorizontal(1);
+        moveSelectionHorizontal(1, window);
     }
 }
 
@@ -1274,26 +1286,18 @@ void PauseMenu::handlePressedKey(
             moveSelectionVertical(1, controls);
             return;
         case GLFW_KEY_LEFT:
-            moveSelectionHorizontal(-1);
+            moveSelectionHorizontal(-1, window);
             return;
         case GLFW_KEY_RIGHT:
-            moveSelectionHorizontal(1);
+            moveSelectionHorizontal(1, window);
             return;
         case GLFW_KEY_ENTER:
         case GLFW_KEY_KP_ENTER:
-            if (popup_ == PopupKind::None &&
-                focusArea_ == FocusArea::Rows &&
-                page_ != SettingsPage::Controls &&
-                pageDirty(page_))
-            {
-                applyCurrentPage(window);
-                return;
-            }
             activateFocused(window, controls, controlsConfigPath);
             return;
         case GLFW_KEY_SPACE:
             if (selectedRowActsAsToggle()) {
-                moveSelectionHorizontal(1);
+                moveSelectionHorizontal(1, window);
             }
             return;
         default:
@@ -1424,7 +1428,7 @@ void PauseMenu::handlePointerInput(
             return;
         }
 
-        triggerAction(actionKindFromId(action.id), window);
+        triggerAction(actionKindFromId(action.id));
         return;
     }
 
@@ -1493,17 +1497,17 @@ void PauseMenu::handlePointerInput(
     switch (view.rows[static_cast<std::size_t>(clickedLine)].kind) {
         case RowKind::Toggle:
             if (widgets.checkbox.contains(xPx, yPx)) {
-                moveSelectionHorizontal(1);
+                moveSelectionHorizontal(1, window);
                 return;
             }
             break;
         case RowKind::Choice:
             if (widgets.leftArrow.contains(xPx, yPx)) {
-                moveSelectionHorizontal(-1);
+                moveSelectionHorizontal(-1, window);
                 return;
             }
             if (widgets.rightArrow.contains(xPx, yPx)) {
-                moveSelectionHorizontal(1);
+                moveSelectionHorizontal(1, window);
                 return;
             }
             break;
@@ -1512,9 +1516,6 @@ void PauseMenu::handlePointerInput(
             break;
     }
 
-    if (isDoubleClick) {
-        moveSelectionHorizontal(1);
-    }
 }
 
 void PauseMenu::updateContinuousInput(GLFWwindow* window, const input::ControlBindings& controls) {
@@ -1547,8 +1548,16 @@ void PauseMenu::updateContinuousInput(GLFWwindow* window, const input::ControlBi
 
     handleRepeat(GLFW_KEY_UP, upHeld_, upNextRepeatAt_, [&] { moveSelectionVertical(-1, controls); });
     handleRepeat(GLFW_KEY_DOWN, downHeld_, downNextRepeatAt_, [&] { moveSelectionVertical(1, controls); });
-    handleRepeat(GLFW_KEY_LEFT, leftHeld_, leftNextRepeatAt_, [&] { moveSelectionHorizontal(-1); });
-    handleRepeat(GLFW_KEY_RIGHT, rightHeld_, rightNextRepeatAt_, [&] { moveSelectionHorizontal(1); });
+    handleRepeat(GLFW_KEY_LEFT, leftHeld_, leftNextRepeatAt_, [&] {
+        if (selectedRowSupportsHorizontalRepeat()) {
+            moveSelectionHorizontal(-1, window);
+        }
+    });
+    handleRepeat(GLFW_KEY_RIGHT, rightHeld_, rightNextRepeatAt_, [&] {
+        if (selectedRowSupportsHorizontalRepeat()) {
+            moveSelectionHorizontal(1, window);
+        }
+    });
 }
 
 void PauseMenu::appendCurrentPageRows(MenuView& view, const input::ControlBindings& controls) const {
@@ -1639,7 +1648,7 @@ MenuView PauseMenu::buildView(const input::ControlBindings& controls) const {
     view.statusLine = isDisabledReasonMessage(statusMessage_) ? "" : statusMessage_;
     view.statusWarning = awaitingRebind_;
     view.footerHint = contextDisabledReason.empty()
-        ? "ESC CLOSE  TAB PAGE  ARROWS NAVIGATE  ENTER APPLY/ACTIVATE"
+        ? "ESC CLOSE  TAB PAGE  ARROWS NAVIGATE/CHANGE  ENTER ACTIVATE"
         : contextDisabledReason;
     view.rows.reserve(static_cast<std::size_t>(rowCount()) + 1);
     view.rows.push_back(ViewRow{
@@ -1652,7 +1661,7 @@ MenuView PauseMenu::buildView(const input::ControlBindings& controls) const {
     int topActionIndex = 0;
     int bottomActionIndex = 0;
     for (const auto& definition : kActionDefinitions) {
-        if (!definition.visible(page_, pageDirty(page_), controls)) {
+        if (!definition.visible(page_, controls)) {
             continue;
         }
         const bool isTopAction = definition.section == ActionSection::Top;

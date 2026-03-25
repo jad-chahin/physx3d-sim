@@ -58,8 +58,8 @@ private:
         GLint uShadowMap = -1;
         GLint uShadowTexelSize = -1;
         GLint uLocalLightCount = -1;
-        std::array<GLint, kMaxLocalLights> uLocalLightPosRange{};
-        std::array<GLint, kMaxLocalLights> uLocalLightColorIntensity{};
+        GLint uLocalLightPosRange = -1;
+        GLint uLocalLightColorIntensity = -1;
         GLuint sphereVao = 0;
         GLuint sphereVbo = 0;
         GLuint sphereEbo = 0;
@@ -98,7 +98,6 @@ private:
         GLint uSkyAccentColor = -1;
         GLint uBackdropPreset = -1;
         GLint uStarIntensity = -1;
-        GLint uNebulaIntensity = -1;
         GLint uStateTintColor = -1;
         GLint uStateTintStrength = -1;
 
@@ -220,7 +219,6 @@ private:
         glm::vec3 skyAccentColor{0.0f, 0.0f, 0.0f};
         BackdropPreset backdropPreset = BackdropPreset::Sunny;
         float starIntensity = 0.0f;
-        float nebulaIntensity = 0.0f;
         glm::vec3 stateTintColor{0.0f, 0.0f, 0.0f};
         float stateTintStrength = 0.0f;
     };

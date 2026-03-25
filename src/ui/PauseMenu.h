@@ -41,31 +41,30 @@ inline constexpr std::array<const char*, 6> kPathColorChoices{{"CYAN", "AMBER", 
 inline constexpr std::array<double, 9> kMinSpeedChoices{{1.0 / 256.0, 1.0 / 128.0, 1.0 / 64.0, 1.0 / 32.0, 1.0 / 16.0, 1.0 / 8.0, 1.0 / 4.0, 1.0 / 2.0, 1.0}};
 inline constexpr std::array<double, 9> kMaxSpeedChoices{{1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0, 256.0}};
 inline constexpr double kDefaultGravityStrength = sim::World::Params::kDefaultG;
-inline constexpr std::array<double, 20> kGravityStrengthChoices{{
-    kDefaultGravityStrength * 0.50,
-    kDefaultGravityStrength * 1.00,
-    kDefaultGravityStrength * 1.50,
-    kDefaultGravityStrength * 2.00,
-    kDefaultGravityStrength * 2.50,
-    kDefaultGravityStrength * 3.00,
-    kDefaultGravityStrength * 3.50,
-    kDefaultGravityStrength * 4.00,
-    kDefaultGravityStrength * 4.50,
-    kDefaultGravityStrength * 5.00,
-    kDefaultGravityStrength * 5.50,
-    kDefaultGravityStrength * 6.00,
-    kDefaultGravityStrength * 6.50,
-    kDefaultGravityStrength * 7.00,
-    kDefaultGravityStrength * 7.50,
-    kDefaultGravityStrength * 8.00,
-    kDefaultGravityStrength * 8.50,
-    kDefaultGravityStrength * 9.00,
-    kDefaultGravityStrength * 9.50,
-    kDefaultGravityStrength * 10.00,
+inline constexpr std::array<double, 19> kGravityStrengthChoices{{
+    kDefaultGravityStrength / 10.0,
+    kDefaultGravityStrength * 0.2,
+    kDefaultGravityStrength * 0.3,
+    kDefaultGravityStrength * 0.4,
+    kDefaultGravityStrength * 0.5,
+    kDefaultGravityStrength * 0.6,
+    kDefaultGravityStrength * 0.7,
+    kDefaultGravityStrength * 0.8,
+    kDefaultGravityStrength * 0.9,
+    kDefaultGravityStrength * 1.0,
+    kDefaultGravityStrength * 2.0,
+    kDefaultGravityStrength * 3.0,
+    kDefaultGravityStrength * 4.0,
+    kDefaultGravityStrength * 5.0,
+    kDefaultGravityStrength * 6.0,
+    kDefaultGravityStrength * 7.0,
+    kDefaultGravityStrength * 8.0,
+    kDefaultGravityStrength * 9.0,
+    kDefaultGravityStrength * 10.0,
 }};
 inline constexpr std::array<int, 10> kCollisionIterationChoices{{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}};
 inline constexpr std::array<double, 11> kGlobalRestitutionChoices{{0.00, 0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90, 1.00}};
-inline constexpr std::array<float, 9> kLookSensitivityChoices{{0.0008f, 0.0012f, 0.0016f, 0.0020f, 0.0025f, 0.0030f, 0.0038f, 0.0048f, 0.0060f}};
+inline constexpr std::array<float, 11> kLookSensitivityChoices{{0.0010f, 0.0015f, 0.0020f, 0.0025f, 0.0030f, 0.0035f, 0.0040f, 0.0045f, 0.0050f, 0.0055f, 0.0060f}};
 inline constexpr std::array<float, 8> kBaseMoveSpeedChoices{{10.0f, 20.0f, 30.0f, 40.0f, 50.0f, 60.0f, 70.0f, 80.0f}};
 inline constexpr std::array<float, 8> kFovChoices{{50.0f, 60.0f, 70.0f, 80.0f, 90.0f, 100.0f, 110.0f, 120.0f}};
 
@@ -120,7 +119,7 @@ struct MenuView {
     bool operator==(const MenuView&) const = default;
 };
 
-enum class ActionKind { Apply = 0, ResetWorld, ResetControls, ResetSettings, Close, Exit };
+enum class ActionKind { ResetWorld = 0, ResetControls, ResetSettings, Close, Exit };
 
 class PauseMenu {
 public:
@@ -161,15 +160,14 @@ private:
     void saveSettings() const;
     static void applyDisplaySettings(GLFWwindow* window, DisplaySettings& settings);
     [[nodiscard]] int rowCount() const;
-    [[nodiscard]] bool pageDirty(SettingsPage page) const;
     [[nodiscard]] bool fieldDisabled(int row) const;
     [[nodiscard]] std::string disabledReason(int row) const;
     void cyclePage(int delta);
     void selectPage(SettingsPage page);
     void moveSelectionVertical(int delta, const input::ControlBindings& controls);
-    void moveSelectionHorizontal(int delta);
+    void moveSelectionHorizontal(int delta, GLFWwindow* window = nullptr);
     void activateFocused(GLFWwindow* window, input::ControlBindings& controls, const std::string& controlsConfigPath);
-    void applyCurrentPage(GLFWwindow* window);
+    void commitCurrentPageSettings(GLFWwindow* window);
     void resetAllSettings(GLFWwindow* window);
     void resetControlsToDefaults(input::ControlBindings& controls, const std::string& controlsConfigPath);
     bool beginRebindForSelectedRow();
@@ -180,8 +178,9 @@ private:
     void appendCurrentPageRows(MenuView& view, const input::ControlBindings& controls) const;
     void adjustCurrentPageRow(int delta);
     [[nodiscard]] bool selectedRowActsAsToggle() const;
-    void triggerAction(ActionKind action, GLFWwindow* window);
-    bool triggerFocusedAction(GLFWwindow* window, const input::ControlBindings& controls, const std::string& controlsConfigPath);
+    [[nodiscard]] bool selectedRowSupportsHorizontalRepeat() const;
+    void triggerAction(ActionKind action);
+    bool triggerFocusedAction(const input::ControlBindings& controls, const std::string& controlsConfigPath);
 };
 
 } // namespace ui
