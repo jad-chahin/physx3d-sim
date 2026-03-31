@@ -350,18 +350,18 @@ void testUi2BackdropPresetAppliesImmediately()
     ui::testing::PauseMenuAccess::setSelectedRow(menu, 10);
 
     auto view = menu.buildView(controls);
-    require(view.rows.size() > 11 && view.rows[11].label == "BACKDROP" && view.rows[11].value == "SUNNY",
-        "backdrop row should default to SUNNY");
+    require(view.rows.size() > 11 && view.rows[11].label == "BACKDROP" && view.rows[11].value == "SPACE",
+        "backdrop row should default to SPACE");
 
-    ui::testing::PauseMenuAccess::moveHorizontal(menu, 1, controls);
-    require(ui::testing::PauseMenuAccess::draft(menu).interface.backdropPresetIndex == 1,
+    ui::testing::PauseMenuAccess::moveHorizontal(menu, -1, controls);
+    require(ui::testing::PauseMenuAccess::draft(menu).interface.backdropPresetIndex == 0,
         "backdrop edits should update the draft state");
-    require(menu.interfaceSettings().backdropPresetIndex == 1,
+    require(menu.interfaceSettings().backdropPresetIndex == 0,
         "backdrop edits should apply immediately");
 
     view = menu.buildView(controls);
-    require(view.rows[11].value == "SPACE",
-        "backdrop row should expose SPACE after stepping right");
+    require(view.rows[11].value == "SUNNY",
+        "backdrop row should expose SUNNY after stepping left");
 }
 
 void testUi2GravityStrengthUsesReciprocalAndIntegerLabels()

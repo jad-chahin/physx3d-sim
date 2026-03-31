@@ -21,7 +21,7 @@ struct DisplaySettings { WindowMode windowMode = WindowMode::Borderless; bool vs
 struct SimulationSettings { double minSimSpeed = 1.0 / 64.0, maxSimSpeed = 64.0, gravityStrength = sim::World::Params::kDefaultG, globalRestitution = sim::World::Params::kDefaultRestitution; bool gravityEnabled = true, collisionsEnabled = true; int velocityIterations = sim::World::Params::kDefaultVelocityIterations, positionIterations = sim::World::Params::kDefaultPositionIterations; bool operator==(const SimulationSettings&) const = default; };
 struct CameraSettings { float lookSensitivity = 0.0025f, baseMoveSpeed = 40.0f, fovDegrees = 60.0f; bool invertY = false; bool operator==(const CameraSettings&) const = default; };
 struct InterfaceSettings {
-    int uiScaleIndex = 2, minimapZoomIndex = 1, pathLengthIndex = 3, pathColorIndex = 0, backdropPresetIndex = 0;
+    int uiScaleIndex = 2, minimapZoomIndex = 1, pathLengthIndex = 3, pathColorIndex = 0, backdropPresetIndex = 1;
     bool showSimulationSpeed = true, showFps = true, showElapsedTime = true, showMinimap = true,
          showCoordinates = true, showCrosshair = true, drawPath = false, objectInfo = true,
          objectInfoMaterial = false, objectInfoVelocity = true, objectInfoMass = true,
