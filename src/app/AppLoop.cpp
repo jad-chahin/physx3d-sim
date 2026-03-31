@@ -82,6 +82,8 @@ void configureOpenGl() {
 struct FrameRenderState {
     ui::MenuView menuView{};
     OverlayRenderer::SpatialHud spatialHud{};
+    OverlayRenderer::FocusMarker focusMarker{};
+    OverlayRenderer::FocusHint focusHint{};
     OverlayRenderer::TargetHud targetHud{};
     app_loop::SpatialHudScratch spatialHudScratch{};
     render_scene::SceneSnapshot sceneSnapshot{};
@@ -127,7 +129,8 @@ void updateFrameState(
     const input::ControlBindings& controls,
     const ui::PauseMenu& pauseMenu,
     app_loop::RuntimeState& runtime,
-    input::Camera& cam)
+    input::Camera& cam,
+    const render_scene::FramebufferSize& framebufferSize)
 {
     const auto& simSettings = pauseMenu.simulationSettings();
     const auto& cameraSettings = pauseMenu.cameraSettings();
@@ -142,8 +145,48 @@ void updateFrameState(
     runtime.simulation.fixedStep.lastFrameTime = now;
 
     app_loop::updateFps(runtime, frameTime);
-    app_loop::updateCamera(window, controls, cameraSettings, runtime, cameraFrameTime, cam);
+    const bool focusDown = input::isBindingPressed(window, controls.focusTarget);
+    bool focusStartedThisFrame = false;
+    if (!pauseMenu.isOpen() && focusDown && !runtime.focus.focusWasDown) {
+        if (runtime.focus.camera.active) {
+            app_loop::clearCameraFocus(runtime.focus.camera);
+        } else if (simulation.hasBodies()) {
+            render_scene::SceneSnapshot interactionSnapshot{};
+            app_loop::buildSceneSnapshot(simulation, runtime, runtime.simulation.fixedStep.alpha, interactionSnapshot);
+            const render_scene::SceneView interactionView =
+                render_scene::buildSceneView(cam, cameraSettings, framebufferSize);
+            const int targetIndex =
+                app_loop::findTargetBodyIndex(interactionSnapshot, cam, interactionView);
+            focusStartedThisFrame =
+                app_loop::beginCameraFocus(interactionSnapshot, targetIndex, cam, runtime.focus.camera);
+        }
+    }
+    runtime.focus.focusWasDown = focusDown;
+
+    if (runtime.focus.camera.active &&
+        app_loop::movementCanExitCameraFocus(pauseMenu.isOpen(), focusStartedThisFrame) &&
+        app_loop::cameraTranslationPressed(window, controls))
+    {
+        app_loop::clearCameraFocus(runtime.focus.camera);
+    }
+
+    if (runtime.focus.camera.active && runtime.input.mouseCaptured) {
+        app_loop::updateCameraLook(window, cameraSettings, runtime, cam);
+    } else if (!runtime.focus.camera.active) {
+        app_loop::updateCamera(window, controls, cameraSettings, runtime, cameraFrameTime, cam);
+    }
     simulation.step(runtime, pauseMenu.isOpen(), frameTime);
+
+    if (runtime.focus.camera.active && runtime.input.mouseCaptured) {
+        render_scene::SceneSnapshot focusSnapshot{};
+        app_loop::buildSceneSnapshot(simulation, runtime, runtime.simulation.fixedStep.alpha, focusSnapshot);
+        app_loop::updateCameraFocus(
+            focusSnapshot,
+            static_cast<float>(cameraFrameTime),
+            runtime.simulation.simSpeed,
+            cam,
+            runtime.focus.camera);
+    }
 }
 
 void processInputStage(
@@ -165,13 +208,14 @@ void processInputStage(
 
 void runSimulationStage(
     GLFWwindow* window,
+    const app_loop::AppLoopState& appState,
     app_loop::SimulationController& simulation,
     const input::ControlBindings& controls,
     const ui::PauseMenu& pauseMenu,
     app_loop::RuntimeState& runtime,
     input::Camera& cam)
 {
-    updateFrameState(window, simulation, controls, pauseMenu, runtime, cam);
+    updateFrameState(window, simulation, controls, pauseMenu, runtime, cam, appState.framebufferSize);
     app_loop::updatePathHistory(simulation, runtime, pauseMenu.interfaceSettings());
 }
 
@@ -188,6 +232,8 @@ void renderStage(
 {
     frameRenderState.menuView = pauseMenu.buildView(controls);
     frameRenderState.spatialHud = {};
+    frameRenderState.focusMarker = {};
+    frameRenderState.focusHint = {};
     frameRenderState.targetHud = {};
     const render_scene::SceneView sceneView =
         render_scene::buildSceneView(cam, pauseMenu.cameraSettings(), appState.framebufferSize);
@@ -221,11 +267,22 @@ void renderStage(
         frameRenderState.cachedStaticScene = staticScene;
         frameRenderState.cachedStaticSceneRevision = runtime.simulation.sceneRevision;
     }
-    const bool needsTargetIndex = (interfaceSettings.objectInfo || interfaceSettings.showMinimap) &&
+    const int focusedIndex =
+        app_loop::findFocusedBodyIndex(frameRenderState.sceneSnapshot, runtime.focus.camera);
+    const bool needsHoverTargetIndex = focusedIndex < 0 &&
+        (interfaceSettings.objectInfo || interfaceSettings.showMinimap) &&
         !frameRenderState.sceneSnapshot.bodies.empty();
-    const int targetIndex = needsTargetIndex
-        ? app_loop::findTargetBodyIndex(frameRenderState.sceneSnapshot, cam, sceneView)
-        : -1;
+    const int targetIndex = focusedIndex >= 0
+        ? focusedIndex
+        : (needsHoverTargetIndex
+            ? app_loop::findTargetBodyIndex(frameRenderState.sceneSnapshot, cam, sceneView)
+            : -1);
+    app_loop::buildFocusMarker(
+        frameRenderState.sceneSnapshot,
+        sceneView,
+        appState.framebufferSize,
+        focusedIndex,
+        frameRenderState.focusMarker);
     app_loop::buildTargetHud(
         frameRenderState.sceneSnapshot,
         interfaceSettings,
@@ -241,10 +298,17 @@ void renderStage(
         targetIndex,
         frameRenderState.spatialHudScratch,
         frameRenderState.spatialHud);
+    if (runtime.focus.camera.active) {
+        frameRenderState.focusHint.visible = true;
+        frameRenderState.focusHint.label =
+            input::keyNameForCode(controls.focusTarget) + std::string{" OR MOVE TO EXIT FOCUS"};
+    }
 
     const render_scene::OverlayPassInput overlayInput{
         &frameRenderState.menuView,
         &frameRenderState.spatialHud,
+        &frameRenderState.focusMarker,
+        &frameRenderState.focusHint,
         &frameRenderState.targetHud,
         pauseMenu.uiScale(),
         &interfaceSettings,
@@ -328,7 +392,7 @@ int runApp(sim::World world) {
             pauseMenu,
             simulation,
             controlsConfigPath);
-        runSimulationStage(window, simulation, controls, pauseMenu, runtime, cam);
+        runSimulationStage(window, appState, simulation, controls, pauseMenu, runtime, cam);
         renderStage(
             window,
             appState,

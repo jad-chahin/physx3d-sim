@@ -10,6 +10,13 @@ namespace render_scene {
 
 namespace {
 
+[[nodiscard]] bool ndcInClipVolume(const glm::vec3& ndc)
+{
+    return ndc.x >= -1.0f && ndc.x <= 1.0f &&
+        ndc.y >= -1.0f && ndc.y <= 1.0f &&
+        ndc.z >= -1.0f && ndc.z <= 1.0f;
+}
+
 std::array<float, 4> pathTrailColor(const int pathColorIndex, const bool simFrozen)
 {
     constexpr std::array<std::array<float, 3>, 6> kBaseColors{{
@@ -82,7 +89,7 @@ bool worldToScreen(
     }
 
     const glm::vec3 ndc = glm::vec3(clip) / clip.w;
-    if (ndc.x < -1.0f || ndc.x > 1.0f || ndc.y < -1.0f || ndc.y > 1.0f) {
+    if (!ndcInClipVolume(ndc)) {
         return false;
     }
 

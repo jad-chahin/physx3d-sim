@@ -18,6 +18,7 @@ namespace input {
         int speedDown = GLFW_KEY_MINUS;
         int speedUp = GLFW_KEY_EQUAL;
         int speedReset = GLFW_KEY_1;
+        int focusTarget = GLFW_KEY_F;
         int moveForward = GLFW_KEY_W;
         int moveBack = GLFW_KEY_S;
         int moveLeft = GLFW_KEY_A;
@@ -35,7 +36,7 @@ namespace input {
         int ControlBindings::* member;
     };
 
-    const std::array<RebindAction, 11>& rebindActions();
+    const std::array<RebindAction, 12>& rebindActions();
 
     bool isBindableKey(int key);
     std::string keyNameForCode(int key);

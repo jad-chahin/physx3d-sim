@@ -77,6 +77,13 @@ int consumeLastPressedKey(AppLoopState& state) {
     return key;
 }
 
+bool movementCanExitCameraFocus(
+    const bool pauseMenuOpen,
+    const bool focusStartedThisFrame)
+{
+    return !pauseMenuOpen && !focusStartedThisFrame;
+}
+
 void SimulationController::reset(
     RuntimeState& runtime,
     const ui::SimulationSettings& simSettings)
@@ -91,6 +98,7 @@ void SimulationController::reset(
     runtime.simulation.speedDownWasDown = false;
     runtime.simulation.speedUpWasDown = false;
     runtime.simulation.speedResetWasDown = false;
+    runtime.focus = {};
     runtime.simulation.elapsedTime = 0.0;
     ++runtime.simulation.sceneRevision;
     ++runtime.pathHistoryRevision;

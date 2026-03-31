@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "app/CameraFocus.h"
 #include "input/Bindings.h"
 #include "input/Camera.h"
 #include "render/SceneRenderer.h"
@@ -57,9 +58,15 @@ struct RuntimeState {
         int frames = 0;
     };
 
+    struct FocusRuntime {
+        bool focusWasDown = false;
+        CameraFocusState camera{};
+    };
+
     InputRuntime input{};
     SimulationRuntime simulation{};
     FpsRuntime fps{};
+    FocusRuntime focus{};
     std::uint64_t pathHistoryRevision = 0;
     std::vector<render_scene::PathTrail> pathHistory{};
 };
@@ -128,6 +135,20 @@ void updateCamera(
     RuntimeState& runtime,
     double frameTime,
     input::Camera& cam);
+
+void updateCameraLook(
+    GLFWwindow* window,
+    const ui::CameraSettings& cameraSettings,
+    RuntimeState& runtime,
+    input::Camera& cam);
+
+[[nodiscard]] bool cameraTranslationPressed(
+    GLFWwindow* window,
+    const input::ControlBindings& controls);
+
+[[nodiscard]] bool movementCanExitCameraFocus(
+    bool pauseMenuOpen,
+    bool focusStartedThisFrame);
 
 void buildSceneSnapshot(
     const SimulationController& simulation,

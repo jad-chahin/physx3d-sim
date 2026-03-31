@@ -31,6 +31,13 @@ void buildTargetHud(
     int targetBodyIndex,
     OverlayRenderer::TargetHud& targetHud);
 
+void buildFocusMarker(
+    const render_scene::SceneSnapshot& snapshot,
+    const render_scene::SceneView& sceneView,
+    const render_scene::FramebufferSize& framebufferSize,
+    int focusedBodyIndex,
+    OverlayRenderer::FocusMarker& focusMarker);
+
 } // namespace app_loop
 
 #endif // PHYSICS3D_APP_SCENEPRESENTATION_H

@@ -14,6 +14,8 @@ namespace render_scene {
 struct OverlayPassInput {
     const ui::MenuView* menu = nullptr;
     const OverlayRenderer::SpatialHud* spatialHud = nullptr;
+    const OverlayRenderer::FocusMarker* focusMarker = nullptr;
+    const OverlayRenderer::FocusHint* focusHint = nullptr;
     const OverlayRenderer::TargetHud* targetHud = nullptr;
     float uiScale = 1.0f;
     const ui::InterfaceSettings* interfaceSettings = nullptr;

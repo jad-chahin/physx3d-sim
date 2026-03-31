@@ -9,6 +9,21 @@
 
 class OverlayRenderer {
 public:
+    struct FocusMarker {
+        bool visible = false;
+        float xPx = 0.0f;
+        float yPx = 0.0f;
+        float radiusPx = 0.0f;
+        bool operator==(const FocusMarker&) const = default;
+    };
+
+    struct FocusHint {
+        bool visible = false;
+        std::string label;
+        std::string actionHint;
+        bool operator==(const FocusHint&) const = default;
+    };
+
     struct TargetHud {
         bool visible = false;
         float xPx = 0.0f;
@@ -51,6 +66,8 @@ public:
         double fps,
         const ui::MenuView& menu,
         const SpatialHud& spatialHud,
+        const FocusMarker& focusMarker,
+        const FocusHint& focusHint,
         const TargetHud& targetHud,
         float uiScale,
         bool showSimulationSpeed,
@@ -129,6 +146,8 @@ public:
         int elapsedSeconds = 0;
         double fps = 0.0;
         SpatialHud spatialHud{};
+        FocusMarker focusMarker{};
+        FocusHint focusHint{};
         bool showSimulationSpeed = false;
         bool showFps = false;
         bool showElapsedTime = false;
@@ -181,6 +200,8 @@ public:
         double fps = 0.0;
         const ui::MenuView* menu = nullptr;
         const SpatialHud* spatialHud = nullptr;
+        const FocusMarker* focusMarker = nullptr;
+        const FocusHint* focusHint = nullptr;
         const TargetHud* targetHud = nullptr;
         float uiScale = 1.0f;
         bool showSimulationSpeed = false;

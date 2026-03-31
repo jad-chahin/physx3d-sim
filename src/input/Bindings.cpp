@@ -11,11 +11,12 @@
 
 namespace input {
     namespace {
-        constexpr std::array<RebindAction, 11> kRebindActions{{
+        constexpr std::array<RebindAction, 12> kRebindActions{{
             {"FREEZE", "FREEZE", &ControlBindings::freeze},
             {"SPEED DOWN", "SPEED_DOWN", &ControlBindings::speedDown},
             {"SPEED UP", "SPEED_UP", &ControlBindings::speedUp},
             {"SPEED RESET", "SPEED_RESET", &ControlBindings::speedReset},
+            {"FOCUS TARGET", "FOCUS_TARGET", &ControlBindings::focusTarget},
             {"MOVE FORWARD", "MOVE_FORWARD", &ControlBindings::moveForward},
             {"MOVE BACK", "MOVE_BACK", &ControlBindings::moveBack},
             {"MOVE LEFT", "MOVE_LEFT", &ControlBindings::moveLeft},
@@ -346,18 +347,38 @@ namespace input {
             return GLFW_KEY_UNKNOWN;
         }
 
-        bool enforceUniqueBindings(ControlBindings& controls) {
+        bool enforceUniqueBindings(
+            ControlBindings& controls,
+            const std::unordered_set<std::string>& configuredKeys)
+        {
             std::unordered_set<int> usedKeys;
             usedKeys.reserve(kRebindActions.size());
+            std::unordered_set<const RebindAction*> deferredActions;
+            deferredActions.reserve(kRebindActions.size());
             bool changed = false;
 
             for (const auto& action : kRebindActions) {
                 int& key = controls.*(action.member);
-                const int originalKey = key;
-                if (!isBindableKeyCode(key) || usedKeys.contains(key)) {
-                    constexpr ControlBindings defaults{};
-                    key = defaults.*(action.member);
+                if (!configuredKeys.contains(action.configKey) ||
+                    !isBindableKeyCode(key) ||
+                    usedKeys.contains(key))
+                {
+                    deferredActions.insert(&action);
+                    continue;
                 }
+
+                usedKeys.insert(key);
+            }
+
+            constexpr ControlBindings defaults{};
+            for (const auto& action : kRebindActions) {
+                if (!deferredActions.contains(&action)) {
+                    continue;
+                }
+
+                int& key = controls.*(action.member);
+                const int originalKey = key;
+                key = defaults.*(action.member);
 
                 if (!isBindableKeyCode(key) || usedKeys.contains(key)) {
                     if (const int fallback = firstAvailableBindableKey(usedKeys); fallback != GLFW_KEY_UNKNOWN) {
@@ -378,7 +399,7 @@ namespace input {
         }
     } // namespace
 
-    const std::array<RebindAction, 11>& rebindActions() {
+    const std::array<RebindAction, 12>& rebindActions() {
         return kRebindActions;
     }
 
@@ -465,6 +486,8 @@ namespace input {
         for (const auto& action : kRebindActions) {
             keyTargets.emplace(action.configKey, &(controls.*(action.member)));
         }
+        std::unordered_set<std::string> configuredKeys;
+        configuredKeys.reserve(kRebindActions.size());
 
         std::string line;
         while (std::getline(in, line)) {
@@ -492,12 +515,14 @@ namespace input {
             if (!isBindableKey(parsedKey)) {
                 continue;
             }
+            configuredKeys.insert(cfgKey);
             if (*keyIt->second != parsedKey) {
                 *keyIt->second = parsedKey;
             }
         }
 
-        if (enforceUniqueBindings(controls)) {
+        const bool missingBindings = configuredKeys.size() != kRebindActions.size();
+        if (enforceUniqueBindings(controls, configuredKeys) || missingBindings) {
             saveControlBindings(controls, path);
         }
     }

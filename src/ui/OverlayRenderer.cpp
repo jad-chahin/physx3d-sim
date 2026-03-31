@@ -116,6 +116,8 @@ void drawHud(
     double simElapsed,
     double fps,
     const OverlayRenderer::SpatialHud& spatialHud,
+    const OverlayRenderer::FocusMarker& focusMarker,
+    const OverlayRenderer::FocusHint& focusHint,
     bool showSimulationSpeed,
     bool showFps,
     bool showElapsedTime,
@@ -128,6 +130,32 @@ void drawTargetPopup(
     const OverlayRenderer::TargetHud& targetHud,
     const Geometry& geometry,
     const Buffers& buffers);
+void drawFocusMarker(
+    const OverlayRenderer::FocusMarker& focusMarker,
+    const Geometry& geometry,
+    const Buffers& buffers);
+void drawFocusHint(
+    const OverlayRenderer::FocusHint& focusHint,
+    const Geometry& geometry,
+    const Buffers& buffers,
+    float baseScalePx);
+
+[[nodiscard]] const OverlayRenderer::FocusMarker& resolveFocusMarker(const OverlayRenderer::FrameInput& input) {
+    static const OverlayRenderer::FocusMarker kEmptyFocusMarker{};
+    return input.focusMarker != nullptr ? *input.focusMarker : kEmptyFocusMarker;
+}
+
+[[nodiscard]] const OverlayRenderer::FocusHint& resolveFocusHint(const OverlayRenderer::FrameInput& input) {
+    static const OverlayRenderer::FocusHint kEmptyFocusHint{};
+    return input.focusHint != nullptr ? *input.focusHint : kEmptyFocusHint;
+}
+
+[[nodiscard]] bool shouldShowHudSection(const OverlayRenderer::FrameInput& input) {
+    const auto& focusMarker = resolveFocusMarker(input);
+    const auto& focusHint = resolveFocusHint(input);
+    return input.showSimulationSpeed || input.showFps || input.showElapsedTime || input.showMinimap ||
+        input.showCoordinates || focusMarker.visible || focusHint.visible;
+}
 
 void resetNode(OverlayRenderer::SceneNode& node, const std::size_t reserveHint) {
     node.geometry.clear();
@@ -338,6 +366,8 @@ void OverlayRenderer::draw(
     double fps,
     const ui::MenuView& menu,
     const SpatialHud& spatialHud,
+    const FocusMarker& focusMarker,
+    const FocusHint& focusHint,
     const TargetHud& targetHud,
     float uiScale,
     bool showSimulationSpeed,
@@ -347,8 +377,6 @@ void OverlayRenderer::draw(
     bool showCoordinates,
     bool showCrosshair) const
 {
-    const bool showHudSection =
-        showSimulationSpeed || showFps || showElapsedTime || showMinimap || showCoordinates;
     const FrameInput input{
         fbw,
         fbh,
@@ -358,6 +386,8 @@ void OverlayRenderer::draw(
         fps,
         &menu,
         &spatialHud,
+        &focusMarker,
+        &focusHint,
         &targetHud,
         uiScale,
         showSimulationSpeed,
@@ -371,7 +401,7 @@ void OverlayRenderer::draw(
     renderState.fbw = fbw;
     renderState.fbh = fbh;
     renderState.menuVisible = menu.visible;
-    renderState.showHudSection = showHudSection;
+    renderState.showHudSection = overlay_renderer::shouldShowHudSection(input);
     renderState.showCrosshair = showCrosshair;
     renderState.showTargetPopup = !menu.visible && targetHud.visible && !targetHud.lines.empty();
     renderState.showFrozenIndicator = simFrozen && !menu.visible;
@@ -421,9 +451,9 @@ void OverlayRenderer::updateCachedLayout(const FrameInput& input) const {
             sceneCache_.popupValid = false;
         }
     } else {
-        const bool showHudSection =
-            input.showSimulationSpeed || input.showFps ||
-            input.showElapsedTime || input.showMinimap || input.showCoordinates;
+        const FocusMarker& focusMarker = overlay_renderer::resolveFocusMarker(input);
+        const FocusHint& focusHint = overlay_renderer::resolveFocusHint(input);
+        const bool showHudSection = overlay_renderer::shouldShowHudSection(input);
         if (showHudSection) {
             OverlayRenderer::SpatialHud cachedHudState = *input.spatialHud;
             cachedHudState.lookPitch = 0.0f;
@@ -433,6 +463,8 @@ void OverlayRenderer::updateCachedLayout(const FrameInput& input) const {
                 input.showElapsedTime ? static_cast<int>(std::floor(std::max(0.0, input.simElapsed))) : 0,
                 input.showFps ? input.fps : 0.0,
                 cachedHudState,
+                focusMarker,
+                focusHint,
                 input.showSimulationSpeed,
                 input.showFps,
                 input.showElapsedTime,
@@ -447,6 +479,8 @@ void OverlayRenderer::updateCachedLayout(const FrameInput& input) const {
                     input.simElapsed,
                     input.fps,
                     *input.spatialHud,
+                    focusMarker,
+                    focusHint,
                     input.showSimulationSpeed,
                     input.showFps,
                     input.showElapsedTime,
@@ -1073,6 +1107,8 @@ void drawHud(
     const double simElapsed,
     const double fps,
     const OverlayRenderer::SpatialHud& spatialHud,
+    const OverlayRenderer::FocusMarker& focusMarker,
+    const OverlayRenderer::FocusHint& focusHint,
     const bool showSimulationSpeed,
     const bool showFps,
     const bool showElapsedTime,
@@ -1291,6 +1327,94 @@ void drawHud(
                     symbolBaseY);
             }
         }
+    }
+
+    if (focusMarker.visible) {
+        drawFocusMarker(focusMarker, geometry, buffers);
+    }
+
+    drawFocusHint(focusHint, geometry, buffers, baseScalePx);
+}
+
+void drawFocusMarker(
+    const OverlayRenderer::FocusMarker& focusMarker,
+    const Geometry& geometry,
+    const Buffers& buffers)
+{
+    if (!focusMarker.visible) {
+        return;
+    }
+
+    const float radius = std::max(10.0f, focusMarker.radiusPx);
+    const float gap = 7.0f * geometry.uiScale;
+    const float armLength = std::clamp(radius * 0.45f, 10.0f * geometry.uiScale, 18.0f * geometry.uiScale);
+    const float thickness = std::max(1.2f, 1.6f * geometry.uiScale);
+    const float outlineThickness = thickness + 2.2f * geometry.uiScale;
+    const float xInner0 = focusMarker.xPx - (radius + gap);
+    const float xInner1 = focusMarker.xPx + (radius + gap);
+    const float yInner0 = focusMarker.yPx - (radius + gap);
+    const float yInner1 = focusMarker.yPx + (radius + gap);
+    const float xOuter0 = xInner0 - armLength;
+    const float xOuter1 = xInner1 + armLength;
+    const float yOuter0 = yInner0 - armLength;
+    const float yOuter1 = yInner1 + armLength;
+
+    const auto drawBracket = [&](std::vector<float>& out, const float lineThickness) {
+        pushThickLinePx(out, xOuter0, yInner0, xInner0, yInner0, lineThickness);
+        pushThickLinePx(out, xInner0, yOuter0, xInner0, yInner0, lineThickness);
+
+        pushThickLinePx(out, xInner1, yInner0, xOuter1, yInner0, lineThickness);
+        pushThickLinePx(out, xInner1, yOuter0, xInner1, yInner0, lineThickness);
+
+        pushThickLinePx(out, xOuter0, yInner1, xInner0, yInner1, lineThickness);
+        pushThickLinePx(out, xInner0, yInner1, xInner0, yOuter1, lineThickness);
+
+        pushThickLinePx(out, xInner1, yInner1, xOuter1, yInner1, lineThickness);
+        pushThickLinePx(out, xInner1, yInner1, xInner1, yOuter1, lineThickness);
+    };
+
+    drawBracket(buffers.panelFill, outlineThickness);
+    drawBracket(buffers.textPrimary, thickness);
+}
+
+void drawFocusHint(
+    const OverlayRenderer::FocusHint& focusHint,
+    const Geometry& geometry,
+    const Buffers& buffers,
+    const float baseScalePx)
+{
+    if (!focusHint.visible || focusHint.label.empty()) {
+        return;
+    }
+
+    const float hintLabelScalePx = baseScalePx * 0.95f;
+    const float hintActionScalePx = baseScalePx * 0.82f;
+    const bool hasActionHint = !focusHint.actionHint.empty();
+    const float labelWidth = measureMaxLinePx(focusHint.label, hintLabelScalePx);
+    const float actionWidth = hasActionHint ? measureMaxLinePx(focusHint.actionHint, hintActionScalePx) : 0.0f;
+    const float padX = 14.0f * geometry.uiScale;
+    const float padY = 10.0f * geometry.uiScale;
+    const float lineGap = 16.0f * geometry.uiScale;
+    const float chipWidth = std::max(labelWidth, actionWidth) + padX * 2.0f;
+    float chipHeight = padY * 2.0f + hintLabelScalePx * static_cast<float>(kFontH);
+    if (hasActionHint) {
+        chipHeight += lineGap + hintActionScalePx * static_cast<float>(kFontH);
+    }
+
+    const float chipX0 = (geometry.width - chipWidth) * 0.5f;
+    const float chipY1 = geometry.height - 20.0f * geometry.uiScale;
+    const float chipY0 = chipY1 - chipHeight;
+    pushQuadPx(buffers.panelFill, chipX0, chipY0, chipX0 + chipWidth, chipY1);
+    pushFramePx(buffers.panelFrame, chipX0, chipY0, chipX0 + chipWidth, chipY1, 1.4f);
+
+    const float labelX = chipX0 + (chipWidth - labelWidth) * 0.5f;
+    const float labelY = chipY0 + padY;
+    appendTextPx(buffers.textPrimary, labelX, labelY, hintLabelScalePx, focusHint.label);
+
+    if (hasActionHint) {
+        const float actionX = chipX0 + (chipWidth - actionWidth) * 0.5f;
+        const float actionY = labelY + hintLabelScalePx * static_cast<float>(kFontH) + lineGap;
+        appendTextPx(buffers.textPrimary, actionX, actionY, hintActionScalePx, focusHint.actionHint);
     }
 }
 

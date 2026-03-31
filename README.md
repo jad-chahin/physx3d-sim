@@ -33,10 +33,12 @@ If you get a DLL error on Windows when launching from terminal, make sure runtim
 - `SPACE` freeze/unfreeze simulation
 - `- / =` decrease/increase simulation speed
 - `1` reset simulation speed to `1x`
+- `F` focus/unfocus the planet under the crosshair
 - `W A S D` move camera on horizontal plane
 - `Q / E` move camera down/up
 - `Left Shift` hold for camera boost (rebindable in pause menu, fixed `4x` boost)
 - `Mouse` look around
+- While focused, mouse movement orbits the target and `W A S D Q E` exits focus mode
 - Pause menu pages: click page tabs or use `1 / 2 / 3 / 4 / 5` to jump to `Display / Simulation / Camera / Interface / Controls`; `Tab` (or `Page Up / Page Down`) also cycles pages
 - Pause menu navigation: `Up / Down` selects options on the current page
 - Pause menu settings: use `Left / Right` to change values, `Enter` to apply the selected option

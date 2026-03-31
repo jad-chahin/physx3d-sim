@@ -1,5 +1,7 @@
 #include <cmath>
+#include <filesystem>
 #include <functional>
+#include <fstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -494,6 +496,70 @@ void testUi2ControlsPopupSupportsHorizontalNavigation()
         "left should move a controls-page popup selection back to confirm");
 }
 
+void testUi2ControlsPageShowsFocusTargetBinding()
+{
+    ui::PauseMenu menu;
+    input::ControlBindings controls{};
+    ui::testing::PauseMenuAccess::openMenu(menu);
+    ui::testing::PauseMenuAccess::selectPage(menu, ui::SettingsPage::Controls);
+
+    const auto view = menu.buildView(controls);
+    bool foundFocusTarget = false;
+    for (const auto& row : view.rows) {
+        if (row.label != "FOCUS TARGET") {
+            continue;
+        }
+        require(row.value == "F",
+            "controls page should expose the default focus target binding");
+        foundFocusTarget = true;
+        break;
+    }
+
+    require(foundFocusTarget,
+        "controls page should include a focus target action");
+}
+
+void testUi2LegacyControlsConfigPreservesExistingCustomBindings()
+{
+    const std::filesystem::path configPath =
+        std::filesystem::temp_directory_path() / "physics3d_legacy_controls.cfg";
+    std::error_code removeError;
+    std::filesystem::remove(configPath, removeError);
+
+    {
+        std::ofstream out(configPath, std::ios::trunc);
+        out << "FREEZE=SPACE\n";
+        out << "SPEED_DOWN=MINUS\n";
+        out << "SPEED_UP=EQUAL\n";
+        out << "SPEED_RESET=1\n";
+        out << "MOVE_FORWARD=F\n";
+        out << "MOVE_BACK=S\n";
+        out << "MOVE_LEFT=A\n";
+        out << "MOVE_RIGHT=D\n";
+        out << "MOVE_UP=E\n";
+        out << "MOVE_DOWN=Q\n";
+        out << "CAMERA_BOOST=LSHIFT\n";
+    }
+
+    input::ControlBindings controls{};
+    input::loadControlBindings(controls, configPath.string());
+
+    require(controls.moveForward == GLFW_KEY_F,
+        "loading an older controls config should preserve explicit custom bindings");
+    require(controls.focusTarget != GLFW_KEY_F && input::isBindableKey(controls.focusTarget),
+        "new focus binding should yield to existing custom keys when migrating old configs");
+
+    std::ifstream in(configPath);
+    const std::string contents((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    require(contents.find("MOVE_FORWARD=F") != std::string::npos,
+        "migrated controls config should keep the original custom binding");
+    require(contents.find("FOCUS_TARGET=") != std::string::npos &&
+            contents.find("FOCUS_TARGET=F") == std::string::npos,
+        "migrated controls config should add focus target without stealing the custom key");
+
+    std::filesystem::remove(configPath, removeError);
+}
+
 void testUi2HorizontalRepeatOnlyAppliesToDirectionalRows()
 {
     ui::PauseMenu menu;
@@ -540,6 +606,10 @@ void appendUiPauseMenuTests(std::vector<std::pair<std::string, std::function<voi
     tests.emplace_back("ui2_layout_uses_remote_style_top_buttons", testUi2LayoutUsesRemoteStyleTopButtons);
     tests.emplace_back("ui2_normalized_choice_ranges", testUi2NormalizedChoiceRanges);
     tests.emplace_back("ui2_controls_popup_supports_horizontal_navigation", testUi2ControlsPopupSupportsHorizontalNavigation);
+    tests.emplace_back("ui2_controls_page_shows_focus_target_binding", testUi2ControlsPageShowsFocusTargetBinding);
+    tests.emplace_back(
+        "ui2_legacy_controls_config_preserves_existing_custom_bindings",
+        testUi2LegacyControlsConfigPreservesExistingCustomBindings);
     tests.emplace_back("ui2_horizontal_repeat_only_applies_to_directional_rows", testUi2HorizontalRepeatOnlyAppliesToDirectionalRows);
 }
 

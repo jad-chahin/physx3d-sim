@@ -1240,7 +1240,9 @@ void FrameRenderer::compositeSceneTarget_(
 void FrameRenderer::renderOverlayPass_(const FrameInput& input) const
 {
     const OverlayPassInput& overlayInput = *input.overlay;
-    if (overlayInput.menu == nullptr || overlayInput.spatialHud == nullptr || overlayInput.targetHud == nullptr ||
+    if (overlayInput.menu == nullptr || overlayInput.spatialHud == nullptr || overlayInput.focusMarker == nullptr ||
+        overlayInput.focusHint == nullptr ||
+        overlayInput.targetHud == nullptr ||
         overlayInput.interfaceSettings == nullptr)
     {
         return;
@@ -1257,6 +1259,8 @@ void FrameRenderer::renderOverlayPass_(const FrameInput& input) const
         input.fps,
         *overlayInput.menu,
         *overlayInput.spatialHud,
+        *overlayInput.focusMarker,
+        *overlayInput.focusHint,
         *overlayInput.targetHud,
         overlayInput.uiScale,
         overlayInput.interfaceSettings->showSimulationSpeed,

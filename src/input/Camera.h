@@ -14,6 +14,7 @@ namespace input {
     void clampPitch(Camera& c);
     glm::vec3 forwardDir(const Camera& c);
     glm::vec3 rightDir(const Camera& c);
+    void setLookDirection(Camera& c, const glm::vec3& direction);
 }
 
 #endif //PHYSICS3D_CAMERA_H

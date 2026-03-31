@@ -60,6 +60,7 @@ target_include_directories(physics3d_sim PUBLIC
 add_executable(physics3d
         src/main.cpp
         src/app/AppLoop.cpp
+        src/app/CameraFocus.cpp
         src/app/AppLoopSupport.cpp
         src/app/FixedStepRunner.cpp
         src/app/SceneUi.cpp
@@ -105,14 +106,21 @@ enable_testing()
 
 add_executable(physics3d_tests
         tests/PhysicsRegressionTests.cpp
+        tests/FocusCameraTests.cpp
         tests/MinimapTests.cpp
         tests/RenderMaterialTests.cpp
         tests/SceneLightingTests.cpp
         tests/UiPauseMenuTests.cpp
+        src/app/AppLoopSupport.cpp
+        src/app/CameraFocus.cpp
+        src/app/ScenePresentation.cpp
         src/app/SpatialHud.cpp
+        src/input/Camera.cpp
         src/input/Bindings.cpp
         src/render/RenderMaterial.cpp
+        src/render/SceneRenderer.cpp
         src/render/SceneLighting.cpp
+        ${PHYSICS3D_GLAD_SOURCE}
         src/ui/PauseMenu.cpp
         src/ui/PauseMenuLayout.cpp
 )
@@ -121,14 +129,16 @@ target_include_directories(physics3d_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/glad/include
 )
 if (TARGET glm::glm)
-    target_link_libraries(physics3d_tests PRIVATE physics3d_sim glfw glm::glm)
+    target_link_libraries(physics3d_tests PRIVATE physics3d_sim glfw opengl32 glm::glm)
 else()
-    target_link_libraries(physics3d_tests PRIVATE physics3d_sim glfw glm)
+    target_link_libraries(physics3d_tests PRIVATE physics3d_sim glfw opengl32 glm)
 endif()
 if (MSVC)
     target_compile_options(physics3d_tests PRIVATE /W4 /permissive-)
 else()
     target_compile_options(physics3d_tests PRIVATE -Wall -Wextra -Wpedantic)
+    set_source_files_properties("${PHYSICS3D_GLAD_SOURCE}" PROPERTIES
+            COMPILE_OPTIONS "-Wno-pedantic")
 endif()
 
 if (WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND EXISTS "${PHYSICS3D_GNU_BIN_DIR}/libwinpthread-1.dll")

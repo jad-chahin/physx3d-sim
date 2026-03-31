@@ -10,6 +10,35 @@ namespace {
         runtime.simulation.fixedStep.accumulator = 0.0;
         runtime.simulation.fixedStep.alpha = 0.0;
     }
+
+    void updateCameraLookImpl(
+        GLFWwindow* window,
+        const ui::CameraSettings& cameraSettings,
+        RuntimeState& runtime,
+        input::Camera& cam)
+    {
+        if (!runtime.input.mouseCaptured || window == nullptr) {
+            return;
+        }
+
+        double mx = 0.0;
+        double my = 0.0;
+        glfwGetCursorPos(window, &mx, &my);
+        if (runtime.input.firstMouse) {
+            runtime.input.lastMouseX = mx;
+            runtime.input.lastMouseY = my;
+            runtime.input.firstMouse = false;
+        }
+
+        const double dx = mx - runtime.input.lastMouseX;
+        const double dy = my - runtime.input.lastMouseY;
+        runtime.input.lastMouseX = mx;
+        runtime.input.lastMouseY = my;
+
+        cam.yaw += static_cast<float>(dx) * cameraSettings.lookSensitivity;
+        cam.pitch += static_cast<float>(cameraSettings.invertY ? dy : -dy) * cameraSettings.lookSensitivity;
+        input::clampPitch(cam);
+    }
 } // namespace
 
 void updateFps(RuntimeState& runtime, const double frameTime) {
@@ -68,23 +97,7 @@ void updateCamera(
         return;
     }
 
-    double mx = 0.0;
-    double my = 0.0;
-    glfwGetCursorPos(window, &mx, &my);
-    if (runtime.input.firstMouse) {
-        runtime.input.lastMouseX = mx;
-        runtime.input.lastMouseY = my;
-        runtime.input.firstMouse = false;
-    }
-
-    const double dx = mx - runtime.input.lastMouseX;
-    const double dy = my - runtime.input.lastMouseY;
-    runtime.input.lastMouseX = mx;
-    runtime.input.lastMouseY = my;
-
-    cam.yaw += static_cast<float>(dx) * cameraSettings.lookSensitivity;
-    cam.pitch += static_cast<float>(cameraSettings.invertY ? dy : -dy) * cameraSettings.lookSensitivity;
-    input::clampPitch(cam);
+    updateCameraLookImpl(window, cameraSettings, runtime, cam);
 
     float move = cameraSettings.baseMoveSpeed * static_cast<float>(frameTime);
     if (input::isBindingPressed(window, controls.cameraBoost)) {
@@ -98,6 +111,31 @@ void updateCamera(
     if (input::isBindingPressed(window, controls.moveLeft)) cam.pos -= input::rightDir(cam) * move;
     if (input::isBindingPressed(window, controls.moveUp)) cam.pos += glm::vec3(0, 1, 0) * move;
     if (input::isBindingPressed(window, controls.moveDown)) cam.pos -= glm::vec3(0, 1, 0) * move;
+}
+
+void updateCameraLook(
+    GLFWwindow* window,
+    const ui::CameraSettings& cameraSettings,
+    RuntimeState& runtime,
+    input::Camera& cam)
+{
+    updateCameraLookImpl(window, cameraSettings, runtime, cam);
+}
+
+bool cameraTranslationPressed(
+    GLFWwindow* window,
+    const input::ControlBindings& controls)
+{
+    if (window == nullptr) {
+        return false;
+    }
+
+    return input::isBindingPressed(window, controls.moveForward) ||
+        input::isBindingPressed(window, controls.moveBack) ||
+        input::isBindingPressed(window, controls.moveRight) ||
+        input::isBindingPressed(window, controls.moveLeft) ||
+        input::isBindingPressed(window, controls.moveUp) ||
+        input::isBindingPressed(window, controls.moveDown);
 }
 
 void SimulationController::step(RuntimeState& runtime, const bool pauseMenuOpen, const double frameTime) {
