@@ -43,19 +43,8 @@ struct SceneLighting {
     const SceneView& sceneView,
     const SceneSnapshot& snapshot,
     std::span<const SceneInstanceData> instances,
-    int shadowMapResolution);
-
-[[nodiscard]] SceneLighting buildSceneLighting(
-    const SceneView& sceneView,
-    const SceneSnapshot& snapshot,
-    std::span<const SceneInstanceData> instances,
     int shadowMapResolution,
     BackdropPreset backdropPreset);
-
-[[nodiscard]] SceneLighting buildSceneLighting(
-    const SceneView& sceneView,
-    const SceneSnapshot& snapshot,
-    int shadowMapResolution);
 
 [[nodiscard]] SceneLighting buildSceneLighting(
     const SceneView& sceneView,

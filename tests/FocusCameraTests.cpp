@@ -5,8 +5,10 @@
 #include <utility>
 #include <vector>
 
-#include "app/AppLoopInternal.h"
+#include "TestRegistry.h"
+
 #include "app/CameraFocus.h"
+#include "app/FrameUpdate.h"
 #include "app/ScenePresentation.h"
 
 namespace {
@@ -17,10 +19,28 @@ void require(const bool condition, const std::string& message) {
     }
 }
 
+[[nodiscard]] bool nearlyEqual(const float lhs, const float rhs, const float epsilon = 1e-4f) {
+    return std::abs(lhs - rhs) <= epsilon;
+}
+
+[[nodiscard]] bool nearlyEqualVec3(
+    const glm::vec3& lhs,
+    const glm::vec3& rhs,
+    const float epsilon = 1e-4f)
+{
+    return nearlyEqual(lhs.x, rhs.x, epsilon) &&
+        nearlyEqual(lhs.y, rhs.y, epsilon) &&
+        nearlyEqual(lhs.z, rhs.z, epsilon);
+}
+
 [[nodiscard]] render_scene::SceneSnapshot makeSnapshot(const std::vector<render_scene::BodySnapshot>& bodies) {
     render_scene::SceneSnapshot snapshot{};
     snapshot.bodies = bodies;
     return snapshot;
+}
+
+[[nodiscard]] glm::vec3 focusPointForBody(const render_scene::BodySnapshot& body) {
+    return body.renderPosition + glm::vec3(0.0f, body.radius * 0.22f, 0.0f);
 }
 
 void testBeginCameraFocusLocksToTarget()
@@ -28,6 +48,7 @@ void testBeginCameraFocusLocksToTarget()
     input::Camera cam{};
     cam.pos = glm::vec3(0.0f, 0.0f, 30.0f);
     app_loop::CameraFocusState focus{};
+    const ui::CameraSettings cameraSettings{};
     const auto snapshot = makeSnapshot({
         render_scene::BodySnapshot{
             .renderPosition = glm::vec3(0.0f, 0.0f, 0.0f),
@@ -37,16 +58,19 @@ void testBeginCameraFocusLocksToTarget()
         },
     });
 
-    require(app_loop::beginCameraFocus(snapshot, 0, cam, focus),
+    require(app_loop::beginCameraFocus(snapshot, 0, cam, cameraSettings.fovDegrees, focus),
         "begin focus should accept a valid target");
     require(focus.active && focus.bodyId == 42,
         "begin focus should activate and store the target body id");
-    require(focus.followDistance >= 7.4f && focus.followDistance <= 19.0f,
-        "begin focus should choose a cinematic framing distance");
+    require(focus.followDistance > 10.0f && focus.followDistance < 20.0f,
+        "begin focus should choose a closer inspection distance for the target");
 
-    const glm::vec3 expectedDirection = glm::normalize(glm::vec3(0.0f, 2.0f * 0.22f, -30.0f));
+    const glm::vec3 focusPoint = focusPointForBody(snapshot.bodies[0]);
+    const glm::vec3 expectedDirection = glm::normalize(focusPoint - cam.pos);
     require(glm::dot(input::forwardDir(cam), expectedDirection) > 0.999f,
         "begin focus should orient the camera toward the focused body");
+    require(nearlyEqual(glm::length(cam.pos - focusPoint), focus.followDistance, 1e-3f),
+        "begin focus should place the camera on the chosen orbit radius");
 }
 
 void testUpdateCameraFocusTracksMovingTarget()
@@ -54,6 +78,7 @@ void testUpdateCameraFocusTracksMovingTarget()
     input::Camera cam{};
     cam.pos = glm::vec3(0.0f, 0.0f, 30.0f);
     app_loop::CameraFocusState focus{};
+    const ui::CameraSettings cameraSettings{};
     auto snapshot = makeSnapshot({
         render_scene::BodySnapshot{
             .renderPosition = glm::vec3(0.0f, 0.0f, 0.0f),
@@ -63,16 +88,15 @@ void testUpdateCameraFocusTracksMovingTarget()
         },
     });
 
-    require(app_loop::beginCameraFocus(snapshot, 0, cam, focus),
+    require(app_loop::beginCameraFocus(snapshot, 0, cam, cameraSettings.fovDegrees, focus),
         "begin focus should succeed before follow updates");
+    const glm::vec3 originalPosition = cam.pos;
 
     snapshot.bodies[0].renderPosition = glm::vec3(10.0f, 0.0f, 0.0f);
-    require(app_loop::updateCameraFocus(snapshot, 0.1f, 1.0, cam, focus),
+    require(app_loop::updateCameraFocus(snapshot, 0.0f, cameraSettings.fovDegrees, cam, focus),
         "follow update should keep tracking a live target");
-    require(cam.pos.x > 1.0f,
-        "follow update should move the camera laterally with the target");
-    require(cam.pos.z < 30.0f,
-        "follow update should ease the camera toward the framing distance");
+    require(nearlyEqualVec3(cam.pos - originalPosition, glm::vec3(10.0f, 0.0f, 0.0f), 1e-3f),
+        "follow update should carry the camera with the focused target instead of lagging behind");
 }
 
 void testUpdateCameraFocusClearsMissingTarget()
@@ -84,41 +108,51 @@ void testUpdateCameraFocusClearsMissingTarget()
     focus.followDistance = 12.0f;
 
     const render_scene::SceneSnapshot snapshot{};
-    require(!app_loop::updateCameraFocus(snapshot, 0.1f, 1.0, cam, focus),
+    require(!app_loop::updateCameraFocus(snapshot, 0.0f, 60.0f, cam, focus),
         "follow update should fail when the focused body no longer exists");
     require(!focus.active && focus.bodyId == 0 && focus.followDistance == 0.0f,
         "missing targets should clear focus state");
 }
 
-void testHighSimulationSpeedBoostsFocusCatchUp()
+void testUpdateCameraFocusAppliesScrollZoom()
 {
+    const ui::CameraSettings cameraSettings{};
     auto snapshot = makeSnapshot({
         render_scene::BodySnapshot{
-            .renderPosition = glm::vec3(10.0f, 0.0f, 0.0f),
+            .renderPosition = glm::vec3(0.0f, 0.0f, 0.0f),
             .radius = 2.0f,
             .bodyId = 42,
             .materialName = "DEFAULT",
         },
     });
 
-    input::Camera slowCam{};
-    slowCam.pos = glm::vec3(0.0f, 0.0f, 30.0f);
-    input::Camera fastCam = slowCam;
-    app_loop::CameraFocusState slowFocus{
-        .active = true,
-        .bodyId = 42,
-        .followDistance = 18.0f,
-    };
-    app_loop::CameraFocusState fastFocus = slowFocus;
-    input::setLookDirection(slowCam, glm::vec3(0.0f, 2.0f * 0.22f, -30.0f));
-    fastCam = slowCam;
+    input::Camera cam{};
+    cam.pos = glm::vec3(0.0f, 0.0f, 30.0f);
+    app_loop::CameraFocusState focus{};
 
-    require(app_loop::updateCameraFocus(snapshot, 0.016f, 1.0, slowCam, slowFocus),
-        "normal-speed follow update should succeed");
-    require(app_loop::updateCameraFocus(snapshot, 0.016f, 64.0, fastCam, fastFocus),
-        "high-speed follow update should succeed");
-    require(fastCam.pos.x > slowCam.pos.x,
-        "high simulation speed should increase focus catch-up strength");
+    require(app_loop::beginCameraFocus(snapshot, 0, cam, cameraSettings.fovDegrees, focus),
+        "begin focus should succeed before zoom updates");
+
+    const float originalDistance = focus.followDistance;
+    require(app_loop::updateCameraFocus(snapshot, 1.0f, cameraSettings.fovDegrees, cam, focus),
+        "positive scroll should zoom the focus camera");
+    require(focus.followDistance < originalDistance,
+        "scrolling up should zoom the focus camera inward");
+
+    const glm::vec3 focusPoint = focusPointForBody(snapshot.bodies[0]);
+    require(nearlyEqual(glm::length(cam.pos - focusPoint), focus.followDistance, 1e-3f),
+        "zooming should keep the camera on the focused orbit radius");
+
+    const float zoomedInDistance = focus.followDistance;
+    require(app_loop::updateCameraFocus(snapshot, -1.0f, cameraSettings.fovDegrees, cam, focus),
+        "negative scroll should zoom the focus camera back out");
+    require(focus.followDistance > zoomedInDistance,
+        "scrolling down should zoom the focus camera outward");
+
+    require(app_loop::updateCameraFocus(snapshot, 100.0f, cameraSettings.fovDegrees, cam, focus),
+        "large positive scroll should still keep focus valid");
+    require(focus.followDistance > snapshot.bodies[0].radius + 0.5f,
+        "zooming in aggressively should stay outside the focused body");
 }
 
 void testUpdateCameraFocusKeepsTargetCentered()
@@ -126,6 +160,7 @@ void testUpdateCameraFocusKeepsTargetCentered()
     input::Camera cam{};
     cam.pos = glm::vec3(0.0f, 0.0f, 30.0f);
     app_loop::CameraFocusState focus{};
+    const ui::CameraSettings cameraSettings{};
     auto snapshot = makeSnapshot({
         render_scene::BodySnapshot{
             .renderPosition = glm::vec3(0.0f, 0.0f, 0.0f),
@@ -135,19 +170,64 @@ void testUpdateCameraFocusKeepsTargetCentered()
         },
     });
 
-    require(app_loop::beginCameraFocus(snapshot, 0, cam, focus),
+    require(app_loop::beginCameraFocus(snapshot, 0, cam, cameraSettings.fovDegrees, focus),
         "begin focus should succeed before centered follow updates");
 
     input::setLookDirection(cam, glm::vec3(8.0f, 0.8f, -30.0f));
     snapshot.bodies[0].renderPosition = glm::vec3(6.0f, 0.0f, 0.0f);
 
-    require(app_loop::updateCameraFocus(snapshot, 0.1f, 32.0, cam, focus),
+    require(app_loop::updateCameraFocus(snapshot, 0.0f, cameraSettings.fovDegrees, cam, focus),
         "follow update should succeed while re-centering the target");
 
-    const glm::vec3 focusPoint =
-        snapshot.bodies[0].renderPosition + glm::vec3(0.0f, snapshot.bodies[0].radius * 0.22f, 0.0f);
+    const glm::vec3 focusPoint = focusPointForBody(snapshot.bodies[0]);
     require(glm::dot(input::forwardDir(cam), glm::normalize(focusPoint - cam.pos)) > 0.999f,
-        "follow update should keep the focused body centered after smoothing");
+        "follow update should keep the focused body centered while orbiting");
+    require(nearlyEqual(glm::length(cam.pos - focusPoint), focus.followDistance, 1e-3f),
+        "follow update should preserve the requested orbit distance");
+}
+
+void testUpdateCameraFocusPreservesOrbitSideForMovingTarget()
+{
+    input::Camera cam{};
+    cam.pos = glm::vec3(0.0f, 0.0f, 30.0f);
+    app_loop::CameraFocusState focus{};
+    const ui::CameraSettings cameraSettings{};
+    auto snapshot = makeSnapshot({
+        render_scene::BodySnapshot{
+            .renderPosition = glm::vec3(0.0f, 0.0f, 0.0f),
+            .radius = 2.0f,
+            .bodyId = 62,
+            .materialName = "DEFAULT",
+        },
+    });
+
+    require(app_loop::beginCameraFocus(snapshot, 0, cam, cameraSettings.fovDegrees, focus),
+        "begin focus should succeed before orbit-preservation updates");
+
+    const glm::vec3 initialFocusPoint = focusPointForBody(snapshot.bodies[0]);
+    const glm::vec3 initialOffsetDirection = glm::normalize(cam.pos - initialFocusPoint);
+
+    snapshot.bodies[0].renderPosition = glm::vec3(20.0f, 0.0f, 0.0f);
+
+    require(app_loop::updateCameraFocus(snapshot, 0.0f, cameraSettings.fovDegrees, cam, focus),
+        "follow update should succeed while carrying the camera with an orbiting target");
+
+    const glm::vec3 movedFocusPoint = focusPointForBody(snapshot.bodies[0]);
+    require(glm::dot(glm::normalize(cam.pos - movedFocusPoint), initialOffsetDirection) > 0.995f,
+        "follow update should preserve the camera's orbit side as the target moves");
+}
+
+void testSetLookDirectionKeepsYawForVerticalDirections()
+{
+    input::Camera cam{};
+    cam.yaw = 1.2345f;
+
+    input::setLookDirection(cam, glm::vec3(0.0f, 5.0f, 0.0f));
+
+    require(nearlyEqual(cam.yaw, 1.2345f, 1e-5f),
+        "vertical look directions should preserve yaw instead of snapping to an arbitrary heading");
+    require(cam.pitch > glm::radians(88.0f),
+        "vertical look directions should still point the camera nearly straight up");
 }
 
 void testFocusedBodyLookupUsesStableBodyId()
@@ -275,13 +355,19 @@ void testMovementExitDoesNotCancelFocusOnActivationFrame()
 
 } // namespace
 
-void appendFocusCameraTests(std::vector<std::pair<std::string, std::function<void()>>>& tests)
+void appendFocusCameraTests(test_registry::TestList& tests)
 {
     tests.emplace_back("begin_camera_focus_locks_to_target", testBeginCameraFocusLocksToTarget);
     tests.emplace_back("update_camera_focus_tracks_moving_target", testUpdateCameraFocusTracksMovingTarget);
     tests.emplace_back("update_camera_focus_clears_missing_target", testUpdateCameraFocusClearsMissingTarget);
-    tests.emplace_back("high_simulation_speed_boosts_focus_catch_up", testHighSimulationSpeedBoostsFocusCatchUp);
+    tests.emplace_back("update_camera_focus_applies_scroll_zoom", testUpdateCameraFocusAppliesScrollZoom);
     tests.emplace_back("update_camera_focus_keeps_target_centered", testUpdateCameraFocusKeepsTargetCentered);
+    tests.emplace_back(
+        "update_camera_focus_preserves_orbit_side_for_moving_target",
+        testUpdateCameraFocusPreservesOrbitSideForMovingTarget);
+    tests.emplace_back(
+        "set_look_direction_keeps_yaw_for_vertical_directions",
+        testSetLookDirectionKeepsYawForVerticalDirections);
     tests.emplace_back("focused_body_lookup_uses_stable_body_id", testFocusedBodyLookupUsesStableBodyId);
     tests.emplace_back("target_selection_ignores_bodies_past_far_plane", testTargetSelectionIgnoresBodiesPastFarPlane);
     tests.emplace_back(

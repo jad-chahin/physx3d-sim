@@ -5,6 +5,8 @@
 #include <utility>
 #include <vector>
 
+#include "TestRegistry.h"
+
 #include "render/SceneLighting.h"
 
 namespace {
@@ -28,7 +30,11 @@ void testBuildSceneLightingProducesFiniteStateWithoutBodies()
     sceneView.forward = glm::normalize(glm::vec3(0.24f, -0.11f, -0.96f));
 
     const render_scene::SceneSnapshot snapshot{};
-    const render_scene::SceneLighting lighting = render_scene::buildSceneLighting(sceneView, snapshot, 2048);
+    const render_scene::SceneLighting lighting = render_scene::buildSceneLighting(
+        sceneView,
+        snapshot,
+        2048,
+        render_scene::BackdropPreset::Sunny);
 
     require(nearlyEqual(glm::length(lighting.direction), 1.0f, 1e-3f),
         "directional light should stay normalized");
@@ -73,7 +79,11 @@ void testBuildSceneLightingKeepsNearbyBodyInsideShadowFrustum()
         .materialName = "STEEL",
     });
 
-    const render_scene::SceneLighting lighting = render_scene::buildSceneLighting(sceneView, snapshot, 1024);
+    const render_scene::SceneLighting lighting = render_scene::buildSceneLighting(
+        sceneView,
+        snapshot,
+        1024,
+        render_scene::BackdropPreset::Sunny);
     const glm::vec4 clip = lighting.shadowViewProj * glm::vec4(snapshot.bodies.front().renderPosition, 1.0f);
     const glm::vec3 ndc = glm::vec3(clip) / clip.w;
 
@@ -100,7 +110,11 @@ void testBuildSceneLightingExtractsLocalLightFromEmissiveBody()
         .materialName = "DEFAULT",
     });
 
-    const render_scene::SceneLighting lighting = render_scene::buildSceneLighting(sceneView, snapshot, 1024);
+    const render_scene::SceneLighting lighting = render_scene::buildSceneLighting(
+        sceneView,
+        snapshot,
+        1024,
+        render_scene::BackdropPreset::Sunny);
     require(lighting.localLightCount == 1, "emissive stellar bodies should produce a local light");
     require(lighting.localLights[0].range > 32.0f, "stellar local lights should reach nearby orbiting bodies");
     require(glm::length(lighting.localLights[0].color) > 0.0f, "local light color should be nonzero");
@@ -125,7 +139,11 @@ void testBuildSceneLightingCapsLocalLightCount()
         });
     }
 
-    const render_scene::SceneLighting lighting = render_scene::buildSceneLighting(sceneView, snapshot, 1024);
+    const render_scene::SceneLighting lighting = render_scene::buildSceneLighting(
+        sceneView,
+        snapshot,
+        1024,
+        render_scene::BackdropPreset::Sunny);
     require(lighting.localLightCount == static_cast<int>(render_scene::kMaxLocalLights),
         "local light extraction should stay capped");
 }
@@ -169,7 +187,7 @@ void testBuildSceneLightingSupportsBackdropPresets()
 
 } // namespace
 
-void appendSceneLightingTests(std::vector<std::pair<std::string, std::function<void()>>>& tests)
+void appendSceneLightingTests(test_registry::TestList& tests)
 {
     tests.emplace_back(
         "scene_lighting_produces_finite_state_without_bodies",

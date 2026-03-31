@@ -1,30 +1,36 @@
-#include "app/AppLoopInternal.h"
+#include "app/SceneSnapshot.h"
 
 #include <glm/glm.hpp>
 
+#include "app/AppRuntime.h"
+#include "app/SimulationController.h"
+#include "sim/Quaternion.h"
+
 namespace app_loop {
 namespace {
-    [[nodiscard]] glm::mat3 quatToMat3(const sim::Quaternion& q) {
-        const auto w = static_cast<float>(q.w);
-        const auto x = static_cast<float>(q.x);
-        const auto y = static_cast<float>(q.y);
-        const auto z = static_cast<float>(q.z);
 
-        const float xx = x * x;
-        const float yy = y * y;
-        const float zz = z * z;
-        const float xy = x * y;
-        const float xz = x * z;
-        const float yz = y * z;
-        const float wx = w * x;
-        const float wy = w * y;
-        const float wz = w * z;
+[[nodiscard]] glm::mat3 quatToMat3(const sim::Quaternion& q)
+{
+    const auto w = static_cast<float>(q.w);
+    const auto x = static_cast<float>(q.x);
+    const auto y = static_cast<float>(q.y);
+    const auto z = static_cast<float>(q.z);
 
-        return {
-            1.0f - 2.0f * (yy + zz), 2.0f * (xy + wz), 2.0f * (xz - wy),
-            2.0f * (xy - wz), 1.0f - 2.0f * (xx + zz), 2.0f * (yz + wx),
-            2.0f * (xz + wy), 2.0f * (yz - wx), 1.0f - 2.0f * (xx + yy)};
-    }
+    const float xx = x * x;
+    const float yy = y * y;
+    const float zz = z * z;
+    const float xy = x * y;
+    const float xz = x * z;
+    const float yz = y * z;
+    const float wx = w * x;
+    const float wy = w * y;
+    const float wz = w * z;
+
+    return {
+        1.0f - 2.0f * (yy + zz), 2.0f * (xy + wz), 2.0f * (xz - wy),
+        2.0f * (xy - wz), 1.0f - 2.0f * (xx + zz), 2.0f * (yz + wx),
+        2.0f * (xz + wy), 2.0f * (yz - wx), 1.0f - 2.0f * (xx + yy)};
+}
 
 } // namespace
 
@@ -74,4 +80,3 @@ void buildSceneSnapshot(
 }
 
 } // namespace app_loop
-

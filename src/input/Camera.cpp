@@ -33,7 +33,10 @@ namespace input {
         }
 
         const glm::vec3 normalized = glm::normalize(direction);
-        c.yaw = std::atan2(normalized.z, normalized.x);
+        const float horizontalLenSq = normalized.x * normalized.x + normalized.z * normalized.z;
+        if (horizontalLenSq > 1e-8f) {
+            c.yaw = std::atan2(normalized.z, normalized.x);
+        }
         c.pitch = std::asin(std::clamp(normalized.y, -1.0f, 1.0f));
         clampPitch(c);
     }

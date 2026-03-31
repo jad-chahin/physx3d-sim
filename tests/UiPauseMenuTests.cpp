@@ -7,6 +7,8 @@
 #include <utility>
 #include <vector>
 
+#include "TestRegistry.h"
+
 #include "ui/PauseMenu.h"
 #include "ui/PauseMenuLayout.h"
 
@@ -217,7 +219,8 @@ void testUi2BuildViewMapsMenuState()
     require(view.title == "PAUSED", "view should expose the menu title");
     require(view.activeTabIndex == static_cast<int>(ui::SettingsPage::Interface),
         "view should preserve active tab");
-    require(view.rows.size() > 10 && view.rows[2].label == "SHOW SPEED" && view.rows[10].label == "DETAIL LEVEL",
+    require(view.rows.size() > 11 && view.rows[2].label == "SHOW SPEED" && view.rows[10].label == "DETAIL LEVEL" &&
+            view.rows[11].label == "BACKDROP",
         "view should expose the decluttered interface layout");
     for (const auto& row : view.rows) {
         require(row.label != "INFO MATERIAL" && row.label != "INFO VELOCITY" && row.label != "INFO MASS" &&
@@ -336,6 +339,29 @@ void testUi2ObjectInfoDetailLevelUsesBasicAndFullOnly()
     view = menu.buildView(controls);
     require(view.rows.size() > 10 && view.rows[10].value == "FULL",
         "detail level should expose FULL as the only expanded option");
+}
+
+void testUi2BackdropPresetAppliesImmediately()
+{
+    ui::PauseMenu menu;
+    input::ControlBindings controls{};
+    ui::testing::PauseMenuAccess::openMenu(menu);
+    ui::testing::PauseMenuAccess::selectPage(menu, ui::SettingsPage::Interface);
+    ui::testing::PauseMenuAccess::setSelectedRow(menu, 10);
+
+    auto view = menu.buildView(controls);
+    require(view.rows.size() > 11 && view.rows[11].label == "BACKDROP" && view.rows[11].value == "SUNNY",
+        "backdrop row should default to SUNNY");
+
+    ui::testing::PauseMenuAccess::moveHorizontal(menu, 1, controls);
+    require(ui::testing::PauseMenuAccess::draft(menu).interface.backdropPresetIndex == 1,
+        "backdrop edits should update the draft state");
+    require(menu.interfaceSettings().backdropPresetIndex == 1,
+        "backdrop edits should apply immediately");
+
+    view = menu.buildView(controls);
+    require(view.rows[11].value == "SPACE",
+        "backdrop row should expose SPACE after stepping right");
 }
 
 void testUi2GravityStrengthUsesReciprocalAndIntegerLabels()
@@ -586,7 +612,7 @@ void testUi2HorizontalRepeatOnlyAppliesToDirectionalRows()
 
 } // namespace
 
-void appendUiPauseMenuTests(std::vector<std::pair<std::string, std::function<void()>>>& tests)
+void appendUiPauseMenuTests(test_registry::TestList& tests)
 {
     tests.emplace_back("ui2_space_only_toggles_toggle_rows", testUi2SpaceOnlyTogglesToggleRows);
     tests.emplace_back("ui2_simulation_page_applies_multi_row_edits_immediately", testUi2SimulationPageAppliesMultiRowEditsImmediately);
@@ -600,6 +626,7 @@ void appendUiPauseMenuTests(std::vector<std::pair<std::string, std::function<voi
     tests.emplace_back("ui2_spatial_hud_rows_stay_independent_of_info_panel", testUi2SpatialHudRowsStayIndependentOfInfoPanel);
     tests.emplace_back("ui2_minimap_zoom_disables_when_minimap_off", testUi2MinimapZoomDisablesWhenMinimapOff);
     tests.emplace_back("ui2_object_info_detail_level_uses_basic_and_full_only", testUi2ObjectInfoDetailLevelUsesBasicAndFullOnly);
+    tests.emplace_back("ui2_backdrop_preset_applies_immediately", testUi2BackdropPresetAppliesImmediately);
     tests.emplace_back("ui2_gravity_strength_uses_reciprocal_and_integer_labels", testUi2GravityStrengthUsesReciprocalAndIntegerLabels);
     tests.emplace_back("ui2_layout_keeps_manual_scroll_offset", testUi2LayoutKeepsManualScrollOffset);
     tests.emplace_back("ui2_layout_keeps_selected_row_visible_when_moving_up", testUi2LayoutKeepsSelectedRowVisibleWhenMovingUp);

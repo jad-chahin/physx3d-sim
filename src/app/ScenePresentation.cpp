@@ -1,6 +1,7 @@
 #include "app/ScenePresentation.h"
 
-#include "app/AppLoopInternal.h"
+#include "app/AppRuntime.h"
+#include "app/SimulationController.h"
 
 #include <algorithm>
 #include <cstdio>

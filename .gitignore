@@ -47,3 +47,11 @@ settings.cfg
 # Local build trees
 build/
 build-review/
+build-*/
+cmake-build-*/
+
+# Local IDE files
+.idea/editor.xml
+.idea/modules.xml
+.idea/*.iml
+.idea/vcs.xml

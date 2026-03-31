@@ -6,22 +6,60 @@
 namespace app_loop {
 namespace {
 
-constexpr float kFocusMinDistanceMultiplier = 3.7f;
-constexpr float kFocusMaxDistanceMultiplier = 9.5f;
-constexpr float kFocusDistancePadding = 1.06f;
 constexpr float kFocusHeightBiasMultiplier = 0.22f;
-constexpr float kFocusSmoothing = 6.2f;
-constexpr float kFocusErrorCatchUpScale = 2.5f;
+constexpr float kFocusDistancePadding = 1.04f;
+constexpr float kFocusMinDistanceMultiplier = 1.35f;
+constexpr float kFocusMinDistancePadding = 0.75f;
+constexpr float kFocusDefaultScreenRadiusFraction = 0.20f;
+constexpr float kFocusMaxZoomMultiplier = 4.0f;
+constexpr float kFocusScrollZoomStep = 0.2f;
+
+struct FocusDistanceRange {
+    float minDistance = 0.0f;
+    float framingDistance = 0.0f;
+    float maxDistance = 0.0f;
+};
 
 [[nodiscard]] glm::vec3 focusPointForBody(const render_scene::BodySnapshot& body) {
     return body.renderPosition + glm::vec3(0.0f, body.radius * kFocusHeightBiasMultiplier, 0.0f);
 }
 
-[[nodiscard]] float desiredFocusDistance(const render_scene::BodySnapshot& body, const input::Camera& cam) {
+[[nodiscard]] FocusDistanceRange focusDistanceRange(
+    const render_scene::BodySnapshot& body,
+    const float fovDegrees)
+{
+    const float minDistance = std::max(body.radius * kFocusMinDistanceMultiplier, body.radius + kFocusMinDistancePadding);
+    const float clampedFovDegrees = std::clamp(fovDegrees, 30.0f, 130.0f);
+    const float halfFovRadians = glm::radians(clampedFovDegrees * 0.5f);
+    const float projectionScale = 1.0f / std::tan(std::max(halfFovRadians, 0.01f));
+    const float framingDistance = std::max(
+        minDistance,
+        body.radius * projectionScale / kFocusDefaultScreenRadiusFraction);
+    const float maxDistance = std::max(framingDistance * kFocusMaxZoomMultiplier, minDistance + 1.0f);
+    return FocusDistanceRange{minDistance, framingDistance, maxDistance};
+}
+
+[[nodiscard]] float desiredFocusDistance(
+    const render_scene::BodySnapshot& body,
+    const input::Camera& cam,
+    const float fovDegrees)
+{
     const float currentDistance = glm::length(focusPointForBody(body) - cam.pos) * kFocusDistancePadding;
-    const float minDistance = std::max(body.radius * kFocusMinDistanceMultiplier, body.radius + 0.75f);
-    const float maxDistance = std::max(minDistance, body.radius * kFocusMaxDistanceMultiplier);
-    return std::clamp(currentDistance, minDistance, maxDistance);
+    const FocusDistanceRange range = focusDistanceRange(body, fovDegrees);
+    return std::clamp(currentDistance, range.minDistance, range.framingDistance);
+}
+
+void applyFocusZoomDelta(
+    const float scrollDeltaY,
+    const FocusDistanceRange& range,
+    CameraFocusState& focusState)
+{
+    if (std::abs(scrollDeltaY) <= 0.01f) {
+        return;
+    }
+
+    const float zoomScale = std::exp(-scrollDeltaY * kFocusScrollZoomStep);
+    focusState.followDistance = std::clamp(focusState.followDistance * zoomScale, range.minDistance, range.maxDistance);
 }
 
 } // namespace
@@ -48,6 +86,7 @@ bool beginCameraFocus(
     const render_scene::SceneSnapshot& snapshot,
     const int targetBodyIndex,
     input::Camera& cam,
+    const float fovDegrees,
     CameraFocusState& focusState)
 {
     if (targetBodyIndex < 0 || targetBodyIndex >= static_cast<int>(snapshot.bodies.size())) {
@@ -59,14 +98,15 @@ bool beginCameraFocus(
     input::setLookDirection(cam, focusPoint - cam.pos);
     focusState.active = true;
     focusState.bodyId = body.bodyId;
-    focusState.followDistance = desiredFocusDistance(body, cam);
+    focusState.followDistance = desiredFocusDistance(body, cam, fovDegrees);
+    cam.pos = focusPoint - input::forwardDir(cam) * focusState.followDistance;
     return true;
 }
 
 bool updateCameraFocus(
     const render_scene::SceneSnapshot& snapshot,
-    const float frameTime,
-    const double simulationSpeed,
+    const float scrollDeltaY,
+    const float fovDegrees,
     input::Camera& cam,
     CameraFocusState& focusState)
 {
@@ -78,20 +118,17 @@ bool updateCameraFocus(
 
     const auto& body = snapshot.bodies[static_cast<std::size_t>(focusedIndex)];
     const glm::vec3 focusPoint = focusPointForBody(body);
-    const float minDistance = std::max(body.radius * kFocusMinDistanceMultiplier, body.radius + 0.75f);
-    focusState.followDistance = std::max(focusState.followDistance, minDistance);
-    const glm::vec3 desiredPosition = focusPoint - input::forwardDir(cam) * focusState.followDistance;
-    const float error = glm::length(desiredPosition - cam.pos);
-    const float normalizedError = error / std::max(focusState.followDistance, 1.0f);
-    const float catchUpBoost = 1.0f + std::clamp(normalizedError * kFocusErrorCatchUpScale, 0.0f, 6.0f);
-    const float speedBoost = std::clamp(
-        std::sqrt(static_cast<float>(std::max(1.0, simulationSpeed))),
-        1.0f,
-        8.0f);
-    const float blend =
-        1.0f - std::exp(-(kFocusSmoothing * catchUpBoost * speedBoost) * std::max(frameTime, 0.0f));
-    cam.pos += (desiredPosition - cam.pos) * blend;
-    input::setLookDirection(cam, focusPoint - cam.pos);
+    const FocusDistanceRange range = focusDistanceRange(body, fovDegrees);
+    if (focusState.followDistance <= 0.0f) {
+        focusState.followDistance = desiredFocusDistance(body, cam, fovDegrees);
+    } else {
+        focusState.followDistance = std::clamp(focusState.followDistance, range.minDistance, range.maxDistance);
+    }
+    applyFocusZoomDelta(scrollDeltaY, range, focusState);
+
+    // Focus mode is an exact orbit camera: the target stays centered and mouse look
+    // changes the orbit angles directly instead of being damped by follow smoothing.
+    cam.pos = focusPoint - input::forwardDir(cam) * focusState.followDistance;
     return true;
 }
 

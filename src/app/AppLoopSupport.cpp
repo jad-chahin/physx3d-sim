@@ -1,4 +1,8 @@
-#include "app/AppLoopInternal.h"
+#include "app/FrameUpdate.h"
+#include "app/SimulationController.h"
+#include "app/Windowing.h"
+
+#include "sim/DefaultWorld.h"
 
 namespace app_loop {
 

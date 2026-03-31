@@ -1,4 +1,5 @@
-#include "app/AppLoopInternal.h"
+#include "app/FrameUpdate.h"
+#include "app/SimulationController.h"
 
 #include <algorithm>
 #include <cmath>

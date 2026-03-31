@@ -24,12 +24,13 @@ bool beginCameraFocus(
     const render_scene::SceneSnapshot& snapshot,
     int targetBodyIndex,
     input::Camera& cam,
+    float fovDegrees,
     CameraFocusState& focusState);
 
 bool updateCameraFocus(
     const render_scene::SceneSnapshot& snapshot,
-    float frameTime,
-    double simulationSpeed,
+    float scrollDeltaY,
+    float fovDegrees,
     input::Camera& cam,
     CameraFocusState& focusState);
 

@@ -5,6 +5,8 @@
 #include <utility>
 #include <vector>
 
+#include "TestRegistry.h"
+
 #include "render/RenderMaterial.h"
 
 namespace {
@@ -76,7 +78,7 @@ void testResolvePresentationMaterialPromotesLargeLightDefaultBodiesToBanded()
 
 } // namespace
 
-void appendRenderMaterialTests(std::vector<std::pair<std::string, std::function<void()>>>& tests)
+void appendRenderMaterialTests(test_registry::TestList& tests)
 {
     tests.emplace_back(
         "render_material_falls_back_to_default",

@@ -29,6 +29,7 @@ struct FrameInput {
     double fps = 0.0;
     bool showWorldPaths = false;
     int pathColorIndex = 0;
+    BackdropPreset backdropPreset = BackdropPreset::Sunny;
     const SceneView* sceneView = nullptr;
     const SceneSnapshot* sceneSnapshot = nullptr;
     const OverlayPassInput* overlay = nullptr;
@@ -205,6 +206,7 @@ private:
     struct LightingCacheKey {
         std::uint64_t instanceRevision = 0;
         int shadowMapResolution = 0;
+        BackdropPreset backdropPreset = BackdropPreset::Sunny;
         glm::vec3 cameraPosition{0.0f, 0.0f, 0.0f};
         glm::vec3 forward{0.0f, 0.0f, -1.0f};
     };

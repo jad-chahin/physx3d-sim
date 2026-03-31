@@ -21,7 +21,7 @@ struct DisplaySettings { WindowMode windowMode = WindowMode::Borderless; bool vs
 struct SimulationSettings { double minSimSpeed = 1.0 / 64.0, maxSimSpeed = 64.0, gravityStrength = sim::World::Params::kDefaultG, globalRestitution = sim::World::Params::kDefaultRestitution; bool gravityEnabled = true, collisionsEnabled = true; int velocityIterations = sim::World::Params::kDefaultVelocityIterations, positionIterations = sim::World::Params::kDefaultPositionIterations; bool operator==(const SimulationSettings&) const = default; };
 struct CameraSettings { float lookSensitivity = 0.0025f, baseMoveSpeed = 40.0f, fovDegrees = 60.0f; bool invertY = false; bool operator==(const CameraSettings&) const = default; };
 struct InterfaceSettings {
-    int uiScaleIndex = 2, minimapZoomIndex = 1, pathLengthIndex = 3, pathColorIndex = 0;
+    int uiScaleIndex = 2, minimapZoomIndex = 1, pathLengthIndex = 3, pathColorIndex = 0, backdropPresetIndex = 0;
     bool showSimulationSpeed = true, showFps = true, showElapsedTime = true, showMinimap = true,
          showCoordinates = true, showCrosshair = true, drawPath = false, objectInfo = true,
          objectInfoMaterial = false, objectInfoVelocity = true, objectInfoMass = true,
@@ -38,6 +38,7 @@ inline constexpr std::array<float, 7> kUiScaleChoices{{0.75f, 0.85f, 1.00f, 1.15
 inline constexpr std::array<float, 4> kMinimapZoomChoices{{20.0f, 40.0f, 80.0f, 160.0f}};
 inline constexpr std::array<int, 5> kPathLengthChoices{{256, 512, 1024, 2048, 4096}};
 inline constexpr std::array<const char*, 6> kPathColorChoices{{"CYAN", "AMBER", "WHITE", "LIME", "MAGENTA", "RED"}};
+inline constexpr std::array<const char*, 2> kBackdropPresetChoices{{"SUNNY", "SPACE"}};
 inline constexpr std::array<double, 9> kMinSpeedChoices{{1.0 / 256.0, 1.0 / 128.0, 1.0 / 64.0, 1.0 / 32.0, 1.0 / 16.0, 1.0 / 8.0, 1.0 / 4.0, 1.0 / 2.0, 1.0}};
 inline constexpr std::array<double, 9> kMaxSpeedChoices{{1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0, 256.0}};
 inline constexpr double kDefaultGravityStrength = sim::World::Params::kDefaultG;

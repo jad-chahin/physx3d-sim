@@ -11,8 +11,6 @@
 namespace render_scene {
 namespace {
 
-// Manual backdrop switch until this is surfaced in settings/UI.
-constexpr BackdropPreset kActiveBackdropPreset = BackdropPreset::Space;
 constexpr glm::vec3 kDirectionalLightDirection(0.35203f, 0.82476f, 0.44256f);
 constexpr float kShadowFocusDistance = 18.0f;
 constexpr float kShadowTrackDistance = 55.0f;
@@ -179,23 +177,6 @@ void sortLocalLights(SceneLighting& lighting)
 }
 
 } // namespace
-
-SceneLighting buildSceneLighting(
-    const SceneView& sceneView,
-    const SceneSnapshot& snapshot,
-    const std::span<const SceneInstanceData> instances,
-    const int shadowMapResolution)
-{
-    return buildSceneLighting(sceneView, snapshot, instances, shadowMapResolution, kActiveBackdropPreset);
-}
-
-SceneLighting buildSceneLighting(
-    const SceneView& sceneView,
-    const SceneSnapshot& snapshot,
-    const int shadowMapResolution)
-{
-    return buildSceneLighting(sceneView, snapshot, {}, shadowMapResolution, kActiveBackdropPreset);
-}
 
 SceneLighting buildSceneLighting(
     const SceneView& sceneView,

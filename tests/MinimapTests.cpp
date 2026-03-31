@@ -5,6 +5,8 @@
 #include <utility>
 #include <vector>
 
+#include "TestRegistry.h"
+
 #include "app/SpatialHud.h"
 #include "render/SceneRenderer.h"
 #include "ui/MinimapLayout.h"
@@ -174,7 +176,7 @@ void testSpatialHudKeepsSameCellBodiesWhenUnderMarkerCap()
 
 } // namespace
 
-void appendMinimapTests(std::vector<std::pair<std::string, std::function<void()>>>& tests)
+void appendMinimapTests(test_registry::TestList& tests)
 {
     tests.emplace_back(
         "minimap_layout_keeps_in_range_markers_out_of_edge_style",
